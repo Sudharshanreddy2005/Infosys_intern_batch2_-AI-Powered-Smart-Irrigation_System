@@ -1,6 +1,7 @@
 import copy
 import time
 import requests
+import config                  # CACHE_MINUTES / MAX_STALE_MINUTES are read from here at call time
 from config import (
     get_api_key,
     REALTIME_ENDPOINT,
@@ -10,13 +11,11 @@ from config import (
     REQUEST_TIMEOUT,
     MAX_RETRIES,
     RETRY_DELAY,
-    CACHE_MINUTES,
-    MAX_STALE_MINUTES,
 )
 
 
 class WeatherAuthError(RuntimeError):
-    """Raised on 401 (bad/missing API key). Stale data must NOT hide this."""
+    """Raised on 401/403 (bad/missing/blocked API key). Stale data must NOT hide this."""
 
 
 # In-memory cache: {key: {"data": ..., "time": timestamp}}
@@ -28,9 +27,9 @@ def _get_cached(key, allow_stale=False):
     if not entry:
         return None, None
     age = time.time() - entry["time"]
-    if age < CACHE_MINUTES * 60:
+    if age < config.CACHE_MINUTES * 60:
         return copy.deepcopy(entry["data"]), age
-    if allow_stale and age < MAX_STALE_MINUTES * 60:
+    if allow_stale and age < config.MAX_STALE_MINUTES * 60:
         return copy.deepcopy(entry["data"]), age
     return None, None
 
@@ -66,8 +65,8 @@ def _make_request(endpoint, params):
             error_msg = "Connection failed. Please check your internet."
         except requests.exceptions.HTTPError as e:
             code = response.status_code
-            if code == 401:
-                raise WeatherAuthError("401: The API key is invalid or missing.")
+            if code in (401, 403):
+                raise WeatherAuthError(f"{code}: The API key is invalid, missing or not allowed.")
             if code == 429:
                 error_msg = "429: API rate limit exceeded."
             elif code >= 500:
