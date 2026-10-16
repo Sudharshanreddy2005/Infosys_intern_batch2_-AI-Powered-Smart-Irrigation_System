@@ -1,0 +1,32 @@
+services:
+  db:
+    image: postgres:18
+    container_name: smart_irrigation_db
+    environment:
+      POSTGRES_DB: smart_irrigation_db
+      POSTGRES_USER: irrigation_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U irrigation_user -d smart_irrigation_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    image: smart-irrigation-backend:latest
+    build: .
+    container_name: smart_irrigation_backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://irrigation_user:${DB_PASSWORD}@db:5432/smart_irrigation_db
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
