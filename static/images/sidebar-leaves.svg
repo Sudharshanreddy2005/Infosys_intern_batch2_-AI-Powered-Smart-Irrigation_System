@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 150">
+  <defs>
+    <linearGradient id="leaf" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#c6e854"/>
+      <stop offset="1" stop-color="#58a849"/>
+    </linearGradient>
+  </defs>
+  <g fill="url(#leaf)">
+    <path d="M20 150C24 95 53 39 112 7c-1 62-30 116-92 143Z"/>
+    <path d="M70 150C79 87 124 37 193 15c-11 67-54 115-123 135Z"/>
+    <path d="M135 150c12-58 60-98 125-109-10 60-52 101-125 109Z"/>
+    <path d="M12 150C2 110 8 77 36 44c24 39 22 76-24 106Z" opacity=".82"/>
+  </g>
+  <g fill="none" stroke="#e5f69a" stroke-linecap="round" stroke-width="2" opacity=".7">
+    <path d="M27 145 88 28"/>
+    <path d="M78 145 169 34"/>
+    <path d="M144 145 243 52"/>
+  </g>
+</svg>

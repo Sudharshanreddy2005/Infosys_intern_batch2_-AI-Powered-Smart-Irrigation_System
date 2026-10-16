@@ -1,73 +1,52 @@
+import os
 from pathlib import Path
 
 import pandas as pd
-from sqlalchemy import create_engine
+from dotenv import load_dotenv
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.engine import URL
 
+PROJECT_ROOT = Path(__file__).resolve().parent
+load_dotenv(PROJECT_ROOT / ".env")
 
-# Read the database password from the existing .env file
-env_path = Path(".env")
+db_password = os.getenv("DB_PASSWORD")
+if not db_password:
+    raise ValueError("DB_PASSWORD is not configured in the environment or .env file.")
 
-if not env_path.exists():
-    raise FileNotFoundError(
-        "The .env file was not found. Make sure you run this script "
-        "from your project folder."
-    )
-
-password_line = next(
-    (
-        line for line in env_path.read_text().splitlines()
-        if line.startswith("DB_PASSWORD=")
-    ),
-    None,
-)
-
-if password_line is None:
-    raise ValueError("DB_PASSWORD was not found in the .env file.")
-
-db_password = password_line.split("=", 1)[1].strip()
-
-# Connect to the PostgreSQL container through your Windows computer
-database_url = URL.create(
-    drivername="postgresql+psycopg",
-    username="irrigation_user",
-    password=db_password,
-    host="localhost",
-    port=5433,
-    database="smart_irrigation_db",
-)
-
-engine = create_engine(database_url)
-
-# Read the original dataset without removing or renaming columns
-csv_path = Path("data") / "cleaned_dataset.csv"
-
-if not csv_path.exists():
-    raise FileNotFoundError(
-        "Dataset not found at data/cleaned_dataset.csv"
-    )
+csv_path = PROJECT_ROOT / "data" / "cleaned_dataset.csv"
+if not csv_path.is_file():
+    raise FileNotFoundError(f"Dataset not found at {csv_path}")
 
 df = pd.read_csv(csv_path)
-
-# Convert the timestamp column to a timezone-aware datetime
+if "timestamp" not in df.columns:
+    raise ValueError("Dataset does not contain the required timestamp column.")
 df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
 
-print(f"Dataset rows: {len(df)}")
-print(f"Dataset columns: {len(df.columns)}")
-print("Loading dataset into PostgreSQL...")
-
-# Create the table and insert all records
-df.to_sql(
-    name="sensor_readings",
-    con=engine,
-    if_exists="fail",
-    index=False,
-    chunksize=1000,
+database_url = URL.create(
+    drivername="postgresql+psycopg",
+    username=os.getenv("DB_USER", "irrigation_user"),
+    password=db_password,
+    host=os.getenv("DB_HOST", "localhost"),
+    port=int(os.getenv("DB_PORT", "5433")),
+    database=os.getenv("DB_NAME", "smart_irrigation_db"),
 )
+engine = create_engine(database_url, pool_pre_ping=True)
 
-print("Dataset loaded successfully!")
-print("Table name: sensor_readings")
-print(f"Rows inserted: {len(df)}")
-print(f"Columns stored: {len(df.columns)}")
+try:
+    with engine.begin() as connection:
+        if inspect(connection).has_table("sensor_readings"):
+            raise RuntimeError(
+                "sensor_readings already exists; refusing to import duplicates. "
+                "Back up and review the existing table before any replacement."
+            )
+        df.to_sql(
+            name="sensor_readings",
+            con=connection,
+            if_exists="fail",
+            index=False,
+            chunksize=1000,
+        )
+finally:
+    engine.dispose()
 
-engine.dispose()
+print(f"Imported {len(df)} historical records into sensor_readings.")
