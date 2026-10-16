@@ -1,0 +1,71 @@
+SMART IRRIGATION DATA CLEANING REPORT
+=============================================
+
+Input file: Smart_Irrigation_Final_8500_Rows.csv
+Output file: cleaned_dataset.csv
+Rows before cleaning: 8500
+Rows after cleaning: 8500
+Columns before cleaning: 36
+Columns after cleaning: 36
+Missing cells before: 0
+Missing cells after text cleanup: 0
+Missing cells after cleaning: 0
+Exact duplicate rows before: 0
+Duplicate rows removed: 0
+Exact duplicate rows after: 0
+
+TIMESTAMP CHECKS
+---------------------------------------------
+timestamp: 0 invalid timestamps
+
+ID DUPLICATE CHECKS
+---------------------------------------------
+synthetic_record_number: 0 duplicate IDs
+sensor_id: 8450 duplicate IDs
+
+RANGE CHECKS
+---------------------------------------------
+soil_moisture: 0 out-of-range values
+
+MISSING VALUES BY COLUMN
+---------------------------------------------
+synthetic_record_number: 0 missing values
+timestamp: 0 missing values
+field_id: 0 missing values
+sensor_id: 0 missing values
+label: 0 missing values
+growth_stage: 0 missing values
+crop_density: 0 missing values
+soil_type: 0 missing values
+soil_moisture: 0 missing values
+n: 0 missing values
+p: 0 missing values
+k: 0 missing values
+ph: 0 missing values
+organic_matter: 0 missing values
+temperature_c: 0 missing values
+temperature: 0 missing values
+humidity_percent: 0 missing values
+humidity: 0 missing values
+rainfall_mm_per_hr: 0 missing values
+rainfall: 0 missing values
+rain_probability_percent: 0 missing values
+sunlight_exposure: 0 missing values
+wind_speed: 0 missing values
+co2_concentration: 0 missing values
+frost_risk: 0 missing values
+urban_area_proximity: 0 missing values
+pest_pressure: 0 missing values
+fertilizer_usage: 0 missing values
+irrigation_status: 0 missing values
+irrigation_frequency: 0 missing values
+irrigation_duration_minutes: 0 missing values
+water_used_liters: 0 missing values
+water_usage_efficiency: 0 missing values
+water_source_type: 0 missing values
+sensor_status: 0 missing values
+data_origin: 0 missing values
+
+DATA NOTE
+---------------------------------------------
+Cleaning checks do not prove that every value is accurate or realistic. Confirm column meanings, units, and data origin before using the dataset for analysis.
