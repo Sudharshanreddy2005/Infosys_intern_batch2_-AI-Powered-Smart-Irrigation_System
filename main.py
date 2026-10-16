@@ -1,7 +1,8 @@
+
 import os
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -18,24 +19,51 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./smart_irrigation.db")
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "sqlite:///./smart_irrigation.db",
+)
 
-app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+if DATABASE_URL.startswith("sqlite"):
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False},
+    )
+else:
+    engine = create_engine(DATABASE_URL)
+
+# Serve frontend assets when the directory exists.
+STATIC_DIR = BASE_DIR / "static"
+if STATIC_DIR.is_dir():
+    app.mount(
+        "/static",
+        StaticFiles(directory=str(STATIC_DIR)),
+        name="static",
+    )
 
 
 @app.get("/")
 def serve_dashboard():
-    return FileResponse(BASE_DIR / "templates" / "index.html")
+    index_file = BASE_DIR / "templates" / "index.html"
+
+    if index_file.is_file():
+        return FileResponse(index_file)
+
+    return {
+        "message": "Welcome to the Smart Irrigation System!",
+        "status": "Backend is running successfully",
+    }
 
 
 @app.get("/api/dashboard")
 def dashboard_data():
+    # Demo values only; replace with real API/database values
+    # when those integrations are connected.
     return {
         "greeting": "Namaste, Ramesh!",
         "hero_title": "Smart Water. Healthy Crops. Stronger Farmers.",
@@ -76,7 +104,10 @@ def dashboard_data():
             "status": "Needs Water",
             "time": "Today, 5:00 PM",
             "duration": "2 hours",
-            "message": "Based on soil moisture (18%) and weather forecast, irrigate 2 hours today to maintain optimal crop health.",
+            "message": (
+                "Based on soil moisture (18%) and weather forecast, "
+                "irrigate 2 hours today to maintain optimal crop health."
+            ),
         },
         "season": {
             "name": "Kharif Season 2024",
@@ -99,9 +130,46 @@ def test_database():
     try:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
+
         return {"database": "connected successfully"}
-    except Exception as exc:  # pragma: no cover - runtime only
-        return {"database": "connection failed", "error": str(exc)}
+
+    except Exception:
+        raise HTTPException(
+            status_code=503,
+            detail="Database connection failed",
+        )
+
+
+@app.get("/sensor-readings")
+def get_sensor_readings(
+    limit: int = Query(default=10, ge=1, le=100),
+):
+    try:
+        with engine.connect() as connection:
+            result = connection.execute(
+                text(
+                    """
+                    SELECT *
+                    FROM sensor_readings
+                    ORDER BY synthetic_record_number
+                    LIMIT :limit
+                    """
+                ),
+                {"limit": limit},
+            )
+
+            rows = result.mappings().all()
+
+            return {
+                "count": len(rows),
+                "data": [dict(row) for row in rows],
+            }
+
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Could not retrieve sensor readings",
+        )
 
 
 if __name__ == "__main__":
