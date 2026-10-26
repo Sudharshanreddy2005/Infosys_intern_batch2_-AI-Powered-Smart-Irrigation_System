@@ -8,6 +8,7 @@
     { id: "sample-south", name: "Field 3 - South Field", location: "South Field", crop: "Ragi", area: 1.75, areaUnit: "acres", moisture: null, moistureSource: "demonstration", lastIrrigated: "", plantingDate: "", boundary: null },
   ];
   let memoryFields = seedFields;
+  let serverFields = [];
   let persistenceWarning = "";
 
   const normalize = (value) => {
@@ -81,6 +82,65 @@
     return { ...existing };
   };
 
+  const fromServer = (field) => ({
+    id: String(field.id),
+    name: field.name,
+    location: field.location || "",
+    crop: field.crop || "",
+    area: Number(field.area),
+    areaUnit: field.area_unit,
+    moisture: null,
+    moistureSource: "server",
+    lastIrrigated: "",
+    plantingDate: "",
+    boundary: null,
+  });
+
+  const loadServerFields = async () => {
+    const records = await window.JalSaathiProfile.apiRequest("/api/fields");
+    if (!Array.isArray(records)) throw new Error("The field response has an invalid format.");
+    serverFields = records.map(fromServer);
+    window.dispatchEvent(new CustomEvent("jalsaathi:fields-changed", { detail: getServerFields() }));
+    return getServerFields();
+  };
+
+  const serverPayload = (field) => ({
+    name: field.name,
+    location: field.location || null,
+    crop: field.crop || null,
+    area: Number(field.area),
+    area_unit: field.areaUnit,
+  });
+
+  const addServerField = async (field) => {
+    const created = await window.JalSaathiProfile.apiRequest("/api/fields", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(serverPayload(field)),
+    });
+    await loadServerFields();
+    return fromServer(created);
+  };
+
+  const updateServerField = async (id, field) => {
+    const updated = await window.JalSaathiProfile.apiRequest(`/api/fields/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(serverPayload(field)),
+    });
+    await loadServerFields();
+    return fromServer(updated);
+  };
+
+  const deleteServerField = async (id) => {
+    const existing = serverFields.find((field) => field.id === id);
+    await window.JalSaathiProfile.apiRequest(`/api/fields/${encodeURIComponent(id)}`, { method: "DELETE" });
+    await loadServerFields();
+    return existing || null;
+  };
+
+  const getServerFields = () => serverFields.map((field) => ({ ...field }));
+
   load();
   window.addEventListener("storage", (event) => {
     if (event.key !== STORAGE_KEY || event.newValue === null) return;
@@ -92,5 +152,16 @@
       console.error("JalSaathi field data sync failed:", error);
     }
   });
-  window.JalSaathiFieldStore = { getFields, getPersistenceWarning, addField, updateField, deleteField };
+  window.JalSaathiFieldStore = {
+    getFields,
+    getPersistenceWarning,
+    addField,
+    updateField,
+    deleteField,
+    getServerFields,
+    loadServerFields,
+    addServerField,
+    updateServerField,
+    deleteServerField,
+  };
 })();

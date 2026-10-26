@@ -2,7 +2,7 @@
 
 ## Summary
 
-The backend now serves the bundled dashboard and static assets, exposes bounded historical sensor readings with provenance, and provides configurable Tomorrow.io current-weather and forecast endpoints. The frontend labels browser-local examples and historical synthetic/augmented records honestly; it no longer presents placeholder weather, soil readings, irrigation schedules, alerts, or season progress as live data.
+The backend serves the bundled dashboard and static assets, exposes bounded historical sensor readings with provenance, and provides configurable Tomorrow.io current-weather and forecast endpoints. The latest local changes add Argon2-backed farmer accounts, server-side sessions, CSRF/origin checks, owner-scoped field/crop CRUD, and opt-in coordinate weather requests. The latest changes are tested locally but have not been deployed.
 
 The existing PostgreSQL container and volume were not changed. No credentials were changed and no data was imported. After approval, only the backend container was recreated; it is healthy and serving the rebuilt image on port 8000.
 
@@ -11,26 +11,33 @@ The existing PostgreSQL container and volume were not changed. No credentials we
 | Area | Status | Evidence |
 |---|---|---|
 | PostgreSQL data preservation | PASS | Read-only inspection found 8,500 `sensor_readings`, 100 distinct `field_id` values, and one `synthetic_or_synthetic_augmented` origin. Existing `/db-test` returned HTTP 200. |
-| Historical readings API | PASS | Returns newest timestamp-first records, limits requests to 100 rows, and marks data as historical and not live. My Fields displays these independently of browser-local sample fields because no verified field-ID mapping exists. |
+| Historical readings API | PASS | Returns newest timestamp-first records, limits requests to 100 rows, and marks data as historical and not live. My Fields displays historical sensor records separately from the signed-in farmer's fields; dataset `field_id` values are not treated as farmer field IDs. |
 | Frontend serving and image contents | PASS | `/` and `/management` serve HTML; Docker image includes templates, static assets, and the weather package. All checked local asset references resolved. |
 | Weather integration | PASS (mocked/configuration only) | Package-safe imports, configurable location/key, bounded timeout/retries, cache/stale metadata, and sanitized errors are implemented. Missing configuration produces an explicit unavailable response. No provider key was available for a live-provider test. |
 | My Fields behavior | PASS | Sensor history has loading, empty/error, retry, provenance, and recent-record states. Browser testing confirmed populated history and no horizontal overflow at a 390px viewport. |
-| Field and crop persistence | BLOCKED | The existing UI stores field/profile examples in browser storage only. Farmer/field/crop database APIs and a confirmed schema are absent; no schema or migration was invented. The separate management page now states that its forms cannot save and disables them. |
-| Authentication and authorization | BLOCKED | Authentication is frontend-demo-only; there is no backend account or access-control implementation. |
+| Field and crop persistence | PASS (local implementation) | Additive SQLAlchemy models and owner-filtered `/api/fields` and `/api/crops` CRUD endpoints are implemented; crop links are validated against owned fields. Authenticated fields and crops load from APIs. Existing localStorage data is not deleted or shown as account data. |
+| Authentication and authorization | PASS (local implementation) | Registration/login use Argon2 password hashes, high-entropy cookie sessions stored by digest, expiry checks, HttpOnly/SameSite cookies, a CSRF cookie/header pair, origin validation, generic login errors, and bounded per-IP auth attempts. Profile and logout APIs are connected to the UI. |
 | Live sensor ingestion and irrigation recommendations | BLOCKED | No live sensor ingestion or recommendation engine is connected. The UI no longer presents fabricated readings or watering instructions. |
-| Deployment on the existing service | PASS | With approval, only the backend container was recreated. It is healthy; `/ready` and `/` return HTTP 200, and `/sensor-readings?limit=1` returns the stored synthetic/augmented provenance. PostgreSQL remained healthy and was not recreated. |
+| Prior deployment | PASS (previous code) | With prior approval, only the backend container was recreated. The PostgreSQL volume remained untouched. That deployment predates the authentication and CRUD implementation described here. |
+| Current implementation deployment | NOT DEPLOYED | The latest code changes have not been applied to the running backend. The existing PostgreSQL volume and current service have not been changed during this implementation. |
 
 ## Validation
 
-- `python -m pytest tests weather_api/integrations/test_cache.py` — 9 passed. The installed Starlette/httpx combination emits a deprecation warning; tests still pass.
-- Python compile checks, JavaScript syntax checks (including the management page's inline script), and `git diff --check` passed.
-- `docker compose config -q` and `docker compose build backend` passed.
-- The built image imported successfully with its frontend and weather assets present.
-- Browser smoke checks covered dashboard unavailable states, real historical-row rendering against an isolated SQLite fixture, weather unavailable states, disabled management forms, and mobile-width layout.
-- Live checks after deployment: `/ready` and `/` returned HTTP 200; the sensor endpoint returned one newest record with `is_live=false`; `/weather/current` and `/weather/forecast?hours=1` returned HTTP 503 because weather configuration is absent. The PostgreSQL container remained healthy and running; the existing `/health` and `/db-test` had also returned HTTP 200 before deployment.
+Current local implementation checks:
+
+- `python -m pytest tests\test_auth.py tests\test_api.py weather_api\integrations\test_cache.py -q` — 16 passed. The installed Starlette/httpx combination emits a deprecation warning; tests still pass.
+- Python compile checks and JavaScript syntax checks passed.
+- Docker image built successfully with the new models and schemas; an isolated container import reported 30 FastAPI routes.
+- New auth tests cover registration, hash-only session storage, login, expiry, CSRF/origin validation, owner isolation, field/crop create-update-delete, and profile updates. Weather tests cover coordinate validation and no-cache POST behavior.
+
+Previous deployment checks (for the earlier backend image):
+
+- Docker Compose configuration and backend image build passed before the latest auth/CRUD changes.
+- Browser smoke checks covered the earlier dashboard, historical sensor rows, weather unavailable states, disabled management forms, and mobile-width layout.
+- `/ready`, `/`, and sensor history were checked after the previous deployment. These results do not validate or deploy the current implementation.
 
 ## Preservation and follow-up
 
-The importer now refuses to load `cleaned_dataset.csv` if `sensor_readings` already exists. Do not remove the PostgreSQL volume or change the database password as part of deployment. The backend is active; configure `TOMORROW_API_KEY` and `WEATHER_LOCATION` to enable live weather.
+The importer now refuses to load `cleaned_dataset.csv` if `sensor_readings` already exists. Do not remove the PostgreSQL volume or change the database password as part of deployment. Configure `TOMORROW_API_KEY` and `WEATHER_LOCATION` to enable configured-location weather. The running service still uses its previously deployed image until the new backend is deliberately deployed.
 
-Live weather requires `TOMORROW_API_KEY` and `WEATHER_LOCATION`. Persistent farmer/field/crop CRUD requires a reviewed schema and migration plan; real authentication, sensor ingestion, and an irrigation model remain separate implementation work.
+Future schema evolution beyond additive table creation requires reviewed migrations. Live sensor ingestion and an irrigation model remain separate implementation work.

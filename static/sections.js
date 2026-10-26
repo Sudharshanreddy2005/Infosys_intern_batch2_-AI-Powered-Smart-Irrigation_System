@@ -1,13 +1,13 @@
-(() => {
+(async () => {
   const views = {
     fields: {
       title: "My Fields",
-      subtitle: "Browser-local field examples and historical sensor records.",
+      subtitle: "Manage your account's saved fields and historical sensor records.",
       render: `
         <div class="portal-page-heading">
-          <div><h1>My Fields</h1><p>Field examples are saved in this browser only; sensor records below are historical dataset values, not live readings.</p></div>
+          <div><h1>My Fields</h1><p>Your fields are saved to your JalSaathi account. Sensor records below are historical dataset values, not live readings.</p></div>
           <div class="portal-fields-heading-actions">
-            <span class="portal-demo-tag">Frontend demonstration persistence</span>
+            <span class="portal-demo-tag">Account-saved fields</span>
             <button class="portal-action portal-add-field" type="button" data-open-add-field>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
               Add Field
@@ -25,7 +25,7 @@
             </div>
           </section>
           <section class="portal-card portal-card--padded">
-            <div class="portal-card-heading"><h2>Browser-local fields</h2><span class="portal-muted">Not server-backed</span></div>
+            <div class="portal-card-heading"><h2>Your fields</h2><span class="portal-muted">Saved to your account</span></div>
             <div class="portal-field-list" data-field-list></div>
             <div class="portal-field-empty" data-field-empty hidden>
               <strong>No fields yet</strong>
@@ -41,7 +41,7 @@
               <div><p class="portal-eyebrow">FIELD DETAILS</p><h2 id="portal-add-title" data-add-title>Add Field</h2></div>
               <button class="portal-dialog-close" type="button" data-close-add aria-label="Close Add Field form">&times;</button>
             </div>
-            <p class="portal-dialog-description">Fields are saved in this browser for demonstration only; they are not stored on a server.</p>
+            <p class="portal-dialog-description">Field details are saved to your JalSaathi account.</p>
             <div class="portal-form-grid">
               <label class="portal-form-field">Field Name
                 <input name="name" type="text" maxlength="80" required autocomplete="off" />
@@ -63,26 +63,12 @@
                   </select>
                 </div>
               </div>
-              <label class="portal-form-field">Manually entered moisture % <span class="portal-form-optional">(optional; not sensor data)</span>
-                <input name="moisture" type="number" min="0" max="100" step="1" inputmode="numeric" />
-              </label>
-              <label class="portal-form-field">Planting Date <span class="portal-form-optional">(optional)</span>
-                <input name="plantingDate" type="date" />
-              </label>
-              <label class="portal-form-field">Last Irrigated Date <span class="portal-form-optional">(optional)</span>
-                <input name="lastIrrigated" type="date" />
-              </label>
-              <label class="portal-form-field portal-form-field--wide">Field Boundary on Map <span class="portal-form-optional">(optional)</span>
-                <input name="boundary" type="text" placeholder="12,20; 38,18; 44,60" autocomplete="off" />
-                <small>Enter 3 or more map points as X,Y percentages (0-100), separated by semicolons.</small>
-              </label>
             </div>
             <p class="portal-form-error" data-add-error role="alert" hidden></p>
             <div class="portal-dialog-actions">
               <button class="portal-secondary-action" type="button" data-cancel-add>Cancel</button>
               <button class="portal-action" type="submit" data-add-submit>Save Field</button>
             </div>
-            <p class="portal-dialog-description">Manually entered moisture is user-provided and is not verified against a sensor.</p>
           </form>
         </dialog>
         <section class="portal-card portal-table-card portal-section-gap" aria-labelledby="sensor-history-title">
@@ -111,12 +97,29 @@
     },
     crops: {
       title: "Crops",
-      subtitle: "Crop information derived from your saved field records.",
+      subtitle: "Crop information saved to your JalSaathi account.",
       render: `
         <div class="portal-page-heading">
-          <div><h1>Crops</h1><p>Crop information for the fields in your dashboard.</p></div>
-          <span class="portal-demo-tag">Frontend demonstration data</span>
+          <div><h1>Crops</h1><p>Crop information for the fields in your account.</p></div>
+          <span class="portal-demo-tag">Account data</span>
         </div>
+        <section class="portal-card portal-card--padded portal-section-gap">
+          <form data-crop-form class="portal-form-grid">
+            <label class="portal-form-field">Crop name<input name="name" maxlength="80" required /></label>
+            <label class="portal-form-field">Variety<input name="variety" maxlength="100" /></label>
+            <label class="portal-form-field">Field
+              <select name="field_id" data-crop-field-options><option value="">No field selected</option></select>
+            </label>
+            <label class="portal-form-field">Growth stage<input name="growth_stage" maxlength="80" /></label>
+            <label class="portal-form-field">Planting date<input name="planting_date" type="date" /></label>
+            <label class="portal-form-field">Expected harvest date<input name="expected_harvest_date" type="date" /></label>
+            <p class="portal-form-error" data-crop-error role="alert" hidden></p>
+            <div class="portal-dialog-actions">
+              <button class="portal-action" type="submit" data-crop-submit>Save Crop</button>
+              <button class="portal-secondary-action" type="button" data-crop-cancel hidden>Cancel edit</button>
+            </div>
+          </form>
+        </section>
         <div class="portal-grid portal-grid--3" data-crop-list></div>
       `,
     },
@@ -133,11 +136,11 @@
     },
     reports: {
       title: "Reports",
-      subtitle: "Field and crop summaries from the shared demonstration records.",
+      subtitle: "Field summaries from your JalSaathi account.",
       render: `
         <div class="portal-page-heading">
           <div><h1>Reports</h1><p>Filterable field summary; only supplied readings and history are shown.</p></div>
-          <span class="portal-demo-tag">Frontend demonstration data</span>
+          <span class="portal-demo-tag">Account data</span>
         </div>
         <section class="portal-card portal-table-card portal-section-gap">
           <div class="portal-card-heading"><h2>Field report</h2><span class="portal-muted">No historical readings are fabricated</span></div>
@@ -170,37 +173,52 @@
       subtitle: "Current conditions and hourly forecasts from Tomorrow.io, when configured.",
       render: `
         <div class="portal-page-heading">
-          <div><h1>Weather</h1><p>Values are not available until the provider key and weather location are configured.</p></div>
+          <div><h1>Weather</h1><p>Weather uses your current location when available, or the configured location. You can also choose a place manually.</p></div>
           <span class="portal-demo-tag" data-weather-status>Loading</span>
         </div>
-        <section class="portal-card portal-weather-hero">
-          <div><div class="portal-weather-place" data-weather-location>Not configured</div><div class="portal-temperature" data-weather-temperature>Unavailable</div><div class="portal-weather-condition" data-weather-observation>Current provider observation unavailable</div></div>
-          <div class="portal-weather-icon" aria-hidden="true">
-            <svg viewBox="0 0 72 72" width="78" height="78"><circle cx="27" cy="24" r="12" fill="#f4bf59"/><path d="M20 52h35a10 10 0 0 0 0-20 14 14 0 0 0-26-4 12 12 0 0 0-9 24Z" fill="#fff" stroke="#c5dfea" stroke-width="3"/><path d="M32 58v5m12-5v5" stroke="#77b9d4" stroke-width="3" stroke-linecap="round"/></svg>
+        <section class="portal-card portal-card--padded portal-section-gap">
+          <form data-weather-location-form class="portal-weather-location-form">
+            <label class="portal-form-field">Manual location
+              <input name="location" maxlength="100" placeholder="City or place name" autocomplete="address-level2" required />
+            </label>
+            <button class="portal-action" type="submit">Get weather for this location</button>
+          </form>
+        </section>
+        <section data-weather-view>
+          <section class="portal-card portal-weather-hero">
+            <div><div class="portal-weather-place" data-weather-location>Finding location…</div><div class="portal-temperature" data-weather-temperature>Loading…</div><span class="portal-temperature-indicator" data-weather-temperature-indicator aria-hidden="true" hidden></span><div class="portal-weather-condition" data-weather-condition>Loading weather…</div><p class="portal-weather-condition">Feels like <strong data-weather-feels-like>Loading…</strong></p><p class="portal-weather-condition">High / low <strong data-weather-high-low>Loading…</strong></p><p class="portal-weather-condition">Updated <span data-weather-updated>Loading…</span> · <span data-weather-observation>Loading</span></p></div>
+            <div class="portal-weather-icon" aria-hidden="true">
+              <svg viewBox="0 0 72 72" width="78" height="78"><circle cx="27" cy="24" r="12" fill="#f4bf59"/><path d="M20 52h35a10 10 0 0 0 0-20 14 14 0 0 0-26-4 12 12 0 0 0-9 24Z" fill="#fff" stroke="#c5dfea" stroke-width="3"/><path d="M32 58v5m12-5v5" stroke="#77b9d4" stroke-width="3" stroke-linecap="round"/></svg>
+            </div>
+          </section>
+          <div class="portal-weather-stats portal-section-gap">
+            <div class="portal-card portal-weather-stat"><span>Humidity</span><strong data-weather-humidity>Loading…</strong></div>
+            <div class="portal-card portal-weather-stat"><span>Wind speed</span><strong data-weather-wind>Loading…</strong></div>
+            <div class="portal-card portal-weather-stat"><span>Rainfall intensity</span><strong data-weather-rainfall>Loading…</strong></div>
+            <div class="portal-card portal-weather-stat"><span>Rain probability</span><strong data-weather-rain-probability>Loading…</strong></div>
           </div>
         </section>
-        <div class="portal-weather-stats portal-section-gap">
-          <div class="portal-card portal-weather-stat"><span>Humidity</span><strong data-weather-humidity>Unavailable</strong></div>
-          <div class="portal-card portal-weather-stat"><span>Wind speed</span><strong data-weather-wind>Unavailable</strong></div>
-          <div class="portal-card portal-weather-stat"><span>Rainfall intensity</span><strong data-weather-rainfall>Unavailable</strong></div>
-        </div>
         <section class="portal-card portal-table-card portal-section-gap">
           <div class="portal-card-heading"><h2>Hourly forecast</h2><span class="portal-muted" data-forecast-status>Loading forecast…</span></div>
-          <div class="portal-table-wrap"><table class="portal-table"><thead><tr><th>Time</th><th>Temperature</th><th>Rainfall</th><th>Rain probability</th></tr></thead><tbody data-forecast-rows></tbody></table></div>
+          <div class="portal-table-wrap"><table class="portal-table"><thead><tr><th>Time</th><th>Temperature</th><th>Feels like</th><th>Precipitation intensity</th><th>Rain probability</th></tr></thead><tbody data-forecast-rows></tbody></table></div>
+        </section>
+        <section class="portal-card portal-table-card portal-section-gap">
+          <div class="portal-card-heading"><h2>Daily forecast</h2><span class="portal-muted" data-daily-forecast-status>Loading forecast…</span></div>
+          <div class="portal-table-wrap"><table class="portal-table"><thead><tr><th>Day</th><th>Condition</th><th>High</th><th>Low</th><th>Rain probability</th></tr></thead><tbody data-daily-forecast-rows></tbody></table></div>
         </section>
       `,
     },
     profile: {
       title: "Profile",
-      subtitle: "Your JalSaathi profile preview and account access.",
+      subtitle: "Your JalSaathi profile and account settings.",
       render: `
         <div class="portal-page-heading">
           <div><h1>Profile</h1><p>Farmer profile information shown in this dashboard preview.</p></div>
-          <span class="portal-demo-tag">Demo profile</span>
+          <span class="portal-demo-tag">Account profile</span>
         </div>
         <section class="portal-card portal-profile-card" data-profile-private hidden>
           <div class="portal-profile-cover"></div>
-          <div class="portal-profile-head"><div class="portal-avatar" data-profile-initial aria-hidden="true">F</div><div><h2 data-profile-name>Farmer</h2><p>Temporary frontend demo session</p></div></div>
+          <div class="portal-profile-head"><div class="portal-avatar" data-profile-initial aria-hidden="true">F</div><div><h2 data-profile-name>Farmer</h2><p>JalSaathi farmer account</p></div></div>
           <form class="portal-profile-name-form" data-profile-name-form>
             <label class="portal-form-field">Your name
               <input name="displayName" type="text" maxlength="80" required autocomplete="name" />
@@ -211,19 +229,19 @@
           <div class="portal-profile-body">
             <div class="portal-profile-detail"><span>Email</span><strong data-profile-email>Not provided</strong></div>
             <div class="portal-profile-detail"><span>Phone</span><strong data-profile-phone>Not provided</strong></div>
-            <div class="portal-profile-detail"><span>Location</span><strong>Not provided</strong></div>
+            <div class="portal-profile-detail"><span>Location</span><strong data-profile-location>Not provided</strong></div>
             <div class="portal-profile-detail"><span>Preferred language</span><strong>English</strong></div>
-            <div class="portal-profile-detail"><span>Managed fields</span><strong>Browser-local examples only</strong></div>
-            <div class="portal-profile-detail"><span>Account status</span><strong>Temporary frontend demo session</strong></div>
+            <div class="portal-profile-detail"><span>Managed fields</span><strong>Account-saved fields</strong></div>
+            <div class="portal-profile-detail"><span>Account status</span><strong>Active</strong></div>
           </div>
         </section>
         <section class="portal-card portal-card--padded portal-profile-logged-out" data-profile-logged-out hidden>
           <h2>Sign in to view your profile</h2>
-          <p class="portal-muted">Profile details are only shown while your temporary demo session is active.</p>
+          <p class="portal-muted">Sign in to view and update your account profile.</p>
           <a class="portal-action" href="/static/auth.html?view=login">Open Login</a>
         </section>
         <section class="portal-card portal-profile-access portal-section-gap">
-          <div><h2>Account access</h2><p class="portal-muted">Frontend demo session only. No real account is authenticated.</p></div>
+          <div><h2>Account access</h2><p class="portal-muted">Your account is protected by a server-side session.</p></div>
           <a class="portal-action" href="/static/auth.html?view=login">Open Sign In</a>
         </section>
       `,
@@ -237,6 +255,18 @@
   const content = document.getElementById("portal-content");
 
   if (!(content instanceof HTMLElement)) return;
+
+  try {
+    const profile = await window.JalSaathiProfile.refreshProfile();
+    if (!profile) {
+      window.location.replace("/static/auth.html?view=login");
+      return;
+    }
+  } catch (error) {
+    console.error("JalSaathi account could not be verified:", error);
+    content.textContent = "Your account could not be verified. Please retry.";
+    return;
+  }
 
   content.innerHTML = page.render;
   document.title = `JalSaathi | ${page.title}`;
@@ -261,8 +291,8 @@
   renderGreeting();
   window.addEventListener("jalsaathi:profile-changed", renderGreeting);
 
-  function initializeFieldsView(fieldsRoot) {
-    let fields = window.JalSaathiFieldStore.getFields();
+  async function initializeFieldsView(fieldsRoot) {
+    let fields = window.JalSaathiFieldStore.getServerFields();
     const fieldList = fieldsRoot.querySelector("[data-field-list]");
     const boundaries = fieldsRoot.querySelector("[data-map-boundaries]");
     const pins = fieldsRoot.querySelector("[data-map-pins]");
@@ -315,19 +345,13 @@
 
     const fieldBoundary = (field, index) => field.boundary || fallbackBoundary(index);
     const fieldStatus = (field) => {
-      if (field.moisture === null || field.moisture === undefined) return { label: "No sensor data", className: "portal-status--neutral" };
-      return { label: "User-entered", className: "portal-status--neutral" };
+      return { label: "Account saved", className: "portal-status--neutral" };
     };
     const fieldDetails = (field) => {
       const items = [
-        `<span>${escapeHtml(field.crop)}</span>`,
+        `<span>${escapeHtml(field.crop || "Crop not set")}</span>`,
         `<span data-user-content>${escapeHtml(field.location)}</span>`,
         `${window.JalSaathiI18n.formatNumber(field.area)} ${escapeHtml(field.areaUnit)}`,
-        field.lastIrrigated ? `Last irrigated ${escapeHtml(formatDate(field.lastIrrigated))}` : "Last irrigated date not set",
-        field.plantingDate ? `Planted ${escapeHtml(formatDate(field.plantingDate))}` : "Planting date not set",
-        field.moisture === null || field.moisture === undefined
-          ? "Moisture not set"
-          : `${window.JalSaathiI18n.formatNumber(field.moisture)}% ${field.moistureSource === "demonstration" ? "sample moisture" : "user-provided moisture"}`,
       ];
       return items.join(" · ");
     };
@@ -409,30 +433,14 @@
       addError.textContent = "";
     });
 
-    addForm.addEventListener("submit", (event) => {
+    addForm.addEventListener("submit", async (event) => {
       event.preventDefault();
       addError.hidden = true;
       addError.textContent = "";
 
-      const boundaryInput = addForm.elements.namedItem("boundary");
-      let parsedBoundary = null;
-      if (boundaryInput instanceof HTMLInputElement && boundaryInput.value.trim()) {
-        const pairs = boundaryInput.value.trim().split(";").map((pair) => pair.trim());
-        parsedBoundary = pairs.map((pair) => {
-          const match = pair.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
-          return match ? [Number(match[1]), Number(match[2])] : null;
-        });
-        if (parsedBoundary.length < 3 || parsedBoundary.some((point) => !point || point.some((coordinate) => coordinate < 0 || coordinate > 100))) {
-          addError.textContent = "Enter at least three valid map points in X,Y format, each between 0 and 100.";
-          addError.hidden = false;
-          boundaryInput.focus();
-          return;
-        }
-      }
-
       if (!addForm.checkValidity()) {
         const invalidInput = addForm.querySelector(":invalid");
-        addError.textContent = "Check the required fields and make sure area and moisture values are valid.";
+        addError.textContent = "Check the required field details and area.";
         addError.hidden = false;
         if (invalidInput instanceof HTMLElement) invalidInput.focus();
         return;
@@ -446,22 +454,19 @@
         crop: String(formData.get("crop")),
         area: Number(formData.get("area")),
         areaUnit: String(formData.get("areaUnit")),
-        moisture: formData.get("moisture") === "" ? null : Number(formData.get("moisture")),
-        moistureSource: "user-provided",
-        plantingDate: String(formData.get("plantingDate") || ""),
-        lastIrrigated: String(formData.get("lastIrrigated") || ""),
-        boundary: boundaryInput instanceof HTMLInputElement && boundaryInput.value.trim() ? parsedBoundary : existing?.boundary || null,
       };
-      const field = existing
-        ? window.JalSaathiFieldStore.updateField(existing.id, fieldValues)
-        : window.JalSaathiFieldStore.addField(fieldValues);
-      fields = window.JalSaathiFieldStore.getFields();
-      renderFields();
-      closeAddDialog();
-      const persistenceWarning = window.JalSaathiFieldStore.getPersistenceWarning();
-      showFeedback(persistenceWarning
-        ? `${field.name} changed in this page only. ${persistenceWarning}`
-        : existing ? `${field.name} was updated in this demonstration.` : `${field.name} was added to this demonstration.`);
+      try {
+        const field = existing
+          ? await window.JalSaathiFieldStore.updateServerField(existing.id, fieldValues)
+          : await window.JalSaathiFieldStore.addServerField(fieldValues);
+        fields = window.JalSaathiFieldStore.getServerFields();
+        renderFields();
+        closeAddDialog();
+        showFeedback(existing ? `${field.name} was updated.` : `${field.name} was added to your account.`);
+      } catch (error) {
+        addError.textContent = error instanceof Error ? error.message : "The field could not be saved.";
+        addError.hidden = false;
+      }
     });
 
     const openDeleteDialog = (id) => {
@@ -490,14 +495,10 @@
           addForm.dataset.editingId = field.id;
           fieldsRoot.querySelector("[data-add-title]")?.replaceChildren(document.createTextNode("Edit Field"));
           fieldsRoot.querySelector("[data-add-submit]")?.replaceChildren(document.createTextNode("Save Changes"));
-          for (const name of ["name", "location", "crop", "area", "areaUnit", "plantingDate", "lastIrrigated"]) {
+          for (const name of ["name", "location", "crop", "area", "areaUnit"]) {
             const input = addForm.elements.namedItem(name);
             if (input instanceof HTMLInputElement || input instanceof HTMLSelectElement) input.value = field[name] ?? "";
           }
-          const moistureInput = addForm.elements.namedItem("moisture");
-          if (moistureInput instanceof HTMLInputElement) moistureInput.value = field.moisture ?? "";
-          const boundaryInput = addForm.elements.namedItem("boundary");
-          if (boundaryInput instanceof HTMLInputElement) boundaryInput.value = field.boundary ? field.boundary.map(([x, y]) => `${x},${y}`).join("; ") : "";
           addError.hidden = true;
           addDialog.showModal();
         }
@@ -513,29 +514,35 @@
     deleteDialog.addEventListener("click", (event) => {
       if (event.target === deleteDialog) closeDeleteDialog();
     });
-    fieldsRoot.querySelector("[data-confirm-delete]")?.addEventListener("click", () => {
-      const field = window.JalSaathiFieldStore.deleteField(pendingDeleteId);
-      if (!field) {
-        closeDeleteDialog();
-        return;
+    fieldsRoot.querySelector("[data-confirm-delete]")?.addEventListener("click", async () => {
+      try {
+        const field = await window.JalSaathiFieldStore.deleteServerField(pendingDeleteId);
+        if (!field) {
+          closeDeleteDialog();
+          return;
+        }
+        fields = window.JalSaathiFieldStore.getServerFields();
+        pendingDeleteId = null;
+        deleteDialog.close();
+        renderFields();
+        showFeedback(`${field.name} was removed from your account.`);
+      } catch (error) {
+        showFeedback(error instanceof Error ? error.message : "The field could not be deleted.");
       }
-      const deletedName = field.name;
-      fields = window.JalSaathiFieldStore.getFields();
-      pendingDeleteId = null;
-      deleteDialog.close();
-      renderFields();
-      const persistenceWarning = window.JalSaathiFieldStore.getPersistenceWarning();
-      showFeedback(persistenceWarning ? `${deletedName} was removed in this page only. ${persistenceWarning}` : `${deletedName} was removed from this demonstration.`);
     });
 
-    renderFields();
     window.addEventListener("jalsaathi:fields-changed", () => {
-      fields = window.JalSaathiFieldStore.getFields();
+      fields = window.JalSaathiFieldStore.getServerFields();
       renderFields();
     });
     window.addEventListener("jalsaathi:language-changed", renderFields);
-    const warning = window.JalSaathiFieldStore.getPersistenceWarning();
-    if (warning) showFeedback(warning);
+    try {
+      fields = await window.JalSaathiFieldStore.loadServerFields();
+      renderFields();
+    } catch (error) {
+      renderFields();
+      showFeedback(error instanceof Error ? error.message : "Your fields could not be loaded.");
+    }
   }
 
   async function initializeSensorHistory(root) {
@@ -577,58 +584,8 @@
     await load();
   }
 
-  async function initializeWeatherView(root) {
-    const status = root.querySelector("[data-weather-status]");
-    const location = root.querySelector("[data-weather-location]");
-    const temperature = root.querySelector("[data-weather-temperature]");
-    const observation = root.querySelector("[data-weather-observation]");
-    const humidity = root.querySelector("[data-weather-humidity]");
-    const wind = root.querySelector("[data-weather-wind]");
-    const rainfall = root.querySelector("[data-weather-rainfall]");
-    const forecastStatus = root.querySelector("[data-forecast-status]");
-    const forecastRows = root.querySelector("[data-forecast-rows]");
-    if (!(status instanceof HTMLElement) || !(location instanceof HTMLElement) || !(temperature instanceof HTMLElement) || !(observation instanceof HTMLElement) || !(humidity instanceof HTMLElement) || !(wind instanceof HTMLElement) || !(rainfall instanceof HTMLElement) || !(forecastStatus instanceof HTMLElement) || !(forecastRows instanceof HTMLElement)) return;
-
-    const current = async () => {
-      try {
-        const response = await fetch("/weather/current");
-        if (!response.ok) throw new Error("Current weather is unavailable. Configure Tomorrow.io credentials and weather location.");
-        const data = await response.json();
-        location.textContent = data.location || "Configured location";
-        temperature.textContent = data.temperature_c == null ? "Not provided" : `${data.temperature_c}°C`;
-        observation.textContent = data.is_stale
-          ? `Cached observation · ${data.data_age_minutes} min old`
-          : data.observation_time || "Current provider observation";
-        humidity.textContent = data.humidity_percent == null ? "Not provided" : `${data.humidity_percent}%`;
-        wind.textContent = data.wind_speed_mps == null ? "Not provided" : `${data.wind_speed_mps} m/s`;
-        rainfall.textContent = data.rainfall_mm_per_hr == null ? "Not provided" : `${data.rainfall_mm_per_hr} mm/h`;
-        status.textContent = data.is_stale ? "Cached data" : "Provider data";
-      } catch (error) {
-        status.textContent = "Unavailable";
-        observation.textContent = error instanceof Error ? error.message : "Weather service unavailable.";
-      }
-    };
-
-    const forecast = async () => {
-      try {
-        const response = await fetch("/weather/forecast?hours=24");
-        if (!response.ok) throw new Error("Forecast is unavailable. Configure Tomorrow.io credentials and weather location.");
-        const payload = await response.json();
-        if (!Array.isArray(payload.data)) throw new Error("Forecast response has an invalid shape.");
-        forecastRows.innerHTML = payload.data.map((item) => `<tr>
-          <td>${escapeText(item.time || "Not provided")}</td>
-          <td>${escapeText(item.temperature_c == null ? "Not provided" : `${item.temperature_c}°C`)}</td>
-          <td>${escapeText(item.rainfall_mm_per_hr == null ? "Not provided" : `${item.rainfall_mm_per_hr} mm/h`)}</td>
-          <td>${escapeText(item.rain_probability_percent == null ? "Not provided" : `${item.rain_probability_percent}%`)}</td>
-        </tr>`).join("");
-        forecastStatus.textContent = payload.is_stale ? `Cached · ${payload.data_age_minutes} min old` : `${payload.hours} forecast hours`;
-        if (!payload.data.length) forecastStatus.textContent = "No hourly forecast returned.";
-      } catch (error) {
-        forecastStatus.textContent = error instanceof Error ? error.message : "Forecast unavailable.";
-      }
-    };
-
-    await Promise.all([current(), forecast()]);
+  function initializeWeatherView(root) {
+    window.JalSaathiWeather?.initializeWeatherPage(root);
   }
 
   function formatDate(value) {
@@ -643,39 +600,118 @@
     })[character]);
   }
 
-  function initializeCropsView(root) {
+  async function initializeCropsView(root) {
     const cropList = root.querySelector("[data-crop-list]");
-    if (!(cropList instanceof HTMLElement)) return;
+    const form = root.querySelector("[data-crop-form]");
+    const fieldOptions = root.querySelector("[data-crop-field-options]");
+    const errorNode = root.querySelector("[data-crop-error]");
+    if (!(cropList instanceof HTMLElement) || !(form instanceof HTMLFormElement) || !(fieldOptions instanceof HTMLSelectElement) || !(errorNode instanceof HTMLElement)) return;
     const imageForCrop = (crop) => {
       const name = crop.toLowerCase();
       if (name.includes("sugar")) return "/static/images/field-sugarcane.jpg";
       if (name.includes("ragi")) return "/static/images/field-ragi.jpg";
       return "/static/images/field-rice.jpg";
     };
+    let crops = [];
+    let fields = [];
     const render = () => {
-      const fields = window.JalSaathiFieldStore.getFields();
-      const crops = new Map();
-      fields.forEach((field) => {
-        const key = field.crop.trim().toLocaleLowerCase();
-        if (!crops.has(key)) crops.set(key, { name: field.crop, fields: [] });
-        crops.get(key).fields.push(field);
-      });
-      cropList.innerHTML = crops.size ? [...crops.values()].map((crop) => {
-        const associations = crop.fields.map((field) => {
-          const moisture = field.moisture === null || field.moisture === undefined
-            ? "Moisture not provided"
-            : `${field.moisture}% · ${field.moistureSource === "demonstration" ? "sample" : "user-provided (not sensor)"}`;
-          const unit = field.areaUnit === "hectares" ? "Hectares" : field.areaUnit === "acres" ? "Acres" : field.areaUnit;
-          return `<div class="portal-crop-association"><strong data-user-content>${escapeText(field.name)}</strong><span><span data-user-content>${escapeText(field.location)}</span> · ${window.JalSaathiI18n.formatNumber(field.area)} ${escapeText(unit)}</span><span>Planted: ${escapeText(formatDate(field.plantingDate))} · Moisture: ${escapeText(moisture)}</span><span>Growth stage: Not provided</span></div>`;
-        }).join("");
-        return `<article class="portal-card portal-field-card"><img class="portal-field-photo" src="${imageForCrop(crop.name)}" alt="${escapeText(crop.name)} field" /><div class="portal-field-content"><h2>${escapeText(crop.name)}</h2><p>${crop.fields.length} associated ${crop.fields.length === 1 ? "field" : "fields"}</p>${associations}<div class="portal-field-info"><span class="portal-info-chip">Status: No crop analysis</span></div></div></article>`;
-      }).join("") : `<section class="portal-card portal-card--padded portal-empty-note">No crops are associated with fields yet. Add a field and select its crop to see crop details here.</section>`;
+      cropList.innerHTML = crops.length ? crops.map((crop) => `<article class="portal-card portal-field-card">
+        <img class="portal-field-photo" src="${imageForCrop(crop.name)}" alt="${escapeText(crop.name)} field" />
+        <div class="portal-field-content"><h2>${escapeText(crop.name)}</h2>
+          <p>${escapeText(crop.variety || "Variety not provided")}</p>
+          <div class="portal-crop-association">
+            <span>Field: ${escapeText(fields.find((field) => String(field.id) === String(crop.field_id))?.name || "Not assigned")}</span>
+            <span>Planting: ${escapeText(formatDate(crop.planting_date))} · Expected harvest: ${escapeText(formatDate(crop.expected_harvest_date))}</span>
+            <span>Growth stage: ${escapeText(crop.growth_stage || "Not provided")}</span>
+          </div>
+          <button class="portal-secondary-action" type="button" data-edit-crop="${crop.id}">Edit crop</button>
+          <button class="portal-danger-action" type="button" data-delete-crop="${crop.id}">Delete crop</button>
+        </div>
+      </article>`).join("") : `<section class="portal-card portal-card--padded portal-empty-note">No crops are saved yet. Use the form above to add a crop.</section>`;
     };
-    render();
-    window.addEventListener("jalsaathi:fields-changed", render);
+    try {
+      fields = await window.JalSaathiFieldStore.loadServerFields();
+      fieldOptions.innerHTML = `<option value="">No field selected</option>${fields.map((field) => `<option value="${escapeText(field.id)}">${escapeText(field.name)}</option>`).join("")}`;
+      crops = await window.JalSaathiProfile.apiRequest("/api/crops");
+      render();
+    } catch (error) {
+      cropList.textContent = error instanceof Error ? error.message : "Crops could not be loaded.";
+      return;
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      errorNode.hidden = true;
+      if (!form.reportValidity()) return;
+      const data = new FormData(form);
+      const payload = Object.fromEntries(data.entries());
+      const cropId = form.dataset.editingId;
+      payload.field_id = payload.field_id ? Number(payload.field_id) : null;
+      for (const key of ["variety", "growth_stage", "planting_date", "expected_harvest_date"]) {
+        if (!payload[key]) payload[key] = null;
+      }
+      try {
+        const saved = await window.JalSaathiProfile.apiRequest(
+          cropId ? `/api/crops/${encodeURIComponent(cropId)}` : "/api/crops",
+          {
+          method: cropId ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          },
+        );
+        crops = cropId
+          ? crops.map((crop) => String(crop.id) === cropId ? saved : crop)
+          : [...crops, saved];
+        render();
+        form.reset();
+        delete form.dataset.editingId;
+        root.querySelector("[data-crop-submit]").textContent = "Save Crop";
+        root.querySelector("[data-crop-cancel]").hidden = true;
+      } catch (error) {
+        errorNode.textContent = error instanceof Error ? error.message : "The crop could not be saved.";
+        errorNode.hidden = false;
+      }
+    });
+
+    cropList.addEventListener("click", async (event) => {
+      if (!(event.target instanceof Element)) return;
+      const editButton = event.target.closest("[data-edit-crop]");
+      if (editButton instanceof HTMLButtonElement) {
+        const crop = crops.find((entry) => String(entry.id) === editButton.dataset.editCrop);
+        if (!crop) return;
+        form.dataset.editingId = String(crop.id);
+        for (const key of ["name", "variety", "field_id", "growth_stage", "planting_date", "expected_harvest_date"]) {
+          const control = form.elements.namedItem(key);
+          if (control instanceof HTMLInputElement || control instanceof HTMLSelectElement) control.value = crop[key] ?? "";
+        }
+        root.querySelector("[data-crop-submit]").textContent = "Update Crop";
+        root.querySelector("[data-crop-cancel]").hidden = false;
+        form.scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
+      const button = event.target.closest("[data-delete-crop]");
+      if (!(button instanceof HTMLButtonElement)) return;
+      button.disabled = true;
+      try {
+        await window.JalSaathiProfile.apiRequest(`/api/crops/${encodeURIComponent(button.dataset.deleteCrop)}`, { method: "DELETE" });
+        crops = crops.filter((crop) => String(crop.id) !== button.dataset.deleteCrop);
+        render();
+      } catch (error) {
+        button.disabled = false;
+        errorNode.textContent = error instanceof Error ? error.message : "The crop could not be deleted.";
+        errorNode.hidden = false;
+      }
+    });
+    root.querySelector("[data-crop-cancel]")?.addEventListener("click", () => {
+      form.reset();
+      delete form.dataset.editingId;
+      root.querySelector("[data-crop-submit]").textContent = "Save Crop";
+      root.querySelector("[data-crop-cancel]").hidden = true;
+      errorNode.hidden = true;
+    });
   }
 
-  function initializeReportsView(root) {
+  async function initializeReportsView(root) {
     const fieldSelect = root.querySelector("[data-report-field]");
     const cropSelect = root.querySelector("[data-report-crop]");
     const rows = root.querySelector("[data-report-rows]");
@@ -683,31 +719,36 @@
     if (!(fieldSelect instanceof HTMLSelectElement) || !(cropSelect instanceof HTMLSelectElement) || !(rows instanceof HTMLElement) || !(empty instanceof HTMLElement)) return;
 
     const render = () => {
-      const fields = window.JalSaathiFieldStore.getFields();
+      const fields = window.JalSaathiFieldStore.getServerFields();
       const selectedField = fieldSelect.value;
       const selectedCrop = cropSelect.value;
       fieldSelect.innerHTML = `<option value="all">All fields</option>${fields.map((field) => `<option data-user-content value="${escapeText(field.id)}">${escapeText(field.name)}</option>`).join("")}`;
-      const crops = [...new Map(fields.map((field) => [field.crop.toLocaleLowerCase(), field.crop])).values()];
+      const crops = [...new Map(fields.filter((field) => field.crop).map((field) => [field.crop.toLocaleLowerCase(), field.crop])).values()];
       cropSelect.innerHTML = `<option value="all">All crops</option>${crops.map((crop) => `<option value="${escapeText(crop)}">${escapeText(crop)}</option>`).join("")}`;
       if ([...fieldSelect.options].some((option) => option.value === selectedField)) fieldSelect.value = selectedField;
       if ([...cropSelect.options].some((option) => option.value.toLocaleLowerCase() === selectedCrop.toLocaleLowerCase())) cropSelect.value = selectedCrop;
       const filtered = fields.filter((field) =>
         (fieldSelect.value === "all" || field.id === fieldSelect.value) &&
-        (cropSelect.value === "all" || field.crop.toLocaleLowerCase() === cropSelect.value.toLocaleLowerCase())
+        (cropSelect.value === "all" || (field.crop || "").toLocaleLowerCase() === cropSelect.value.toLocaleLowerCase())
       );
       rows.innerHTML = filtered.map((field) => `<tr>
         <td><strong data-user-content>${escapeText(field.name)}</strong><br><span class="portal-muted" data-user-content>${escapeText(field.location)}</span></td>
-        <td>${escapeText(field.crop)}</td><td>${window.JalSaathiI18n.formatNumber(field.area)} ${escapeText(field.areaUnit)}</td>
-        <td>${escapeText(formatDate(field.plantingDate))}</td>
-        <td>${field.moisture === null || field.moisture === undefined ? "Not provided" : `${field.moisture}% · ${field.moistureSource === "demonstration" ? "sample" : "user-provided"}`}</td>
-        <td>${escapeText(formatDate(field.lastIrrigated))}</td><td>Not available</td>
+        <td>${escapeText(field.crop || "Not set")}</td><td>${window.JalSaathiI18n.formatNumber(field.area)} ${escapeText(field.areaUnit)}</td>
+        <td>Not recorded</td><td>Not recorded</td><td>Not recorded</td><td>Not available</td>
       </tr>`).join("");
       empty.hidden = filtered.length !== 0;
     };
     fieldSelect.addEventListener("change", render);
     cropSelect.addEventListener("change", render);
     window.addEventListener("jalsaathi:fields-changed", render);
-    render();
+    try {
+      await window.JalSaathiFieldStore.loadServerFields();
+      render();
+    } catch (error) {
+      rows.replaceChildren();
+      empty.textContent = error instanceof Error ? error.message : "Your fields could not be loaded.";
+      empty.hidden = false;
+    }
   }
 
   function initializeProfileView(root) {
@@ -719,30 +760,35 @@
     const loggedOut = root.querySelector("[data-profile-logged-out]");
     const emailNode = root.querySelector("[data-profile-email]");
     const phoneNode = root.querySelector("[data-profile-phone]");
+    const locationNode = root.querySelector("[data-profile-location]");
     const input = form?.elements.namedItem("displayName");
-    if (!(form instanceof HTMLFormElement) || !(profileName instanceof HTMLElement) || !(initial instanceof HTMLElement) || !(message instanceof HTMLElement) || !(input instanceof HTMLInputElement) || !(privateProfile instanceof HTMLElement) || !(loggedOut instanceof HTMLElement) || !(emailNode instanceof HTMLElement) || !(phoneNode instanceof HTMLElement)) return;
+    if (!(form instanceof HTMLFormElement) || !(profileName instanceof HTMLElement) || !(initial instanceof HTMLElement) || !(message instanceof HTMLElement) || !(input instanceof HTMLInputElement) || !(privateProfile instanceof HTMLElement) || !(loggedOut instanceof HTMLElement) || !(emailNode instanceof HTMLElement) || !(phoneNode instanceof HTMLElement) || !(locationNode instanceof HTMLElement)) return;
 
     const syncProfile = () => {
-      const session = window.JalSaathiProfile.getDemoSession();
+      const session = window.JalSaathiProfile.getProfile();
       privateProfile.hidden = !session;
       loggedOut.hidden = Boolean(session);
       if (!session) return;
-      const name = session.displayName;
+      const name = session.name;
       profileName.textContent = name;
       initial.textContent = name.trim().charAt(0).toLocaleUpperCase() || "?";
       input.value = name;
       emailNode.textContent = session.email || "Not provided";
       phoneNode.textContent = session.phone || "Not provided";
+      locationNode.textContent = [session.village, session.district, session.state].filter(Boolean).join(", ") || "Not provided";
     };
     syncProfile();
-    form.addEventListener("submit", (event) => {
+    form.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (!form.reportValidity()) return;
       try {
-        const updatedName = window.JalSaathiProfile.setDisplayName(input.value);
-        window.JalSaathiProfile.updateDemoSession({ displayName: updatedName });
-        message.textContent = window.JalSaathiProfile.getPersistenceWarning()
-          || `Your display name is now ${updatedName}. This is saved as frontend demonstration data in this browser.`;
+        const updated = await window.JalSaathiProfile.apiRequest("/api/auth/me", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: input.value.trim() }),
+        });
+        window.JalSaathiProfile.setCurrentProfile(updated);
+        message.textContent = "Your profile name was updated.";
       } catch (error) {
         message.textContent = error instanceof Error ? error.message : "Could not update the display name.";
       }

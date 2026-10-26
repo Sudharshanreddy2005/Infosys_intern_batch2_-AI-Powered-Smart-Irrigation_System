@@ -8,12 +8,12 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/static/auth.css?v=20261014-complete-language1" />
+    <link rel="stylesheet" href="/static/auth.css?v=20260620-account1" />
   </head>
   <body class="auth-body">
     <main class="auth-layout">
       <aside class="auth-visual" aria-label="JalSaathi information">
-        <a class="auth-brand" href="/" aria-label="JalSaathi dashboard">
+        <a class="auth-brand" href="/" aria-label="JalSaathi home">
           <span class="auth-logo" aria-hidden="true">
             <svg viewBox="0 0 64 64"><path d="M16 30c14-18 30-22 40-18C62 18 58 34 42 46c-10 8-22 10-32 8 2-9 4-18 6-24z" fill="#dfe8bf"></path><path d="M30 14c6 10 8 18 5 28M19 29c10 2 20-1 29-12M22 37c7 2 16 2 24-3" stroke="#0a5b46" stroke-width="3" stroke-linecap="round" fill="none"></path></svg>
           </span>
@@ -46,7 +46,7 @@
           <select class="auth-language-select" data-language-select aria-label="Select language"></select>
           <a class="back-home" href="/">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
-            Back to dashboard
+            Back home
           </a>
         </div>
 
@@ -62,8 +62,8 @@
             </div>
             <form data-auth-form="login" novalidate>
               <div class="form-field">
-                <label for="login-contact">Email or Phone Number</label>
-                <input id="login-contact" name="contact" type="text" autocomplete="username" placeholder="you@example.com or +91 98765 43210" required />
+                <label for="login-contact">Email Address</label>
+                <input id="login-contact" name="contact" type="email" autocomplete="username" placeholder="you@example.com" required />
                 <span class="field-error" data-error-for="login-contact"></span>
               </div>
               <div class="form-field">
@@ -77,7 +77,6 @@
                 <span class="field-error" data-error-for="login-password"></span>
               </div>
               <div class="form-options">
-                <label class="check-label"><input type="checkbox" name="remember" /><span class="custom-check"></span><span>Remember me</span></label>
                 <a href="/static/auth.html?view=forgot">Forgot password?</a>
               </div>
               <p class="form-message" data-form-message role="status" aria-live="polite"></p>
@@ -85,7 +84,7 @@
                 <span class="button-label">Sign In</span><span class="button-spinner" aria-hidden="true"></span>
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
               </button>
-              <p class="demo-note">Frontend demo only. Continue starts a temporary session in this browser tab; no account is authenticated.</p>
+              <p class="demo-note">Your sign-in is protected by a server-side session. Use the email address associated with your account.</p>
             </form>
             <p class="auth-switch">Don't have an account? <a href="/static/auth.html?view=register">Create Account</a></p>
           </section>
@@ -132,7 +131,7 @@
                       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></svg>
                     </button>
                   </div>
-                  <div class="password-strength" data-strength-for="register-password" aria-live="polite"><span></span><span></span><span></span><span></span><small>Use 8+ characters with upper/lowercase letters and a number.</small></div>
+                  <div class="password-strength" data-strength-for="register-password" aria-live="polite"><span></span><span></span><span></span><span></span><small>Use at least 12 characters.</small></div>
                   <span class="field-error" data-error-for="register-password"></span>
                 </div>
                 <div class="form-field">
@@ -180,7 +179,7 @@
                 <span class="button-label">Create Account</span><span class="button-spinner" aria-hidden="true"></span>
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
               </button>
-              <p class="demo-note">Frontend demo only. This creates a temporary profile in this browser tab; no account is registered.</p>
+              <p class="demo-note">Your password is securely hashed. Your account details are stored securely by JalSaathi.</p>
             </form>
             <p class="auth-switch">Already have an account? <a href="/static/auth.html?view=login">Sign in</a></p>
           </section>
@@ -192,12 +191,12 @@
               </span>
               <p class="eyebrow">ACCOUNT RECOVERY</p>
               <h2>Forgot Password?</h2>
-              <p class="card-intro">Enter your email address or phone number and we'll guide you through the reset steps.</p>
+              <p class="card-intro">Enter the email address associated with your account.</p>
             </div>
             <form data-auth-form="forgot" novalidate>
               <div class="form-field">
-                <label for="forgot-contact">Email Address or Phone Number</label>
-                <input id="forgot-contact" name="contact" autocomplete="username" placeholder="you@example.com or +91 98765 43210" required />
+                <label for="forgot-contact">Email Address</label>
+                <input id="forgot-contact" name="contact" type="email" autocomplete="username" placeholder="you@example.com" required />
                 <span class="field-error" data-error-for="forgot-contact"></span>
               </div>
               <p class="form-message" data-form-message role="status" aria-live="polite"></p>
@@ -210,10 +209,10 @@
                   <svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" /></svg>
                 </span>
                 <strong>Demo request noted</strong>
-                In a real reset flow, check your email or phone for instructions. This demo did not send a message.
+                Password recovery is not configured; no email or SMS was sent.
                 <a href="/static/auth.html?view=reset">Preview the reset-password screen</a>
               </div>
-              <p class="demo-note">This demo does not send email or SMS messages.</p>
+              <p class="demo-note">Password recovery is not available yet.</p>
             </form>
             <p class="auth-switch"><a href="/static/auth.html?view=login">← Back to Login</a></p>
           </section>
@@ -272,8 +271,8 @@
         </footer>
       </section>
     </main>
-    <script src="/static/profile-store.js?v=20261014-sidebar-dropdown2"></script>
+    <script src="/static/profile-store.js?v=20260620-account1"></script>
     <script src="/static/i18n.js?v=20261014-complete-language6"></script>
-    <script src="/static/auth.js?v=20261014-sidebar-dropdown2"></script>
+    <script src="/static/auth.js?v=20260620-account1"></script>
   </body>
 </html>

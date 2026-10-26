@@ -66,7 +66,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const renderAccount = () => {
     const profileApi = window.JalSaathiProfile;
-    const session = profileApi?.getDemoSession?.() || null;
+    const session = profileApi?.getProfile?.() || null;
     sidebar.querySelectorAll("[data-sidebar-account]").forEach((account) => {
       const login = account.querySelector("[data-sidebar-login]");
       const trigger = account.querySelector("[data-sidebar-profile]");
@@ -181,16 +181,16 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   sidebar.querySelectorAll("[data-sidebar-logout]").forEach((button) => {
-    button.addEventListener("click", () => {
-      if (!window.confirm(window.JalSaathiI18n?.t("Log out of this demonstration session?") || "Log out of this demonstration session?")) return;
+    button.addEventListener("click", async () => {
+      if (!window.confirm(window.JalSaathiI18n?.t("Log out of your JalSaathi account?") || "Log out of your JalSaathi account?")) return;
       try {
-        window.JalSaathiProfile.logoutDemoSession();
+        await window.JalSaathiProfile.logoutSession();
         renderAccount();
         closeDropdowns();
         closeMenu({ restoreFocus: false });
         window.location.href = "/static/auth.html?view=login";
       } catch (error) {
-        console.error("JalSaathi demo logout failed:", error);
+        console.error("JalSaathi logout failed:", error);
         window.alert(window.JalSaathiI18n?.t(error instanceof Error ? error.message : "Could not log out.") || (error instanceof Error ? error.message : "Could not log out."));
       }
     });

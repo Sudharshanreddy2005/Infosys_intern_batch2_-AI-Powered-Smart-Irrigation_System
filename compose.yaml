@@ -26,6 +26,9 @@ services:
       DB_PORT: 5432
       DB_NAME: smart_irrigation_db
       DB_USER: irrigation_user
+      APP_ENV: ${APP_ENV:-development}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
+      COOKIE_SECURE: ${COOKIE_SECURE:-}
       TOMORROW_API_KEY: ${TOMORROW_API_KEY:-}
       WEATHER_LOCATION: ${WEATHER_LOCATION:-}
     ports:
