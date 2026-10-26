@@ -51,7 +51,11 @@
       indicator.dataset.level = String(score);
       const strengthText = ["", "Weak password", "Fair password", "Good password", "Strong password"][score];
       const hint = indicator.querySelector("small");
+<<<<<<< HEAD
       if (hint) hint.textContent = strengthText || "Use 8+ characters with upper/lowercase letters and a number.";
+=======
+      if (hint) hint.textContent = strengthText || "Use at least 12 characters.";
+>>>>>>> raashi-milestone1-backend-db
     });
   });
 
@@ -78,9 +82,13 @@
 
   function validContact(value) {
     const trimmed = value.trim();
+<<<<<<< HEAD
     if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return true;
     const digits = trimmed.replace(/\D/g, "");
     return digits.length >= 7 && digits.length <= 15 && /^[+\d\s().-]+$/.test(trimmed);
+=======
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed);
+>>>>>>> raashi-milestone1-backend-db
   }
 
   function validEmail(value) {
@@ -88,7 +96,11 @@
   }
 
   function validPassword(value) {
+<<<<<<< HEAD
     return value.length >= 8 && /[a-z]/.test(value) && /[A-Z]/.test(value) && /\d/.test(value);
+=======
+    return value.length >= 12;
+>>>>>>> raashi-milestone1-backend-db
   }
 
   function getRequiredValue(form, name) {
@@ -119,8 +131,30 @@
     }, 450);
   }
 
+<<<<<<< HEAD
   document.querySelectorAll("[data-auth-form]").forEach((form) => {
     form.addEventListener("submit", (event) => {
+=======
+  async function submitAccountForm(path, payload) {
+    const response = await fetch(path, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const result = response.status === 204 ? null : await response.json();
+    if (!response.ok) {
+      const detail = result && typeof result.detail === "string"
+        ? result.detail
+        : "Your request could not be completed. Please try again.";
+      throw new Error(detail);
+    }
+    return result;
+  }
+
+  document.querySelectorAll("[data-auth-form]").forEach((form) => {
+    form.addEventListener("submit", async (event) => {
+>>>>>>> raashi-milestone1-backend-db
       event.preventDefault();
       clearFormState(form);
       const errors = [];
@@ -169,7 +203,11 @@
         }
         if (email.value.trim() && !validEmail(email.value)) setFieldError(email, "Enter a valid email address.", errors);
         if (password.value && !validPassword(password.value)) {
+<<<<<<< HEAD
           setFieldError(password, "Use at least 8 characters, including uppercase, lowercase, and a number.", errors);
+=======
+          setFieldError(password, "Use at least 12 characters.", errors);
+>>>>>>> raashi-milestone1-backend-db
         }
         if (confirmPassword.value && password.value !== confirmPassword.value) {
           setFieldError(confirmPassword, "Passwords do not match.", errors);
@@ -194,7 +232,11 @@
         else if (!/^\d{6}$/.test(code.value.trim())) setFieldError(code, "Enter a 6-digit code.", errors);
         if (!password.value) setFieldError(password, "Create a new password.", errors);
         else if (!validPassword(password.value)) {
+<<<<<<< HEAD
           setFieldError(password, "Use at least 8 characters, including uppercase, lowercase, and a number.", errors);
+=======
+          setFieldError(password, "Use at least 12 characters.", errors);
+>>>>>>> raashi-milestone1-backend-db
         }
         if (!confirmPassword.value) setFieldError(confirmPassword, "Confirm your new password.", errors);
         else if (password.value !== confirmPassword.value) setFieldError(confirmPassword, "Passwords do not match.", errors);
@@ -206,6 +248,43 @@
         return;
       }
 
+<<<<<<< HEAD
+=======
+      if (formName === "login" || formName === "register") {
+        const originalLabel = label;
+        setLoading(button, true, originalLabel);
+        try {
+          if (formName === "login") {
+            await submitAccountForm("/api/auth/login", {
+              email: getRequiredValue(form, "contact"),
+              password: form.elements.namedItem("password").value,
+            });
+          } else {
+            const countryCode = form.elements.namedItem("countryCode").value;
+            const phone = form.elements.namedItem("phone").value.replace(/[^\d]/g, "");
+            await submitAccountForm("/api/auth/register", {
+              name: getRequiredValue(form, "name"),
+              email: getRequiredValue(form, "email"),
+              password: form.elements.namedItem("password").value,
+              phone: `${countryCode} ${phone}`,
+              state: getRequiredValue(form, "state"),
+              district: getRequiredValue(form, "district"),
+              village: getRequiredValue(form, "village"),
+            });
+          }
+          window.location.assign("/dashboard");
+        } catch (error) {
+          messageFor(
+            form,
+            error instanceof Error ? error.message : "Your request could not be completed.",
+            true,
+          );
+          setLoading(button, false, originalLabel);
+        }
+        return;
+      }
+
+>>>>>>> raashi-milestone1-backend-db
       if (formName === "forgot") {
         runDemoSubmission(form, button, label, "");
         window.setTimeout(() => {
@@ -216,6 +295,7 @@
         return;
       }
 
+<<<<<<< HEAD
       const demoText = {
         login: "Demo session started for this browser tab only. No account was authenticated.",
         register: "Demo profile created for this browser tab only. No account was registered.",
@@ -240,6 +320,14 @@
           messageFor(form, error instanceof Error ? error.message : "Could not start the demo session.", true);
         }
       });
+=======
+      runDemoSubmission(
+        form,
+        button,
+        label,
+        "Password reset is not configured for this service. Please contact support.",
+      );
+>>>>>>> raashi-milestone1-backend-db
     });
   });
 })();

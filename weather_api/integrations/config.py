@@ -1,39 +1,44 @@
 import os
+from pathlib import Path
+
 from dotenv import load_dotenv
 
-# Load variables from the .env file (searches this file's folder and its parents)
-load_dotenv()
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+load_dotenv(PROJECT_ROOT / ".env")
 
-# --- API settings ---
-TOMORROW_API_KEY = os.getenv("TOMORROW_API_KEY")
 BASE_URL = "https://api.tomorrow.io/v4"
-
-
-#--- Endpoints (must come after BASE_URL) ---
 REALTIME_ENDPOINT = f"{BASE_URL}/weather/realtime"
 FORECAST_ENDPOINT = f"{BASE_URL}/weather/forecast"
- 
-# --- Location settings ---
-LOCATION = "26.12,85.39"   # lat,lon -> change to your field/area coordinates
-UNITS = "metric"           # metric = Celsius, mm
-
-# --- Request settings ---
-REQUEST_TIMEOUT = 5      # seconds to wait before giving up on a request
-MAX_RETRIES = 3          # how many times to retry a failed request
-RETRY_DELAY = 2          # seconds to wait between retries
-
-# --- Cache settings ---
-CACHE_MINUTES = 15       # how long saved weather data stays valid
-
-MAX_STALE_MINUTES = 180   # 3 hours
+UNITS = "metric"
+REQUEST_TIMEOUT = 5
+MAX_RETRIES = 3
+RETRY_DELAY = 1
+MAX_RETRY_DELAY = 8
+CACHE_MINUTES = 15
+MAX_STALE_MINUTES = 180
+MAX_CACHE_ENTRIES = 512
 
 
 def get_api_key():
-    """Return the Tomorrow.io API key, or raise an error if it is missing."""
-    if not TOMORROW_API_KEY:
+    api_key = os.getenv("TOMORROW_API_KEY")
+    if not api_key:
         raise ValueError(
-            "TOMORROW_API_KEY not found. "
-            "Please add it to your .env file."
+            "Tomorrow.io is unavailable because TOMORROW_API_KEY is not configured."
         )
+    api_key = api_key.strip()
+    if not api_key:
+        raise ValueError(
+            "Tomorrow.io is unavailable because TOMORROW_API_KEY is not configured."
+        )
+    return api_key
 
-    return TOMORROW_API_KEY
+
+def get_location(location=None):
+    configured_location = location if location is not None else os.getenv("WEATHER_LOCATION")
+    if configured_location:
+        configured_location = configured_location.strip()
+    if not configured_location:
+        raise ValueError(
+            "Weather is unavailable because WEATHER_LOCATION is not configured."
+        )
+    return configured_location

@@ -4,4 +4,11 @@ venv/
 __pycache__/
 *.pyc
 .pytest_cache/
+<<<<<<< HEAD
 cache/
+=======
+cache/.env
+.venv/
+__pycache__/
+.pytest_cache/
+>>>>>>> raashi-milestone1-backend-db

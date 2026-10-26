@@ -4,7 +4,11 @@
   const STORAGE_KEY = "jalsaathi.demo.profile.v1";
   const SESSION_KEY = "jalsaathi.demo.session.v1";
   const LANGUAGE_KEY = "jalsaathi.language.v1";
+<<<<<<< HEAD
   const DEFAULT_NAME = "Ramesh";
+=======
+  const DEFAULT_NAME = "Farmer";
+>>>>>>> raashi-milestone1-backend-db
   const message = (source) => window.JalSaathiI18n?.t(source) || source;
   const languages = [
     { code: "en", label: "English" },
@@ -17,6 +21,10 @@
     { code: "bn", label: "বাংলা" },
   ];
   let displayName = DEFAULT_NAME;
+<<<<<<< HEAD
+=======
+  let currentProfile = null;
+>>>>>>> raashi-milestone1-backend-db
   let persistenceWarning = "";
 
   const publish = () => {
@@ -91,6 +99,62 @@
     window.dispatchEvent(new CustomEvent("jalsaathi:auth-changed", { detail: null }));
   };
 
+<<<<<<< HEAD
+=======
+  const getCsrfToken = () => {
+    const prefix = "jalsaathi_csrf=";
+    const item = document.cookie.split("; ").find((cookie) => cookie.startsWith(prefix));
+    return item ? decodeURIComponent(item.slice(prefix.length)) : "";
+  };
+
+  const apiRequest = async (path, options = {}) => {
+    const headers = new Headers(options.headers || {});
+    const method = (options.method || "GET").toUpperCase();
+    if (method !== "GET" && method !== "HEAD") {
+      const csrfToken = getCsrfToken();
+      if (csrfToken) headers.set("X-CSRF-Token", csrfToken);
+    }
+    const response = await fetch(path, {
+      ...options,
+      method,
+      headers,
+      credentials: "same-origin",
+    });
+    const contentType = response.headers.get("content-type") || "";
+    const payload = contentType.includes("application/json") ? await response.json() : null;
+    if (!response.ok) {
+      const detail = payload && typeof payload.detail === "string"
+        ? payload.detail
+        : "The request could not be completed.";
+      throw new Error(detail);
+    }
+    return payload;
+  };
+
+  const setCurrentProfile = (profile) => {
+    currentProfile = profile && typeof profile.id === "number" ? profile : null;
+    if (currentProfile?.name) displayName = currentProfile.name;
+    publish();
+    window.dispatchEvent(new CustomEvent("jalsaathi:auth-changed", { detail: currentProfile }));
+    return currentProfile;
+  };
+
+  const refreshProfile = async () => {
+    const response = await fetch("/api/auth/me", { credentials: "same-origin" });
+    if (response.status === 401) {
+      setCurrentProfile(null);
+      return null;
+    }
+    if (!response.ok) throw new Error("Your account profile could not be loaded.");
+    return setCurrentProfile(await response.json());
+  };
+
+  const logoutSession = async () => {
+    await apiRequest("/api/auth/logout", { method: "POST" });
+    setCurrentProfile(null);
+  };
+
+>>>>>>> raashi-milestone1-backend-db
   const getLanguage = () => {
     try {
       const saved = localStorage.getItem(LANGUAGE_KEY);
@@ -138,6 +202,14 @@
 
   window.JalSaathiProfile = {
     getDisplayName: () => displayName,
+<<<<<<< HEAD
+=======
+    getProfile: () => currentProfile,
+    refreshProfile,
+    apiRequest,
+    logoutSession,
+    setCurrentProfile,
+>>>>>>> raashi-milestone1-backend-db
     getPersistenceWarning: () => persistenceWarning,
     setDisplayName,
     getDemoSession,
@@ -148,5 +220,11 @@
     getLanguage,
     setLanguage,
   };
+<<<<<<< HEAD
+=======
+  refreshProfile().catch((error) => {
+    console.error("JalSaathi account profile could not be loaded:", error);
+  });
+>>>>>>> raashi-milestone1-backend-db
   document.addEventListener("DOMContentLoaded", publish, { once: true });
 })();
