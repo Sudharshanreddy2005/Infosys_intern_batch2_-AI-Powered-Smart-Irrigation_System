@@ -1,0 +1,70 @@
+MILESTONE 2 - FEATURE ENGINEERING REPORT
+=======================================================
+Input file: cleaned_dataset_m2.csv
+Original rows: 8500
+Original columns: 36
+Rows retained: 8500
+Selected feature count: 16
+Training rows: 6800
+Testing rows: 1700
+
+SELECTED FEATURES
+-------------------------------------------------------
+soil_moisture
+temperature_c
+humidity_percent
+rain_probability_percent
+N
+P
+K
+ph
+organic_matter
+crop_density
+sunlight_exposure
+wind_speed
+frost_risk
+crop_name
+soil_type
+growth_stage
+
+EXCLUDED OR RESERVED FIELDS
+-------------------------------------------------------
+Identifiers: synthetic_record_number, field_id, sensor_id
+Timestamp: retained for ordering, not a direct feature
+Weather pairs: temperature, humidity, rainfall, rainfall_mm_per_hr
+Action/outcome fields: irrigation_status, irrigation_duration_minutes,
+water_used_liters, water_usage_efficiency
+Other reserved fields: sensor_status, data_origin
+
+PROXY TARGET WARNING
+-------------------------------------------------------
+Target name: irrigation_needed_proxy
+Temporary rule: soil_moisture <= 20.0
+This is an illustrative heuristic, not validated ground truth.
+Do not present ML scores against this target as real irrigation accuracy.
+Since the target is derived directly from soil_moisture, a model using
+soil_moisture would merely reproduce the chosen rule.
+
+REGRESSION TARGET
+-------------------------------------------------------
+No required_water_liters target created.
+water_used_liters has not been established as required water.
+
+SPLIT STRATEGY
+-------------------------------------------------------
+Chronological 80/20 split.
+Last training timestamp: 2026-03-12 19:45:00+00:00
+First test timestamp: 2026-03-12 20:00:00+00:00
+This does not validate performance on real-world data.
+
+PREPROCESSING HANDOFF
+-------------------------------------------------------
+Categorical features are saved as categories, not one-hot encoded.
+Member 2 must fit encoders and imputers on training data only.
+Use a scikit-learn Pipeline/ColumnTransformer to avoid leakage.
+
+DATA LIMITATIONS
+-------------------------------------------------------
+All records are marked synthetic_or_synthetic_augmented.
+Units and meanings of several features remain unverified.
+Results are suitable for a documented prototype only.

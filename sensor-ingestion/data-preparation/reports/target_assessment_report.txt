@@ -1,0 +1,113 @@
+MILESTONE 2 - TARGET FEASIBILITY ASSESSMENT
+=======================================================
+Input file: cleaned_dataset_m2.csv
+Rows: 8500
+Columns: 36
+
+IMPORTANT:
+This report investigates existing columns. It does not prove that any target is scientifically valid.
+
+1. COLUMN AVAILABILITY
+-------------------------------------------------------
+timestamp: PRESENT
+soil_moisture: PRESENT
+temperature_c: PRESENT
+temperature: PRESENT
+humidity_percent: PRESENT
+humidity: PRESENT
+rainfall_mm_per_hr: PRESENT
+rainfall: PRESENT
+rain_probability_percent: PRESENT
+irrigation_status: PRESENT
+irrigation_duration_minutes: PRESENT
+water_used_liters: PRESENT
+water_usage_efficiency: PRESENT
+label: PRESENT
+soil_type: PRESENT
+growth_stage: PRESENT
+sensor_status: PRESENT
+data_origin: PRESENT
+
+2. IRRIGATION STATUS
+-------------------------------------------------------
+ON: 3253 rows (38.3%)
+OFF: 2672 rows (31.4%)
+SCHEDULED: 2575 rows (30.3%)
+
+Interpretation: these counts describe recorded statuses. They do not establish whether irrigation was genuinely needed.
+
+3. MEASUREMENTS BY RECORDED IRRIGATION STATUS
+-------------------------------------------------------
+                  soil_moisture                 temperature_c                temperature                 humidity_percent                humidity                 rainfall_mm_per_hr               rainfall                  rain_probability_percent                irrigation_duration_minutes                water_used_liters                water_usage_efficiency              
+                          count  median    mean         count median    mean       count  median    mean            count median    mean    count  median    mean              count median   mean    count  median     mean                    count median    mean                       count median    mean             count median    mean                  count median   mean
+irrigation_status                                                                                                                                                                                                                                                                                                                                                                    
+OFF                        2672  26.894  26.970          2672  25.40  25.472        2672  25.398  25.472             2672  80.08  70.722     2672  80.080  70.722               2672    0.2  0.734     2672  93.627   99.465                     2672   63.5  55.768                        2672    0.0   0.000              2672   0.00   0.000                   2672  2.957  2.945
+ON                         3253  14.000  14.052          3253  25.64  25.635        3253  25.640  25.635             3253  80.25  70.933     3253  80.253  70.933               3253    0.2  0.708     3253  97.008  106.249                     3253   62.0  54.900                        3253   28.0  27.504              3253  70.64  70.224                   3253  2.986  3.002
+SCHEDULED                  2575  20.863  20.940          2575  25.68  25.594        2575  25.681  25.594             2575  80.96  72.945     2575  80.961  72.944               2575    0.2  0.718     2575  91.721  100.251                     2575   62.0  55.124                        2575   13.0  12.613              2575  27.37  27.449                   2575  3.000  3.045
+
+Note: differences between statuses are descriptive associations, not proof of causation or valid irrigation-need labels.
+
+4. WATER USAGE AND IRRIGATION DURATION
+-------------------------------------------------------
+water_used_liters:
+  Missing after numeric conversion: 0
+  Minimum: 0.0
+  Median: 28.314999999999998
+  Maximum: 119.97
+  Zero values: 2672
+irrigation_duration_minutes:
+  Missing after numeric conversion: 0
+  Minimum: 0
+  Median: 13.0
+  Maximum: 45
+  Zero values: 2672
+water_usage_efficiency:
+  Missing after numeric conversion: 0
+  Minimum: 1.002106323932241
+  Median: 2.9826567805834037
+  Maximum: 4.9971303231714455
+  Zero values: 0
+
+Decision: water_used_liters will not be renamed to required_water_liters without evidence that both mean the same thing.
+
+5. WEATHER COLUMN COMPARISONS
+-------------------------------------------------------
+temperature_c vs temperature:
+  Valid paired rows: 8500
+  Exact matches: 0
+  Mean absolute difference: 0.002491
+  Correlation: 1.000000
+
+humidity_percent vs humidity:
+  Valid paired rows: 8500
+  Exact matches: 0
+  Mean absolute difference: 0.002470
+  Correlation: 1.000000
+
+rainfall_mm_per_hr vs rainfall:
+  Valid paired rows: 8500
+  Exact matches: 0
+  Mean absolute difference: 101.580161
+  Correlation: 0.005029
+
+Decision: columns with different scales or unclear meanings must not be treated as interchangeable.
+
+6. DATA PROVENANCE AND TIMESTAMPS
+-------------------------------------------------------
+Data-origin counts:
+data_origin
+synthetic_or_synthetic_augmented    8500
+Invalid timestamps: 0
+Earliest timestamp: 2026-01-01 00:00:00+00:00
+Latest timestamp: 2026-03-30 12:45:00+00:00
+
+The current dataset is reported as synthetic or synthetic-augmented. Model results must not be presented as proof of real-world performance.
+
+7. CURRENT TARGET DECISIONS
+-------------------------------------------------------
+Classification target: irrigation_needed. Status: NOT YET AVAILABLE AS A VERIFIED LABEL.
+Regression target: required_water_liters. Status: NOT YET VERIFIED.
+irrigation_status: retain for investigation; do not automatically use as the irrigation-needed target.
+water_used_liters: retain for investigation; do not automatically use as the required-water target.
+Do not create target labels from arbitrary thresholds. Any rule-generated target must be explicitly documented as a proxy.
+Next: finalize the feature list and decide whether a defensible rule-based prototype is possible.
