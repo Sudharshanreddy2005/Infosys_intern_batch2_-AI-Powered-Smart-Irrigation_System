@@ -132,6 +132,37 @@ def test_provider_rate_limit_retry_after_is_forwarded(monkeypatch):
 
     assert response.status_code == 503
     assert response.headers["retry-after"] == "17"
+    assert response.json()["detail"] == (
+        "Weather provider rate limit reached. Try again after the indicated delay."
+    )
+
+
+def test_public_weather_routes_share_a_per_client_rate_limit(monkeypatch):
+    monkeypatch.setattr(main, "public_weather_attempts", main.OrderedDict())
+    monkeypatch.setattr(main, "get_location", lambda location=None: location or "10,20")
+    current_calls = []
+    forecast_calls = []
+    monkeypatch.setattr(
+        main,
+        "get_current_weather",
+        lambda location: current_calls.append(location) or {"temperature_c": 21},
+    )
+    monkeypatch.setattr(
+        main,
+        "get_forecast",
+        lambda location, hours, timestep="1h": forecast_calls.append(location) or [],
+    )
+
+    with TestClient(main.app) as client:
+        for _ in range(main.WEATHER_MAX_ATTEMPTS // 2):
+            assert client.get("/weather/current").status_code == 200
+            assert client.get("/weather/forecast").status_code == 200
+        limited = client.get("/weather/current")
+
+    assert limited.status_code == 429
+    assert limited.headers["retry-after"] == str(main.WEATHER_WINDOW_SECONDS)
+    assert len(current_calls) == main.WEATHER_MAX_ATTEMPTS // 2
+    assert len(forecast_calls) == main.WEATHER_MAX_ATTEMPTS // 2
 
 
 def test_weather_coordinates_are_validated_and_used_without_persistence(monkeypatch, request):

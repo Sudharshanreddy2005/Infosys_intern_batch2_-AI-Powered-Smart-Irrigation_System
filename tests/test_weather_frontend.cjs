@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
+const { setTimeout: scheduleTimeout } = require("node:timers");
 const vm = require("node:vm");
 
 const weatherSource = fs.readFileSync(
@@ -97,9 +98,10 @@ const okResponse = (payload) => ({
   json: async () => payload,
 });
 
-const unavailableResponse = () => ({
+const unavailableResponse = (status = 503, retryAfter) => ({
   ok: false,
-  status: 503,
+  status,
+  headers: { get: (name) => name.toLowerCase() === "retry-after" ? retryAfter : null },
   json: async () => ({ detail: "Mock weather provider unavailable." }),
 });
 
@@ -110,17 +112,24 @@ const successfulFetch = async (input) => {
   throw new Error(`Unexpected request path: ${url.pathname}`);
 };
 
-const createRuntime = ({ storage = new MemoryStorage(), fetch = successfulFetch } = {}) => {
+const createRuntime = ({
+  storage = new MemoryStorage(),
+  fetch = successfulFetch,
+  setTimeoutImpl = scheduleTimeout,
+  permissionState = "denied",
+  coordinates = null,
+} = {}) => {
   const window = {
     isSecureContext: true,
     addEventListener() {},
     dispatchEvent() {},
   };
   const navigator = {
-    permissions: { query: async () => ({ state: "denied" }) },
+    permissions: { query: async () => ({ state: permissionState }) },
     geolocation: {
-      getCurrentPosition(_success, failure) {
-        failure({ code: 1 });
+      getCurrentPosition(success, failure) {
+        if (coordinates) success({ coords: coordinates });
+        else failure({ code: 1 });
       },
     },
   };
@@ -142,6 +151,7 @@ const createRuntime = ({ storage = new MemoryStorage(), fetch = successfulFetch 
     Promise,
     String,
     URLSearchParams,
+    setTimeout: setTimeoutImpl,
     console: { warn() {}, error() {} },
     fetch,
     HTMLElement: FakeElement,
@@ -149,17 +159,91 @@ const createRuntime = ({ storage = new MemoryStorage(), fetch = successfulFetch 
     navigator,
     window,
   };
+
   vm.runInNewContext(weatherSource, context, { filename: "static/weather.js" });
   return { api: window.JalSaathiWeather, storage };
 };
 
 const waitFor = async (predicate, message) => {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+  for (let attempt = 0; attempt < 500; attempt += 1) {
     if (predicate()) return;
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
   assert.fail(message);
 };
+
+test("weather honors Retry-After without retrying rate-limited provider requests", async () => {
+  const requests = [];
+  const delays = [];
+  const runtime = createRuntime({
+    fetch: async (input) => {
+      requests.push(new URL(input, "http://localhost").pathname);
+      return unavailableResponse(503, "10");
+    },
+    setTimeoutImpl: (callback, delay) => {
+      delays.push(delay);
+      return scheduleTimeout(callback, 0);
+    },
+  });
+
+  await assert.rejects(
+    runtime.api.loadCurrent({ coordinates: { latitude: 12.5, longitude: 77.6 } }),
+    (error) => {
+      assert.equal(error.status, 503);
+      assert.equal(error.retryAfterSeconds, 10);
+      assert.equal(error.hasRetryAfter, true);
+      return true;
+    },
+  );
+  assert.equal(requests.length, 1);
+  assert.deepEqual(delays, []);
+});
+
+test("weather request stops after the bounded transient retry limit", async () => {
+  let requests = 0;
+  const delays = [];
+  const runtime = createRuntime({
+    fetch: async () => {
+      requests += 1;
+      return unavailableResponse(503);
+    },
+    setTimeoutImpl: (callback, delay) => {
+      delays.push(delay);
+      return scheduleTimeout(callback, 0);
+    },
+  });
+
+  await assert.rejects(
+    runtime.api.loadCurrent({ coordinates: { latitude: 13.1, longitude: 78.2 } }),
+    /Mock weather provider unavailable/,
+  );
+  assert.equal(requests, 3);
+  assert.deepEqual(delays, [250, 500]);
+});
+
+test("field weather requests are deduplicated and cached by saved coordinates", async () => {
+  let requests = 0;
+  let resolveResponse;
+  const runtime = createRuntime({
+    fetch: () => {
+      requests += 1;
+      return new Promise((resolve) => { resolveResponse = resolve; });
+    },
+  });
+  const selection = { coordinates: { latitude: 12.5, longitude: 77.6 } };
+  const first = runtime.api.loadCurrent(selection);
+  const duplicate = runtime.api.loadCurrent(selection);
+
+  assert.equal(requests, 1);
+  resolveResponse(okResponse(weatherPayload));
+  const [firstResult, duplicateResult] = await Promise.all([first, duplicate]);
+  const cachedResult = await runtime.api.loadCurrent(selection);
+
+  assert.equal(firstResult.current.temperature_c, 21.6);
+  assert.equal(duplicateResult.current.temperature_c, 21.6);
+  assert.equal(cachedResult.current.temperature_c, 21.6);
+  assert.equal(requests, 1);
+});
 
 test("a saved city failure falls back to configured weather", async () => {
   const requests = [];
@@ -180,6 +264,25 @@ test("a saved city failure falls back to configured weather", async () => {
   assert.ok(requests.some((url) => url.pathname === "/weather/current" && !url.search));
   assert.ok(requests.some((url) => url.pathname === "/weather/current" &&
     url.searchParams.get("location") === "Saved Town"));
+});
+
+test("a rate-limited saved city does not trigger a configured-location request", async () => {
+  const requests = [];
+  const runtime = createRuntime({
+    fetch: async (input) => {
+      requests.push(new URL(input, "http://localhost"));
+      return unavailableResponse(503, "20");
+    },
+  });
+  runtime.storage.setItem(manualLocationKey, "Saved Town");
+
+  const result = await runtime.api.loadAutomatic({ refresh: true });
+
+  assert.equal(result.source, "unavailable");
+  assert.equal(result.weatherError.retryAfterSeconds, 20);
+  assert.equal(result.weatherError.hasRetryAfter, true);
+  assert.equal(requests.length, 3);
+  assert.ok(requests.every((url) => url.searchParams.get("location") === "Saved Town"));
 });
 
 test("an empty successful HTTP response is rejected as unusable weather", async () => {
@@ -213,6 +316,28 @@ test("configured coordinate weather is cached without persisting coordinates", a
   assert.equal(cached.locationKey, "configured");
   assert.equal(cached.current.temperature_c, 21.6);
   assert.equal(JSON.stringify(cached).includes(testCoordinates), false);
+});
+
+test("weather dashboard initialization loads the automatic location only once", async () => {
+  const requests = [];
+  const runtime = createRuntime({
+    permissionState: "granted",
+    coordinates: { latitude: 12.5, longitude: 77.6 },
+    fetch: async (input, options) => {
+      requests.push({ input, options });
+      return successfulFetch(input);
+    },
+  });
+  const root = new FakeWeatherRoot();
+
+  runtime.api.initializeDashboard(root);
+  await waitFor(
+    () => root.querySelector('[data-weather="temperature"]').textContent === "22°C",
+    "Automatic-location weather did not render.",
+  );
+
+  assert.equal(requests.length, 3);
+  assert.ok(requests.every(({ options }) => options?.method === "POST"));
 });
 
 test("cached weather renders before refresh and survives failed refresh after reload", async () => {

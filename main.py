@@ -1,19 +1,7 @@
-<<<<<<< HEAD
-
-import os
-from pathlib import Path
-
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
-from sqlalchemy import create_engine, text
-
-BASE_DIR = Path(__file__).resolve().parent
-=======
 import hashlib
 import hmac
 import logging
+import math
 import os
 import secrets
 import threading
@@ -21,6 +9,7 @@ import time
 from collections import OrderedDict, deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -29,6 +18,7 @@ from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatc
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from dotenv import load_dotenv
 from sqlalchemy import create_engine, select, text
 from sqlalchemy.engine import URL
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -39,6 +29,10 @@ from schemas import (
     CropCreate,
     CropPatch,
     CropResponse,
+    ExperimentalPredictionRequest,
+    ExperimentalPredictionResponse,
+    EXPERIMENTAL_CROP_NAMES,
+    FarmerAssistantRequest,
     FarmerLogin,
     FarmerPatch,
     FarmerProfile,
@@ -46,7 +40,13 @@ from schemas import (
     FieldCreate,
     FieldPatch,
     FieldResponse,
+    Model2ExplanationRequest,
+    ReducedWeatherPredictionRequest,
+    ReducedWeatherPredictionResponse,
+    TranslationRequest,
+    TranslationResponse,
     WeatherCoordinates,
+    WaterRequirementRequest,
 )
 from weather_api.integrations.config import get_location
 from weather_api.integrations.weather_api import (
@@ -55,7 +55,20 @@ from weather_api.integrations.weather_api import (
     get_current_weather,
     get_forecast,
 )
+from sarvam_translation import (
+    TranslationConfigurationError,
+    TranslationProviderError,
+    TranslationRateLimitError,
+    translate_texts,
+)
 from weather_api.integrations.reverse_geocoding import get_locality
+from farmer_assistant import (
+    AssistantServiceError,
+    answer_farmer_question,
+    explain_model2_prediction,
+)
+from model2_integration import load_production_model2_bundle
+from backend.models.model1.inference import load_artifact_bundle, predict_records
 
 logger = logging.getLogger(__name__)
 password_hasher = PasswordHasher()
@@ -64,138 +77,41 @@ auth_attempts = OrderedDict()
 auth_attempts_lock = threading.Lock()
 weather_attempts = OrderedDict()
 weather_attempts_lock = threading.Lock()
+public_weather_attempts = OrderedDict()
+public_weather_attempts_lock = threading.Lock()
+assistant_attempts = OrderedDict()
+assistant_attempts_lock = threading.Lock()
+translation_attempts = OrderedDict()
+translation_attempts_lock = threading.Lock()
 AUTH_WINDOW_SECONDS = 900
 AUTH_MAX_ATTEMPTS = 10
 WEATHER_WINDOW_SECONDS = 60
 WEATHER_MAX_ATTEMPTS = 30
+ASSISTANT_WINDOW_SECONDS = 60
+ASSISTANT_MAX_ATTEMPTS = 10
+TRANSLATION_WINDOW_SECONDS = 60
+TRANSLATION_MAX_ATTEMPTS = 20
 SESSION_COOKIE = "jalsaathi_session"
 CSRF_COOKIE = "jalsaathi_csrf"
 PROJECT_ROOT = Path(__file__).resolve().parent
 STATIC_DIR = PROJECT_ROOT / "static"
 TEMPLATES_DIR = PROJECT_ROOT / "templates"
+load_dotenv(PROJECT_ROOT / ".env")
 
 @asynccontextmanager
 async def lifespan(_app):
     Base.metadata.create_all(bind=engine)
     yield
 
->>>>>>> raashi-milestone1-backend-db
 
 app = FastAPI(
     title="Smart Irrigation System API",
     description="Backend for predictive water management and crop optimization",
     version="1.0.0",
-<<<<<<< HEAD
-=======
     lifespan=lifespan,
->>>>>>> raashi-milestone1-backend-db
 )
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
-<<<<<<< HEAD
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "sqlite:///./smart_irrigation.db",
-)
-
-if DATABASE_URL.startswith("sqlite"):
-    engine = create_engine(
-        DATABASE_URL,
-        connect_args={"check_same_thread": False},
-    )
-else:
-    engine = create_engine(DATABASE_URL)
-
-# Serve frontend assets when the directory exists.
-STATIC_DIR = BASE_DIR / "static"
-if STATIC_DIR.is_dir():
-    app.mount(
-        "/static",
-        StaticFiles(directory=str(STATIC_DIR)),
-        name="static",
-    )
-
-
-@app.get("/")
-def serve_dashboard():
-    index_file = BASE_DIR / "templates" / "index.html"
-
-    if index_file.is_file():
-        return FileResponse(index_file)
-
-    return {
-        "message": "Welcome to the Smart Irrigation System!",
-        "status": "Backend is running successfully",
-    }
-
-
-@app.get("/api/dashboard")
-def dashboard_data():
-    # Demo values only; replace with real API/database values
-    # when those integrations are connected.
-    return {
-        "greeting": "Namaste, Ramesh!",
-        "hero_title": "Smart Water. Healthy Crops. Stronger Farmers.",
-        "weather": {
-            "temperature": "28°C",
-            "description": "Partly Cloudy",
-            "location": "Mandya, Karnataka",
-            "humidity": "68%",
-            "wind_speed": "12 km/h",
-            "rainfall": "20% chance",
-        },
-        "fields": [
-            {
-                "name": "Field 1",
-                "crop": "Paddy",
-                "status": "Optimal",
-                "moisture": "32%",
-                "last_irrigated": "2 days ago",
-            },
-            {
-                "name": "Field 2",
-                "crop": "Sugarcane",
-                "status": "Needs Water",
-                "moisture": "18%",
-                "last_irrigated": "3 days ago",
-            },
-            {
-                "name": "Field 3",
-                "crop": "Ragi",
-                "status": "Low Moisture",
-                "moisture": "12%",
-                "last_irrigated": "5 days ago",
-            },
-        ],
-        "recommendation": {
-            "field": "Field 2 - East Plot",
-            "crop": "Sugarcane",
-            "status": "Needs Water",
-            "time": "Today, 5:00 PM",
-            "duration": "2 hours",
-            "message": (
-                "Based on soil moisture (18%) and weather forecast, "
-                "irrigate 2 hours today to maintain optimal crop health."
-            ),
-        },
-        "season": {
-            "name": "Kharif Season 2024",
-            "range": "June - October",
-            "progress": 45,
-            "major_crop": "Paddy",
-            "growth_stage": "Vegetative",
-            "days_remaining": "65 days",
-        },
-    }
-=======
 DATABASE_URL = os.getenv("DATABASE_URL")
 if DATABASE_URL:
     engine = create_engine(DATABASE_URL, pool_pre_ping=True)
@@ -268,6 +184,28 @@ def _limit_auth_attempts(request: Request) -> None:
         attempts.append(now)
 
 
+def _limit_translation_requests(request: Request) -> None:
+    now = time.monotonic()
+    key = _client_key(request)
+    with translation_attempts_lock:
+        attempts = translation_attempts.get(key)
+        if attempts is None:
+            if len(translation_attempts) >= 4096:
+                translation_attempts.popitem(last=False)
+            attempts = deque()
+            translation_attempts[key] = attempts
+        translation_attempts.move_to_end(key)
+        while attempts and now - attempts[0] >= TRANSLATION_WINDOW_SECONDS:
+            attempts.popleft()
+        if len(attempts) >= TRANSLATION_MAX_ATTEMPTS:
+            raise HTTPException(
+                status_code=429,
+                detail="Too many translation requests. Please try again later.",
+                headers={"Retry-After": str(TRANSLATION_WINDOW_SECONDS)},
+            )
+        attempts.append(now)
+
+
 def _limit_weather_requests(farmer_id: int) -> None:
     now = time.monotonic()
     with weather_attempts_lock:
@@ -285,6 +223,49 @@ def _limit_weather_requests(farmer_id: int) -> None:
                 status_code=429,
                 detail="Too many location-based weather requests. Please try again later.",
                 headers={"Retry-After": str(WEATHER_WINDOW_SECONDS)},
+            )
+        attempts.append(now)
+
+
+def _limit_public_weather_requests(request: Request) -> None:
+    now = time.monotonic()
+    key = _client_key(request)
+    with public_weather_attempts_lock:
+        attempts = public_weather_attempts.get(key)
+        if attempts is None:
+            if len(public_weather_attempts) >= 4096:
+                public_weather_attempts.popitem(last=False)
+            attempts = deque()
+            public_weather_attempts[key] = attempts
+        public_weather_attempts.move_to_end(key)
+        while attempts and now - attempts[0] >= WEATHER_WINDOW_SECONDS:
+            attempts.popleft()
+        if len(attempts) >= WEATHER_MAX_ATTEMPTS:
+            raise HTTPException(
+                status_code=429,
+                detail="Too many weather requests. Please try again later.",
+                headers={"Retry-After": str(WEATHER_WINDOW_SECONDS)},
+            )
+        attempts.append(now)
+
+
+def _limit_assistant_requests(farmer_id: int) -> None:
+    now = time.monotonic()
+    with assistant_attempts_lock:
+        attempts = assistant_attempts.get(farmer_id)
+        if attempts is None:
+            if len(assistant_attempts) >= 4096:
+                assistant_attempts.popitem(last=False)
+            attempts = deque()
+            assistant_attempts[farmer_id] = attempts
+        assistant_attempts.move_to_end(farmer_id)
+        while attempts and now - attempts[0] >= ASSISTANT_WINDOW_SECONDS:
+            attempts.popleft()
+        if len(attempts) >= ASSISTANT_MAX_ATTEMPTS:
+            raise HTTPException(
+                status_code=429,
+                detail="Too many assistant requests. Please try again later.",
+                headers={"Retry-After": str(ASSISTANT_WINDOW_SECONDS)},
             )
         attempts.append(now)
 
@@ -353,6 +334,96 @@ def require_csrf(
     ):
         raise HTTPException(status_code=403, detail="CSRF validation failed.")
     return context
+
+
+@lru_cache(maxsize=1)
+def _load_experimental_predictor():
+    artifact_path = (
+        PROJECT_ROOT
+        / "backend"
+        / "models"
+        / "model1"
+        / "artifacts"
+        / "random_forest_without_soil_moisture_tuned_candidate_v3.joblib"
+    )
+    if not artifact_path.is_file():
+        raise FileNotFoundError("Experimental model files are unavailable.")
+    bundle = load_artifact_bundle(artifact_path)
+    metadata = bundle["metadata"]
+    expected_features = [
+        "temperature_c",
+        "humidity_percent",
+        "rain_probability_percent",
+        "N",
+        "P",
+        "K",
+        "ph",
+        "organic_matter",
+        "crop_density",
+        "sunlight_exposure",
+        "wind_speed",
+        "frost_risk",
+        "crop_name",
+        "soil_type",
+        "growth_stage",
+    ]
+    if (
+        bundle.get("artifact_type") != "irrigation-proxy-generalization-candidate"
+        or metadata.get("model_name") != "random_forest"
+        or metadata.get("feature_set") != "without_soil_moisture"
+        or metadata.get("feature_names") != expected_features
+        or metadata.get("target_name") != "irrigation_needed_proxy"
+        or metadata.get("proxy_rule") != "soil_moisture <= 20.0"
+        or metadata.get("dataset_provenance")
+        != "synthetic_or_synthetic_augmented"
+        or metadata.get("categorical_values", {}).get("crop_name")
+        != list(EXPERIMENTAL_CROP_NAMES)
+        or metadata.get("categorical_values", {}).get("soil_type") != [1, 2, 3]
+        or metadata.get("categorical_values", {}).get("growth_stage") != [1, 2, 3]
+    ):
+        raise ValueError("Experimental artifact metadata does not match the expected schema.")
+    return bundle, predict_records
+
+
+@lru_cache(maxsize=1)
+def _load_reduced_weather_predictor():
+    artifact_path = (
+        PROJECT_ROOT
+        / "backend"
+        / "models"
+        / "model1"
+        / "artifacts"
+        / "reduced_weather_proxy_v1.joblib"
+    )
+    if not artifact_path.is_file():
+        raise FileNotFoundError("Reduced-weather experimental model is unavailable.")
+    bundle = load_artifact_bundle(artifact_path)
+    metadata = bundle["metadata"]
+    expected_features = ["temperature_c", "humidity_percent"]
+    training_ranges = metadata.get("feature_training_ranges")
+    if (
+        bundle.get("artifact_type")
+        != "irrigation-proxy-generalization-candidate"
+        or metadata.get("model_name") not in {"logistic_regression", "random_forest"}
+        or metadata.get("feature_set") != "without_soil_moisture"
+        or metadata.get("feature_subset") != "reduced_weather_only"
+        or metadata.get("feature_names") != expected_features
+        or metadata.get("categorical_values") != {}
+        or metadata.get("target_name") != "irrigation_needed_proxy"
+        or metadata.get("proxy_rule") != "soil_moisture <= 20.0"
+        or metadata.get("dataset_provenance")
+        != "synthetic_or_synthetic_augmented"
+        or not isinstance(training_ranges, dict)
+        or any(
+            not isinstance(training_ranges.get(name), dict)
+            or not isinstance(training_ranges[name].get("minimum"), (int, float))
+            or not isinstance(training_ranges[name].get("maximum"), (int, float))
+            or training_ranges[name]["minimum"] >= training_ranges[name]["maximum"]
+            for name in expected_features
+        )
+    ):
+        raise ValueError("Reduced-weather artifact metadata does not match the expected schema.")
+    return bundle, predict_records
 
 
 def _set_session_cookies(response: Response, raw_token: str, csrf_token: str) -> None:
@@ -553,6 +624,267 @@ def logout_farmer(
     return response
 
 
+@app.post(
+    "/api/ml/experimental-prediction",
+    response_model=ExperimentalPredictionResponse,
+)
+def experimental_prediction(
+    payload: ExperimentalPredictionRequest,
+    response: Response,
+    _context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        bundle, predict_records = _load_experimental_predictor()
+        prediction = predict_records(bundle, [payload.model_dump()])[0]
+    except Exception as error:
+        logger.exception("Experimental model prediction is unavailable.")
+        raise HTTPException(
+            status_code=503,
+            detail="The experimental model is currently unavailable.",
+        ) from error
+
+    return {
+        **prediction,
+        "model_status": "Experimental",
+        "dataset_provenance": bundle["metadata"]["dataset_provenance"],
+    }
+
+
+@app.post(
+    "/api/ml/reduced-weather-prediction",
+    response_model=ReducedWeatherPredictionResponse,
+)
+def reduced_weather_prediction(
+    payload: ReducedWeatherPredictionRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    response.headers["Cache-Control"] = "no-store"
+    field = _owned_field(db, context[0].id, payload.field_id)
+    if field.latitude is None or field.longitude is None:
+        raise HTTPException(
+            status_code=422,
+            detail="This field has no saved coordinates for current-weather inference.",
+        )
+    _limit_weather_requests(context[0].id)
+    location = f"{field.latitude:.6f},{field.longitude:.6f}"
+    try:
+        weather = get_current_weather(location)
+    except (ValueError, WeatherUnavailableError, WeatherAuthError) as error:
+        raise _weather_error(error) from error
+
+    if not isinstance(weather, dict):
+        raise HTTPException(
+            status_code=422,
+            detail="Field-specific weather is invalid; no prediction was generated.",
+        )
+    observation_time = weather.get("observation_time")
+    if not isinstance(observation_time, str):
+        raise HTTPException(
+            status_code=422,
+            detail="Fresh field-specific weather is unavailable; no prediction was generated.",
+        )
+    try:
+        observed_at = datetime.fromisoformat(observation_time.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise HTTPException(
+            status_code=422,
+            detail="The field weather observation timestamp is invalid; no prediction was generated.",
+        ) from error
+    data_age = weather.get("data_age_minutes")
+    if (
+        weather.get("is_stale") is not False
+        or observed_at.tzinfo is None
+        or not isinstance(data_age, (int, float))
+        or isinstance(data_age, bool)
+        or not math.isfinite(data_age)
+        or data_age < 0
+        or data_age >= 15
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="Fresh field-specific weather is unavailable; no prediction was generated.",
+        )
+    now = datetime.now(timezone.utc)
+    observed_at = observed_at.astimezone(timezone.utc)
+    observation_age_seconds = (now - observed_at).total_seconds()
+    if observation_age_seconds < -60 or observation_age_seconds >= 15 * 60:
+        raise HTTPException(
+            status_code=422,
+            detail="Fresh field-specific weather is unavailable; no prediction was generated.",
+        )
+
+    record = {}
+    for name in ("temperature_c", "humidity_percent"):
+        value = weather.get(name)
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail=f"Field weather is missing a valid {name}; no prediction was generated.",
+            )
+        record[name] = float(value)
+    if not 0 <= record["humidity_percent"] <= 100:
+        raise HTTPException(
+            status_code=422,
+            detail="Field humidity is outside the percent scale; no prediction was generated.",
+        )
+
+    try:
+        bundle, predict_records = _load_reduced_weather_predictor()
+        for name, value in record.items():
+            training_range = bundle["metadata"]["feature_training_ranges"][name]
+            if not training_range["minimum"] <= value <= training_range["maximum"]:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"Field weather {name} is outside the model's observed "
+                        "training range; extrapolation is blocked."
+                    ),
+                )
+        prediction = predict_records(bundle, [record])[0]
+        if (
+            type(prediction.get("prediction")) is not int
+            or prediction["prediction"] not in (0, 1)
+            or isinstance(prediction.get("proxy_positive_probability"), bool)
+            or not isinstance(prediction.get("proxy_positive_probability"), (int, float))
+            or not math.isfinite(prediction["proxy_positive_probability"])
+            or not 0 <= prediction["proxy_positive_probability"] <= 1
+        ):
+            raise ValueError("The reduced-weather model returned an invalid binary result.")
+    except HTTPException:
+        raise
+    except Exception as error:
+        logger.exception("Reduced-weather proxy prediction is unavailable.")
+        raise HTTPException(
+            status_code=503,
+            detail="The experimental reduced-weather model is currently unavailable.",
+        ) from error
+
+    return {
+        **prediction,
+        "proxy_rule": bundle["metadata"]["proxy_rule"],
+        "model_status": "Experimental",
+        "dataset_provenance": bundle["metadata"]["dataset_provenance"],
+        "selected_model": bundle["metadata"]["model_name"],
+        "feature_sources": {
+            "temperature_c": "selected_field_current_weather_api",
+            "humidity_percent": "selected_field_current_weather_api",
+        },
+        "observation_time": observed_at,
+    }
+
+
+@app.post("/api/ml/water-requirement")
+def water_requirement_prediction(
+    payload: WaterRequirementRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    response.headers["Cache-Control"] = "no-store"
+    return _get_model2_prediction(
+        db,
+        context[0].id,
+        payload.field_id,
+        payload.crop_id,
+    )
+
+
+def _get_model2_prediction(
+    db: Session,
+    farmer_id: int,
+    field_id: int,
+    crop_id: int,
+) -> dict:
+    field = _owned_field(db, farmer_id, field_id)
+    crop = _owned_crop(db, farmer_id, crop_id)
+    if crop.field_id != field.id:
+        raise HTTPException(status_code=404, detail="Crop not found for this field.")
+    try:
+        load_production_model2_bundle()
+    except (FileNotFoundError, ImportError, OSError, ValueError) as error:
+        logger.warning("Model 2 production artifact is unavailable: %s", error)
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Water requirement estimates are unavailable. A validated production "
+                "Model 2 artifact trained and evaluated on independently verified "
+                "real-world water-requirement labels is not available; no estimate "
+                "was generated."
+            ),
+            headers={"Cache-Control": "no-store"},
+        ) from error
+    raise HTTPException(
+        status_code=503,
+        detail=(
+            "Water requirement estimates are unavailable. Required prediction-time "
+            "soil-moisture and measured rainfall inputs are not available from "
+            "validated application sources; no estimate was generated."
+        ),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.post("/api/assistant/chat")
+async def farmer_assistant_chat(
+    payload: FarmerAssistantRequest,
+    response: Response,
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    response.headers["Cache-Control"] = "no-store"
+    _limit_assistant_requests(context[0].id)
+    try:
+        answer = await answer_farmer_question(payload.question)
+    except AssistantServiceError as error:
+        logger.warning("Farmer assistant request failed with status %s.", error.status_code)
+        headers = {"Cache-Control": "no-store"}
+        if error.retry_after is not None:
+            headers["Retry-After"] = str(error.retry_after)
+        raise HTTPException(
+            status_code=error.status_code,
+            detail=error.detail,
+            headers=headers,
+        ) from error
+    return {"answer": answer}
+
+
+@app.post("/api/assistant/model2-explanation")
+async def farmer_assistant_model2_explanation(
+    payload: Model2ExplanationRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    response.headers["Cache-Control"] = "no-store"
+    farmer_id = context[0].id
+    _limit_assistant_requests(farmer_id)
+    prediction = _get_model2_prediction(
+        db,
+        farmer_id,
+        payload.field_id,
+        payload.crop_id,
+    )
+    try:
+        explanation = await explain_model2_prediction(payload.question, prediction)
+    except AssistantServiceError as error:
+        logger.warning("Model 2 explanation request failed with status %s.", error.status_code)
+        headers = {"Cache-Control": "no-store"}
+        if error.retry_after is not None:
+            headers["Retry-After"] = str(error.retry_after)
+        raise HTTPException(
+            status_code=error.status_code,
+            detail=error.detail,
+            headers=headers,
+        ) from error
+    return {"prediction": prediction, "explanation": explanation}
+
+
 @app.get("/api/fields", response_model=list[FieldResponse])
 def list_farmer_fields(
     db: Session = Depends(get_db),
@@ -722,7 +1054,48 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
 @app.get("/management", include_in_schema=False)
 def management_page():
     return RedirectResponse("/static/sections.html?view=fields", status_code=303)
->>>>>>> raashi-milestone1-backend-db
+
+
+@app.post("/api/translate", response_model=TranslationResponse)
+def translate_ui_text(
+    payload: TranslationRequest,
+    request: Request,
+):
+    _validate_origin(request)
+    _limit_translation_requests(request)
+    try:
+        translations = translate_texts(
+            payload.texts,
+            payload.source_language_code,
+            payload.target_language_code,
+        )
+    except TranslationConfigurationError as error:
+        raise HTTPException(
+            status_code=503,
+            detail="Translation service is not configured. Contact the administrator.",
+        ) from error
+    except TranslationRateLimitError as error:
+        raise HTTPException(
+            status_code=429,
+            detail="Translation service is busy. Please try again later.",
+            headers={"Retry-After": str(error.retry_after_seconds or 60)},
+        ) from error
+    except TranslationProviderError as error:
+        logger.warning(
+            "Sarvam translation request failed: category=%s upstream_status=%s",
+            error.category,
+            error.status_code,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail="Translation is temporarily unavailable. Untranslated text remains in English.",
+        ) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=422,
+            detail="Translation text contains a reserved token or exceeds the provider's input limit.",
+        ) from error
+    return TranslationResponse(translations=translations)
 
 
 @app.get("/health")
@@ -747,20 +1120,6 @@ def test_database():
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
         return {"database": "connected successfully"}
-<<<<<<< HEAD
-
-    except Exception:
-        raise HTTPException(
-            status_code=503,
-            detail="Database connection failed",
-        )
-
-
-@app.get("/sensor-readings")
-def get_sensor_readings(
-    limit: int = Query(default=10, ge=1, le=100),
-):
-=======
     except SQLAlchemyError:
         logger.warning("Database connection test failed.", exc_info=True)
         raise HTTPException(status_code=503, detail="Database connection failed.")
@@ -768,7 +1127,6 @@ def get_sensor_readings(
 
 @app.get("/sensor-readings")
 def get_sensor_readings(limit: int = Query(default=10, ge=1, le=100)):
->>>>>>> raashi-milestone1-backend-db
     try:
         with engine.connect() as connection:
             result = connection.execute(
@@ -782,27 +1140,6 @@ def get_sensor_readings(limit: int = Query(default=10, ge=1, le=100)):
                 ),
                 {"limit": limit},
             )
-<<<<<<< HEAD
-
-            rows = result.mappings().all()
-
-            return {
-                "count": len(rows),
-                "data": [dict(row) for row in rows],
-            }
-
-    except Exception:
-        raise HTTPException(
-            status_code=500,
-            detail="Could not retrieve sensor readings",
-        )
-
-
-if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-=======
             rows = [dict(row) for row in result.mappings().all()]
     except SQLAlchemyError as error:
         logger.exception("Could not retrieve historical sensor readings.")
@@ -833,6 +1170,16 @@ def _weather_error(error):
             status_code=502,
             detail="Weather data is unavailable because the provider rejected its credentials.",
         )
+    if isinstance(error, WeatherUnavailableError) and error.retry_after_seconds is not None:
+        logger.warning(
+            "Weather provider rate limit reached: upstream_status=429 retry_after=%s",
+            error.retry_after_seconds,
+        )
+        return HTTPException(
+            status_code=503,
+            detail="Weather provider rate limit reached. Try again after the indicated delay.",
+            headers={"Retry-After": str(error.retry_after_seconds)},
+        )
     logger.warning("Weather provider data is unavailable: %s", error)
     headers = {}
     if isinstance(error, WeatherUnavailableError) and error.retry_after_seconds is not None:
@@ -860,10 +1207,12 @@ def _resolve_weather_location(
 
 @app.get("/weather/current")
 def current_weather(
+    request: Request,
     location: str | None = Query(default=None, min_length=1, max_length=100),
     latitude: float | None = Query(default=None, ge=-90, le=90, allow_inf_nan=False),
     longitude: float | None = Query(default=None, ge=-180, le=180, allow_inf_nan=False),
 ):
+    _limit_public_weather_requests(request)
     try:
         resolved_location = _resolve_weather_location(location, latitude, longitude)
         return {"location": resolved_location, **get_current_weather(resolved_location)}
@@ -897,12 +1246,14 @@ def current_weather_for_coordinates(
 
 @app.get("/weather/forecast")
 def weather_forecast(
+    request: Request,
     hours: int = Query(default=24, ge=1, le=120),
     timestep: str = Query(default="1h", pattern="^(1h|1d)$"),
     location: str | None = Query(default=None, min_length=1, max_length=100),
     latitude: float | None = Query(default=None, ge=-90, le=90, allow_inf_nan=False),
     longitude: float | None = Query(default=None, ge=-180, le=180, allow_inf_nan=False),
 ):
+    _limit_public_weather_requests(request)
     try:
         resolved_location = _resolve_weather_location(location, latitude, longitude)
         data = get_forecast(resolved_location, hours, timestep=timestep)
@@ -953,4 +1304,3 @@ def weather_forecast_for_coordinates(
         }
     except (ValueError, WeatherUnavailableError, WeatherAuthError) as error:
         raise _weather_error(error) from error
->>>>>>> raashi-milestone1-backend-db

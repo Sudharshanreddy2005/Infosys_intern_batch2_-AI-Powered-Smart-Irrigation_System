@@ -6,16 +6,11 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY main.py .
-<<<<<<< HEAD
+COPY main.py models.py schemas.py farmer_assistant.py sarvam_translation.py ./
+COPY backend/models/model1/ ./backend/models/model1/
+COPY weather_api/ ./weather_api/
 COPY templates/ ./templates/
 COPY static/ ./static/
-=======
-COPY models.py schemas.py ./
-COPY weather_api ./weather_api
-COPY static ./static
-COPY templates ./templates
->>>>>>> raashi-milestone1-backend-db
 
 EXPOSE 8000
 

@@ -1,156 +1,3 @@
-<<<<<<< HEAD
-document.addEventListener('DOMContentLoaded', async () => {
-  const carousel = document.querySelector('[data-field-carousel]');
-  const fieldImage = document.querySelector('[data-field-image]');
-  const fieldName = document.querySelector('[data-field-name]');
-  const fieldCrop = document.querySelector('[data-field-crop]');
-  const fieldStatus = document.querySelector('[data-field-status]');
-  const irrigationTime = document.querySelector('[data-irrigation-time]');
-  const irrigationDuration = document.querySelector('[data-irrigation-duration]');
-  const fieldNote = document.querySelector('[data-field-note]');
-  const slideButtons = [...document.querySelectorAll('[data-field-slide]')];
-
-  if (
-    carousel instanceof HTMLElement &&
-    fieldImage instanceof HTMLImageElement &&
-    fieldName instanceof HTMLElement &&
-    fieldCrop instanceof HTMLElement &&
-    fieldStatus instanceof HTMLElement &&
-    irrigationTime instanceof HTMLElement &&
-    irrigationDuration instanceof HTMLElement &&
-    fieldNote instanceof HTMLElement &&
-    slideButtons.length > 0
-  ) {
-    const fields = [
-      {
-        name: 'Field 1 - North Plot',
-        crop: 'Paddy',
-        image: '/static/images/field-rice.jpg',
-        status: 'Optimal',
-        statusClass: 'status-green',
-        time: 'Tomorrow, 6:00 AM',
-        duration: '1 hour',
-        note: 'Based on soil moisture (32%) and the weather forecast, light irrigation tomorrow should maintain healthy crop growth.',
-      },
-      {
-        name: 'Field 2 - East Plot',
-        crop: 'Sugarcane',
-        image: '/static/images/field-sugarcane.jpg',
-        status: 'Needs Water',
-        statusClass: 'status-yellow',
-        time: 'Today, 5:00 PM',
-        duration: '2 hours',
-        note: 'Based on soil moisture (18%) and weather forecast, irrigate 2 hours today to maintain optimal crop health.',
-      },
-      {
-        name: 'Field 3 - South Field',
-        crop: 'Ragi',
-        image: '/static/images/field-ragi.jpg',
-        status: 'Low Moisture',
-        statusClass: 'status-red',
-        time: 'Today, 4:00 PM',
-        duration: '1.5 hours',
-        note: 'Based on soil moisture (12%) and the weather forecast, irrigate today to reduce moisture stress in the Ragi field.',
-      },
-    ];
-    let activeIndex = 1;
-    let autoplayTimer = 0;
-
-    const showField = (index) => {
-      activeIndex = (index + fields.length) % fields.length;
-      const field = fields[activeIndex];
-
-      carousel.classList.remove('is-changing');
-      void carousel.offsetWidth;
-      carousel.classList.add('is-changing');
-      fieldImage.src = field.image;
-      fieldImage.alt = `${field.crop} crop in ${field.name}`;
-      fieldName.textContent = field.name;
-      fieldCrop.textContent = field.crop;
-      fieldStatus.textContent = field.status;
-      fieldStatus.classList.remove('status-green', 'status-yellow', 'status-red');
-      fieldStatus.classList.add(field.statusClass);
-      irrigationTime.textContent = field.time;
-      irrigationDuration.textContent = field.duration;
-      fieldNote.textContent = field.note;
-
-      slideButtons.forEach((button, buttonIndex) => {
-        const isActive = buttonIndex === activeIndex;
-        button.classList.toggle('active', isActive);
-        button.setAttribute('aria-pressed', String(isActive));
-      });
-    };
-
-    const stopAutoplay = () => {
-      window.clearInterval(autoplayTimer);
-      autoplayTimer = 0;
-    };
-
-    const startAutoplay = () => {
-      stopAutoplay();
-      if (!document.hidden) {
-        autoplayTimer = window.setInterval(() => showField(activeIndex + 1), 4000);
-      }
-    };
-
-    slideButtons.forEach((button) => {
-      button.addEventListener('click', () => {
-        const index = Number(button.dataset.fieldSlide);
-        if (Number.isInteger(index)) {
-          showField(index);
-          startAutoplay();
-        }
-      });
-    });
-
-    carousel.addEventListener('mouseenter', stopAutoplay);
-    carousel.addEventListener('mouseleave', startAutoplay);
-    carousel.addEventListener('focusin', stopAutoplay);
-    carousel.addEventListener('focusout', (event) => {
-      if (!carousel.contains(event.relatedTarget)) {
-        startAutoplay();
-      }
-    });
-    document.addEventListener('visibilitychange', startAutoplay);
-    startAutoplay();
-  }
-
-  try {
-    const response = await fetch('/api/dashboard');
-    if (!response.ok) {
-      throw new Error('Unable to load dashboard data');
-    }
-
-    const data = await response.json();
-
-    if (data.weather && typeof data.weather === 'object') {
-      const weatherCard = document.querySelector('.weather-card');
-      const weatherFields = ['temperature', 'condition', 'location', 'humidity', 'wind_speed', 'rainfall'];
-      weatherFields.forEach((field) => {
-        const value = field === 'condition' ? data.weather.description : data.weather[field];
-        const target = document.querySelector(`[data-weather="${field}"]`);
-        if (target && value !== undefined && value !== null && String(value).trim()) {
-          target.textContent = String(value);
-        }
-      });
-
-      if (weatherCard && typeof data.weather.description === 'string') {
-        const description = data.weather.description.toLocaleLowerCase();
-        const condition = /thunder|storm|rain|drizzle|shower/.test(description)
-          ? 'rain'
-          : /partly|mostly/.test(description)
-            ? 'partly-cloudy'
-            : /cloud|overcast/.test(description)
-              ? 'cloudy'
-              : /sun|clear/.test(description)
-                ? 'sunny'
-                : 'unknown';
-        weatherCard.dataset.weatherCondition = condition;
-      }
-    }
-  } catch (error) {
-    console.warn('Dashboard data unavailable:', error.message);
-=======
 document.addEventListener("DOMContentLoaded", async () => {
   let profileResponse;
   try {
@@ -186,13 +33,32 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (!(mapPlots instanceof HTMLElement) || !(mapEmpty instanceof HTMLElement)) return;
     const colors = ["green", "yellow", "red"];
     mapPlots.innerHTML = fields.slice(0, 3).map((field, index) => `<div class="field-shape field-shape--${colors[index]}">
-      <span class="field-name">${escapeHtml(field.name)}</span>
-      <span class="field-crop">${escapeHtml(field.crop || "Crop not set")}</span>
+      <span class="field-name" data-user-content>${escapeHtml(field.name)}</span>
+      <span class="field-crop" data-user-content data-i18n-crop>${escapeHtml(field.crop || "Crop not set")}</span>
     </div>`).join("");
     mapEmpty.hidden = fields.length !== 0;
     if (fields.length > 3) {
       mapPlots.insertAdjacentHTML("beforeend", `<span class="field-map-overflow">+${fields.length - 3} more saved fields</span>`);
     }
+  };
+  const renderDashboardFields = (fields) => {
+    dashboardFields = window.JalSaathiFieldNumbering.withDisplayNumbers(fields);
+    countNode.textContent = `${dashboardFields.length} saved ${dashboardFields.length === 1 ? "field" : "fields"}`;
+    renderFieldMap(dashboardFields);
+    fieldsNode.classList.toggle("is-empty", dashboardFields.length === 0);
+    fieldsNode.innerHTML = dashboardFields.length ? dashboardFields.map((field) => `<div class="field-item">
+      <button class="field-select-button" type="button" data-field-select="${escapeHtml(field.id)}" aria-pressed="false" aria-label="Select Field ${field.displayNumber}, ${escapeHtml(field.name)} in irrigation recommendation">
+        <span class="field-thumb field-thumb--green" aria-hidden="true"></span>
+        <span class="field-meta">
+          <span class="field-row"><span class="field-label">Field ${field.displayNumber}: <span data-user-content>${escapeHtml(field.name)}</span></span><span class="status-pill">No sensor data</span></span>
+          <span class="field-details">
+            <span class="detail"><span class="detail-label">Crop</span><strong data-user-content data-i18n-crop>${escapeHtml(field.crop || "Not set")}</strong></span>
+            <span class="detail"><span class="detail-label">Area</span><strong data-user-content>${escapeHtml(field.area)} ${escapeHtml(field.area_unit)}</strong></span>
+          </span>
+        </span>
+      </button>
+      <a class="arrow-btn" href="/static/sections.html?view=fields" aria-label="Open ${escapeHtml(field.name)}">→</a>
+    </div>`).join("") : '<p>No fields saved yet. <a href="/static/sections.html?view=fields">Add your first field</a>.</p>';
   };
 
   const mapScene = document.querySelector("[data-field-map-scene]");
@@ -230,24 +96,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (!fieldsResponse.ok || !cropsResponse.ok) throw new Error("Your field and crop records could not be loaded.");
       const [fields, crops] = await Promise.all([fieldsResponse.json(), cropsResponse.json()]);
       if (!Array.isArray(fields) || !Array.isArray(crops)) throw new Error("The field or crop response has an invalid format.");
-      dashboardFields = fields;
       dashboardCrops = crops;
-      countNode.textContent = `${fields.length} saved ${fields.length === 1 ? "field" : "fields"}`;
-      renderFieldMap(fields);
-      fieldsNode.classList.toggle("is-empty", fields.length === 0);
-      fieldsNode.innerHTML = fields.length ? fields.map((field) => `<div class="field-item">
-        <button class="field-select-button" type="button" data-field-select="${escapeHtml(field.id)}" aria-pressed="false" aria-label="Select ${escapeHtml(field.name)} in irrigation recommendation">
-          <span class="field-thumb field-thumb--green" aria-hidden="true"></span>
-          <span class="field-meta">
-            <span class="field-row"><span class="field-label">${escapeHtml(field.name)}</span><span class="status-pill">No sensor data</span></span>
-            <span class="field-details">
-              <span class="detail"><span class="detail-label">Crop</span><strong>${escapeHtml(field.crop || "Not set")}</strong></span>
-              <span class="detail"><span class="detail-label">Area</span><strong>${escapeHtml(field.area)} ${escapeHtml(field.area_unit)}</strong></span>
-            </span>
-          </span>
-        </button>
-        <a class="arrow-btn" href="/static/sections.html?view=fields" aria-label="Open ${escapeHtml(field.name)}">›</a>
-      </div>`).join("") : '<p>No fields saved yet. <a href="/static/sections.html?view=fields">Add your first field</a>.</p>';
+      renderDashboardFields(fields);
     } catch (error) {
       fieldsNode.textContent = error instanceof Error ? error.message : "Your fields could not be loaded.";
       fieldsNode.classList.remove("is-empty");
@@ -292,9 +142,88 @@ document.addEventListener("DOMContentLoaded", async () => {
     let currentCrops = Array.isArray(crops) ? crops : [];
     let slides = [];
     let dotButtons = [];
-    let weatherSummary = { condition: "Unavailable", temperature: "Unavailable" };
+    const fieldWeather = new Map();
+    const model1Recommendation = window.JalSaathiModel1Recommendation?.createRenderer();
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     const slideTemplate = initialSlide.cloneNode(true);
+    const fieldCoordinateKey = (field) => {
+      const { latitude, longitude } = field || {};
+      if (typeof latitude !== "number" || !Number.isFinite(latitude) ||
+          latitude < -90 || latitude > 90 ||
+          typeof longitude !== "number" || !Number.isFinite(longitude) ||
+          longitude < -180 || longitude > 180) return null;
+      return `${latitude},${longitude}`;
+    };
+    const loadFieldWeather = (field) => {
+      const coordinatesKey = fieldCoordinateKey(field);
+      if (!coordinatesKey) return;
+      const id = String(field.id);
+      const existing = fieldWeather.get(id);
+      if (existing?.coordinatesKey === coordinatesKey &&
+          (existing.status === "pending" ||
+            (existing.status === "loaded" && Date.now() < existing.expiresAt) ||
+            (existing.status === "unavailable" && Date.now() < existing.retryAt))) return;
+
+      const state = {
+        coordinatesKey,
+        status: "pending",
+        expiresAt: 0,
+        failures: existing?.coordinatesKey === coordinatesKey ? existing.failures : 0,
+      };
+      fieldWeather.set(id, state);
+      const request = window.JalSaathiWeather?.loadCurrent({
+        coordinates: {
+          latitude: field.latitude,
+          longitude: field.longitude,
+        },
+      });
+      if (!request) {
+        state.status = "unavailable";
+        state.retryAt = Date.now() + 30_000;
+        return;
+      }
+      const markUnavailable = () => {
+        state.status = "unavailable";
+        state.failures += 1;
+        state.retryAt = Date.now() + Math.min(60_000, 5_000 * (2 ** (state.failures - 1)));
+      };
+      void request.then(({ current }) => {
+        if (fieldWeather.get(id) !== state) return;
+        const observedAt = Date.parse(current?.observation_time);
+        const age = Date.now() - observedAt;
+        const temperature = Number(current?.temperature_c);
+        if (current?.is_stale !== false || !Number.isFinite(observedAt) ||
+            age < -60 * 1000 || age >= 15 * 60 * 1000 ||
+            !Number.isFinite(temperature)) {
+          markUnavailable();
+        } else {
+          state.status = "loaded";
+          state.condition = window.JalSaathiWeather.formatCurrentCondition(current.weather_code);
+          state.temperature = window.JalSaathiWeather.formatCurrentTemperature(temperature);
+          state.expiresAt = Date.now() + Math.min(
+            10 * 60 * 1000,
+            Math.max(0, 15 * 60 * 1000 - age),
+          );
+        }
+        if (String(currentFields[index]?.id) === id &&
+            fieldCoordinateKey(currentFields[index]) === coordinatesKey) {
+          const weather = slides[index]?.querySelector("[data-recommendation-weather]");
+          if (weather instanceof HTMLElement) {
+            weather.textContent = state.status === "loaded"
+              ? `${state.condition} · ${state.temperature}`
+              : "Unavailable";
+          }
+        }
+      }).catch((error) => {
+        if (fieldWeather.get(id) !== state) return;
+        markUnavailable();
+        console.warn("Field-specific dashboard weather is unavailable.", error);
+        if (String(currentFields[index]?.id) === id) {
+          const weather = slides[index]?.querySelector("[data-recommendation-weather]");
+          if (weather instanceof HTMLElement) weather.textContent = "Unavailable";
+        }
+      });
+    };
 
     const renderSlide = (slide, field) => {
       const name = slide.querySelector("[data-recommendation-name]");
@@ -338,14 +267,28 @@ document.addEventListener("DOMContentLoaded", async () => {
       const fieldName = typeof field.name === "string" && field.name.trim()
         ? field.name.trim()
         : "Unnamed field";
-      name.textContent = fieldName;
+      name.textContent = `Field ${field.displayNumber}: ${fieldName}`;
       const fieldCrops = currentCrops.filter((entry) => String(entry.field_id) === String(field.id));
       const cropLabels = fieldCrops.map((entry) => [entry.name, entry.variety].filter(Boolean).join(" · "));
       const cropName = cropLabels.join(", ") || field.crop || "Not recorded";
       const location = typeof field.location === "string" && field.location.trim()
         ? ` · ${field.location.trim()}`
         : "";
-      crop.textContent = `Crop: ${cropName}${location}`;
+      crop.replaceChildren();
+      const cropLabel = document.createElement("span");
+      cropLabel.textContent = "Crop: ";
+      cropLabel.setAttribute("data-i18n-key", "fields.cropLabel");
+      const cropValue = document.createElement("span");
+      cropValue.textContent = cropName;
+      cropValue.setAttribute("data-user-content", "");
+      cropValue.setAttribute("data-i18n-crop", "");
+      crop.append(cropLabel, cropValue);
+      if (location) {
+        const locationValue = document.createElement("span");
+        locationValue.textContent = location;
+        locationValue.setAttribute("data-user-content", "");
+        crop.append(locationValue);
+      }
       const cropRecords = fieldCrops.map((entry) => {
         const details = [];
         if (typeof entry.planting_date === "string" && entry.planting_date.trim()) {
@@ -365,14 +308,14 @@ document.addEventListener("DOMContentLoaded", async () => {
         ? `${Number.isFinite(Number(field.area)) ? Number(field.area).toLocaleString(undefined, { maximumFractionDigits: 2 }) : field.area}${field.area_unit ? ` ${field.area_unit}` : ""}`
         : "Unavailable";
       moisture.textContent = "Not connected";
-      weather.textContent = weatherSummary.condition !== "Unavailable" &&
-        weatherSummary.temperature !== "Unavailable"
-        ? `${weatherSummary.condition} · ${weatherSummary.temperature}`
-        : weatherSummary.condition !== "Unavailable"
-          ? weatherSummary.condition
-          : weatherSummary.temperature !== "Unavailable"
-            ? weatherSummary.temperature
-            : "Unavailable";
+      const weatherState = fieldWeather.get(String(field.id));
+      weather.textContent = weatherState?.coordinatesKey === fieldCoordinateKey(field)
+        ? weatherState.status === "pending"
+          ? "Loading…"
+          : weatherState.status === "loaded"
+            ? `${weatherState.condition} · ${weatherState.temperature}`
+            : "Unavailable"
+        : "Unavailable";
       const normalizedCrop = typeof cropName === "string" ? cropName.toLowerCase() : "";
       const image = normalizedCrop.includes("rice") || normalizedCrop.includes("paddy")
         ? "field-rice.jpg"
@@ -389,9 +332,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       infoIcon.textContent = "i";
       const message = document.createElement("div");
       const heading = document.createElement("strong");
-      heading.textContent = "No verified irrigation recommendation";
+      heading.textContent = "Checking Model 1 availability";
       const explanation = document.createElement("p");
-      explanation.textContent = "Field details available. Connect soil-moisture data or provide required measurements to calculate an irrigation recommendation.";
+      explanation.textContent = "Checking for recent, field-specific inputs from the Experimental Model Lab.";
       message.append(heading, explanation);
       status.append(infoIcon, message);
     };
@@ -413,7 +356,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const dot = document.createElement("button");
         dot.type = "button";
         dot.className = "carousel-dot";
-        dot.setAttribute("aria-label", `Show ${field.name || "unnamed"} field`);
+        dot.setAttribute("aria-label", `Show Field ${field.displayNumber}: ${field.name || "unnamed"}`);
         dot.addEventListener("click", () => show(dotIndex, true), { signal });
         dots.append(dot);
         return dot;
@@ -436,6 +379,20 @@ document.addEventListener("DOMContentLoaded", async () => {
         button.closest(".field-item")?.classList.toggle("is-selected", selected);
       });
       indicator.textContent = currentFields.length ? `${index + 1} / ${currentFields.length}` : "";
+      if (model1Recommendation) {
+        const activeStatus = slides[index]?.querySelector("[data-recommendation-status]");
+        if (activeStatus instanceof HTMLElement && currentFields[index]) {
+          void model1Recommendation.update(
+            activeStatus,
+            currentFields[index],
+            currentCrops,
+            window.JalSaathiProfile?.apiRequest,
+          );
+        } else {
+          model1Recommendation.cancel();
+        }
+      }
+      if (currentFields[index]) loadFieldWeather(currentFields[index]);
     };
 
     const clearTimer = () => {
@@ -492,17 +449,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     card.addEventListener("focusout", (event) => {
       if (!card.contains(event.relatedTarget)) resume();
     }, { signal });
-    const updateWeather = (event) => {
-      const temperature = window.JalSaathiWeather?.formatCurrentTemperature(event.detail?.temperatureC);
-      weatherSummary = {
-        condition: typeof event.detail?.condition === "string" && event.detail.condition !== "Condition not provided"
-          ? event.detail.condition
-          : "Unavailable",
-        temperature: temperature && temperature !== "Unavailable" ? temperature : "Unavailable",
-      };
-      render();
-    };
-    window.addEventListener("jalsaathi:weather-updated", updateWeather, { signal });
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") pause();
       else resume();
@@ -525,8 +471,16 @@ document.addEventListener("DOMContentLoaded", async () => {
           throw new Error("The refreshed field or crop response has an invalid format.");
         }
         const selectedId = currentFields[index]?.id;
-        currentFields = nextFields;
+        renderDashboardFields(nextFields);
+        currentFields = dashboardFields;
         currentCrops = nextCrops;
+        model1Recommendation?.reconcile(currentFields);
+        const currentFieldStates = new Map(
+          currentFields.map((field) => [String(field.id), fieldCoordinateKey(field)]),
+        );
+        for (const [id, state] of fieldWeather) {
+          if (currentFieldStates.get(id) !== state.coordinatesKey) fieldWeather.delete(id);
+        }
         fieldsUnavailable = false;
         const selectedIndex = currentFields.findIndex((field) => String(field.id) === String(selectedId));
         index = selectedIndex >= 0 ? selectedIndex : 0;
@@ -537,10 +491,12 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
     };
     window.addEventListener("jalsaathi:fields-changed", refreshSavedFields, { signal });
+    window.addEventListener("focus", refreshSavedFields, { signal });
     const cleanup = () => {
       if (disposed) return;
       disposed = true;
       clearTimer();
+      model1Recommendation?.cancel();
       abortController.abort();
       removalObserver.disconnect();
       fieldCarouselCleanups.delete(root);
@@ -563,6 +519,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       const empty = document.createElement("p");
       empty.className = "season-empty";
       empty.textContent = unavailableMessage || "Season information unavailable";
+      if (!unavailableMessage) empty.setAttribute("data-i18n-key", "season.unavailable");
       root.append(empty);
       return;
     }
@@ -605,9 +562,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     const seasonName = document.createElement("strong");
     seasonName.className = "season-name";
     seasonName.textContent = "Season information unavailable";
+    seasonName.setAttribute("data-i18n-key", "season.unavailable");
     const seasonNote = document.createElement("span");
     seasonNote.className = "season-range";
     seasonNote.textContent = "No regional crop calendar is configured.";
+    seasonNote.setAttribute("data-i18n-key", "season.noRegionalCalendar");
     const dateRange = document.createElement("span");
     dateRange.className = "season-recorded-range";
     if (recordedRanges.length) {
@@ -617,7 +576,13 @@ document.addEventListener("DOMContentLoaded", async () => {
         month: "short",
         year: "numeric",
       }).format(date);
-      dateRange.textContent = `Recorded crop dates · ${formatDate(earliest)} – ${formatDate(latest)}`;
+      const dateLabel = document.createElement("span");
+      dateLabel.textContent = "Recorded crop dates";
+      dateLabel.setAttribute("data-i18n-key", "season.recordedCropDates");
+      const dateValues = document.createElement("span");
+      dateValues.textContent = ` · ${formatDate(earliest)} – ${formatDate(latest)}`;
+      dateValues.setAttribute("data-i18n-ignore", "");
+      dateRange.append(dateLabel, dateValues);
     } else {
       dateRange.textContent = "No crop date range recorded";
     }
@@ -628,6 +593,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const cropsLabel = document.createElement("span");
     cropsLabel.className = "season-summary-label";
     cropsLabel.textContent = "Primary crops";
+    cropsLabel.setAttribute("data-i18n-key", "season.primaryCrops");
     const cropNames = document.createElement("p");
     cropNames.className = "season-primary-crops";
     const allCropNames = [...cropsByName.values()];
@@ -635,7 +601,18 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (allCropNames.length > visibleCropNames.length) {
       visibleCropNames.push(`+${allCropNames.length - visibleCropNames.length} more`);
     }
-    cropNames.textContent = visibleCropNames.join(", ") || "Crop names unavailable";
+    if (visibleCropNames.length) {
+      visibleCropNames.forEach((name, index) => {
+        if (index) cropNames.append(document.createTextNode(", "));
+        const cropName = document.createElement("span");
+        cropName.textContent = name;
+        cropName.setAttribute("data-user-content", "");
+        cropName.setAttribute("data-i18n-crop", "");
+        cropNames.append(cropName);
+      });
+    } else {
+      cropNames.textContent = "Crop names unavailable";
+    }
     cropSummary.append(cropsLabel, cropNames);
 
     const progressSummary = document.createElement("div");
@@ -645,6 +622,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     const progressLabel = document.createElement("span");
     progressLabel.className = "season-summary-label";
     progressLabel.textContent = estimates.length ? "Estimated date progress" : "Progress unavailable";
+    if (estimates.length) {
+      progressLabel.setAttribute("data-i18n-key", "season.estimatedDateProgress");
+    }
     const progressValue = document.createElement("strong");
     progressHeading.append(progressLabel, progressValue);
     progressSummary.append(progressHeading);
@@ -674,6 +654,5 @@ document.addEventListener("DOMContentLoaded", async () => {
     seasonDetails.append(cropSummary, progressSummary);
     overview.append(seasonInfo, seasonDetails);
     root.append(overview);
->>>>>>> raashi-milestone1-backend-db
   }
 });

@@ -1,0 +1,181 @@
+            <section class="experimental-lab-card portal-card--padded" aria-labelledby="experimental-lab-title">
+              <div class="portal-page-heading">
+                <div><h1 id="experimental-lab-title">Experimental Model Lab</h1><p class="experimental-intro">Choose one of your saved fields and an associated crop. Fresh current weather can fill temperature, humidity, and precipitation probability for that field. Review the values and provide the remaining inputs yourself; no sensor or soil measurements are inferred.</p></div>
+                <span class="experimental-status">Experimental</span>
+              </div>
+              <p class="experimental-disclaimer">Experimental demonstration only. This model was trained on synthetic or synthetic-augmented data and predicts a proxy target. It is not a validated real-world irrigation recommendation. Do not use this result alone to decide whether to irrigate.</p>
+
+              <section class="water-requirement-card" aria-labelledby="water-requirement-title">
+                <div class="water-requirement-heading">
+                  <div>
+                    <h2 id="water-requirement-title">Water Requirement Estimate · Model 2</h2>
+                    <p>A separate regression experiment. It does not change irrigation recommendations or control equipment.</p>
+                  </div>
+                  <span class="water-requirement-status">Unavailable</span>
+                </div>
+                <dl class="water-requirement-details">
+                  <div><dt>Selected field</dt><dd data-water-field>Choose a field below</dd></div>
+                  <div><dt>Selected crop</dt><dd data-water-crop>Choose an associated crop</dd></div>
+                  <div><dt>Estimated amount</dt><dd data-water-estimate>Unavailable</dd></div>
+                  <div><dt>Unit</dt><dd>Litres per field per 24 hours; net/gross basis requires agronomy approval</dd></div>
+                  <div><dt>Prediction period</dt><dd>Next 24 hours (proposed)</dd></div>
+                  <div><dt>Inputs and model status</dt><dd data-water-status>No validated real-world water-requirement labels or evaluated model artifact are available.</dd></div>
+                </dl>
+                <p class="water-requirement-limitations">The existing dataset is synthetic or synthetic-augmented. Recorded water used is not a verified water requirement. No amount is estimated until independent labels, prediction-time features, and held-out validation are available.</p>
+                <button class="water-requirement-refresh" type="button" data-water-requirement-refresh disabled>Check estimate availability</button>
+                <p class="water-requirement-message" data-water-requirement-message role="status" aria-live="polite">No estimate has been generated.</p>
+                <button class="water-requirement-refresh" type="button" data-model2-explain disabled>Check and explain validated estimate</button>
+                <p class="water-requirement-message" data-model2-explanation-result role="status" aria-live="polite">Explanation is unavailable until a validated Model 2 estimate exists.</p>
+              </section>
+
+              <section class="farmer-assistant-card" aria-labelledby="farmer-assistant-title">
+                <div class="farmer-assistant-heading">
+                  <div><h2 id="farmer-assistant-title">Ask the JalSaathi Farmer Assistant</h2><p>Get general educational information about crops and water management.</p></div>
+                  <span class="experimental-status">AI assistant</span>
+                </div>
+                <p class="farmer-assistant-privacy">Your question is sent to OpenAI through the server. Do not include passwords, contact details, or other sensitive information. General chat does not receive saved field data or create predictions. The separate explanation action sends only a server-generated, validated Model 2 result.</p>
+                <div class="farmer-assistant-log" data-assistant-log role="log" aria-live="polite" aria-relevant="additions"></div>
+                <form data-assistant-form>
+                  <label class="experimental-field" for="farmer-assistant-question">
+                    <span>Your question</span>
+                    <textarea id="farmer-assistant-question" name="question" maxlength="1500" rows="3" required></textarea>
+                  </label>
+                  <div class="farmer-assistant-actions">
+                    <p data-assistant-status role="status" aria-live="polite">Assistant responses are educational and may be incorrect.</p>
+                    <button class="experimental-submit" type="submit" data-assistant-submit>Ask assistant</button>
+                  </div>
+                </form>
+              </section>
+
+              <form class="experimental-form" data-experimental-form>
+                <div class="experimental-selection-fields">
+                  <label class="experimental-field" for="experimental-field-select">
+                    <span>Your field</span>
+                    <select id="experimental-field-select" data-experimental-field required>
+                      <option value="">Loading your saved fields…</option>
+                    </select>
+                  </label>
+                  <label class="experimental-field" for="experimental-crop-record">
+                    <span>Crop record for this field</span>
+                    <select id="experimental-crop-record" data-experimental-crop-record required disabled>
+                      <option value="">Choose a field first</option>
+                    </select>
+                  </label>
+                </div>
+                <p class="experimental-weather-status" data-experimental-weather-status role="status" aria-live="polite">Waiting for your field records.</p>
+                <button class="experimental-weather-refresh" type="button" data-experimental-weather-refresh disabled>Refresh current weather</button>
+                <p class="experimental-validation-note">Weather uses the selected field’s saved coordinates and current observation only. Forecasts, device location, and another field’s weather are not substituted. If verified coordinates or fresh weather are unavailable, weather-dependent prediction is disabled.</p>
+                <div class="experimental-fields">
+                  <label class="experimental-field" for="experimental-temperature">
+                    <span>Temperature (°C)</span>
+                    <input id="experimental-temperature" name="temperature_c" type="number" step="any" required readonly aria-describedby="experimental-weather-status" />
+                  </label>
+                  <label class="experimental-field" for="experimental-humidity">
+                    <span>Humidity (%)</span>
+                    <input id="experimental-humidity" name="humidity_percent" type="number" step="any" required readonly aria-describedby="experimental-weather-status" />
+                  </label>
+                  <label class="experimental-field" for="experimental-rain-probability">
+                    <span>Rain probability (%)</span>
+                    <input id="experimental-rain-probability" name="rain_probability_percent" type="number" step="any" required readonly aria-describedby="experimental-weather-status" />
+                  </label>
+                  <label class="experimental-field" for="experimental-n">
+                    <span>N</span>
+                    <input id="experimental-n" name="N" type="number" step="any" required />
+                  </label>
+                  <label class="experimental-field" for="experimental-p">
+                    <span>P</span>
+                    <input id="experimental-p" name="P" type="number" step="any" required />
+                  </label>
+                  <label class="experimental-field" for="experimental-k">
+                    <span>K</span>
+                    <input id="experimental-k" name="K" type="number" step="any" required />
+                  </label>
+                  <label class="experimental-field" for="experimental-ph">
+                    <span>pH</span>
+                    <input id="experimental-ph" name="ph" type="number" step="any" required />
+                  </label>
+                  <label class="experimental-field" for="experimental-organic-matter">
+                    <span>Organic matter</span>
+                    <input id="experimental-organic-matter" name="organic_matter" type="number" step="any" required />
+                  </label>
+                  <label class="experimental-field" for="experimental-crop-density">
+                    <span>Crop density</span>
+                    <input id="experimental-crop-density" name="crop_density" type="number" step="any" required />
+                  </label>
+                  <label class="experimental-field" for="experimental-sunlight">
+                    <span>Sunlight exposure</span>
+                    <input id="experimental-sunlight" name="sunlight_exposure" type="number" step="any" required />
+                  </label>
+                  <label class="experimental-field" for="experimental-wind">
+                    <span>Wind speed (model unit unverified)</span>
+                    <input id="experimental-wind" name="wind_speed" type="number" step="any" required />
+                  </label>
+                  <label class="experimental-field" for="experimental-frost">
+                    <span>Frost risk</span>
+                    <input id="experimental-frost" name="frost_risk" type="number" step="any" required />
+                  </label>
+                  <label class="experimental-field" for="experimental-crop">
+                    <span>Model crop category (from selected crop)</span>
+                    <select id="experimental-crop" name="crop_name" required disabled>
+                      <option value="">Select a supported associated crop</option>
+                      <option value="apple">Apple</option>
+                      <option value="banana">Banana</option>
+                      <option value="blackgram">Blackgram</option>
+                      <option value="chickpea">Chickpea</option>
+                      <option value="coconut">Coconut</option>
+                      <option value="coffee">Coffee</option>
+                      <option value="cotton">Cotton</option>
+                      <option value="grapes">Grapes</option>
+                      <option value="jute">Jute</option>
+                      <option value="kidneybeans">Kidneybeans</option>
+                      <option value="lentil">Lentil</option>
+                      <option value="maize">Maize</option>
+                      <option value="mango">Mango</option>
+                      <option value="mothbeans">Mothbeans</option>
+                      <option value="mungbean">Mungbean</option>
+                      <option value="muskmelon">Muskmelon</option>
+                      <option value="orange">Orange</option>
+                      <option value="papaya">Papaya</option>
+                      <option value="pigeonpeas">Pigeonpeas</option>
+                      <option value="pomegranate">Pomegranate</option>
+                      <option value="rice">Rice</option>
+                      <option value="watermelon">Watermelon</option>
+                    </select>
+                  </label>
+                  <label class="experimental-field" for="experimental-soil-type">
+                    <span>Soil type code (meanings undocumented)</span>
+                    <select id="experimental-soil-type" name="soil_type" required>
+                      <option value="">Choose a code</option>
+                      <option value="1">Code 1 · meaning undocumented</option>
+                      <option value="2">Code 2 · meaning undocumented</option>
+                      <option value="3">Code 3 · meaning undocumented</option>
+                    </select>
+                  </label>
+                  <label class="experimental-field" for="experimental-growth-stage">
+                    <span>Growth stage code (meanings undocumented)</span>
+                    <select id="experimental-growth-stage" name="growth_stage" required>
+                      <option value="">Choose a code</option>
+                      <option value="1">Code 1 · meaning undocumented</option>
+                      <option value="2">Code 2 · meaning undocumented</option>
+                      <option value="3">Code 3 · meaning undocumented</option>
+                    </select>
+                  </label>
+                </div>
+                <p class="experimental-validation-note">The available field and crop APIs do not provide verified values or category mappings for N, P, K, pH, organic matter, crop density, sunlight, wind, frost risk, soil type, or model growth stage. Manual entries and undocumented codes cannot satisfy the verified-source requirement, so Model 1 remains unavailable until compatible field-specific sources are integrated. Never enter guessed or placeholder values.</p>
+                <button class="experimental-submit" type="submit" data-experimental-submit disabled>Run experimental prediction</button>
+              </form>
+              <div class="experimental-message" data-experimental-message role="status" aria-live="polite">No prediction has been run.</div>
+              <a href="/static/auth.html?view=login" data-experimental-login hidden>Sign in again</a>
+              <p class="experimental-readiness" data-experimental-readiness role="status" aria-live="polite">Prediction unavailable until required inputs are ready.</p>
+              <section class="experimental-result" data-experimental-result aria-live="polite" aria-label="Experimental model result" hidden>
+                <h4>Proxy result</h4>
+                <dl>
+                  <div><dt>Predicted class</dt><dd data-result-class></dd></div>
+                  <div><dt>Proxy-positive probability</dt><dd data-result-probability></dd></div>
+                  <div><dt>Target</dt><dd data-result-target></dd></div>
+                  <div><dt>Model status</dt><dd data-result-status></dd></div>
+                  <div><dt>Dataset provenance</dt><dd data-result-provenance></dd></div>
+                </dl>
+                <p data-result-warning></p>
+              </section>
+            </section>

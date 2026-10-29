@@ -100,6 +100,40 @@ def test_weather_requests_are_package_safe_and_cache_by_location(monkeypatch):
     assert calls == ["10,20", "30,40"]
 
 
+def test_current_weather_exposes_metric_probability_and_wind_fields(monkeypatch):
+    monkeypatch.setattr(config, "get_location", lambda location=None: location or "10,20")
+    monkeypatch.setattr(config, "get_api_key", lambda: "test-key")
+    calls = []
+
+    def fake_request(endpoint, params):
+        calls.append((endpoint, params))
+        return {
+            "data": {
+                "time": "2026-10-26T10:00:00Z",
+                "values": {
+                    "temperature": 21.5,
+                    "humidity": 70,
+                    "precipitationProbability": 35,
+                    "rainIntensity": 2.4,
+                    "windSpeed": 4.2,
+                },
+            }
+        }
+
+    monkeypatch.setattr(weather_api, "_make_request", fake_request)
+    current = weather_api.get_current_weather()
+
+    assert calls[0][1]["units"] == "metric"
+    assert current["temperature_c"] == 21.5
+    assert current["humidity_percent"] == 70
+    assert current["precipitation_probability_percent"] == 35
+    assert current["rainfall_mm_per_hr"] == 2.4
+    assert current["wind_speed_mps"] == 4.2
+    assert current["observation_time"] == "2026-10-26T10:00:00Z"
+    assert current["is_stale"] is False
+    assert current["data_age_minutes"] == 0
+
+
 def test_auth_errors_are_not_retried_or_hidden_by_stale_cache(monkeypatch):
     response = requests.Response()
     response.status_code = 401
