@@ -1,14 +1,10 @@
-.env
-.venv/
+
+
+# Python virtual environments
 venv/
+
+# Python cache and test artifacts
 __pycache__/
-*.pyc
+*.py[cod]
 .pytest_cache/
-<<<<<<< HEAD
 cache/
-=======
-cache/.env
-.venv/
-__pycache__/
-.pytest_cache/
->>>>>>> raashi-milestone1-backend-db

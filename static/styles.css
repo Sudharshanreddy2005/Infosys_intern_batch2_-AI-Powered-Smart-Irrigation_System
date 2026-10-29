@@ -1,9 +1,5 @@
 :root {
-<<<<<<< HEAD
-  --sidebar-width: 150px;
-=======
   --sidebar-width: 168px;
->>>>>>> raashi-milestone1-backend-db
   --sidebar-bg: #0d5a46;
   --sidebar-active: #0d6a54;
   --sidebar-text: #d9f0d7;
@@ -39,7 +35,9 @@ html, body {
   min-height: 100%;
   background: var(--bg-cream);
   color: var(--text-heading);
-  font-family: "Inter", sans-serif;
+  font-family: "Inter", "Noto Sans Devanagari", "Noto Sans Telugu", "Noto Sans Kannada",
+    "Noto Sans Tamil", "Noto Sans Malayalam", "Noto Sans Bengali", "Noto Sans Gujarati",
+    "Noto Sans Gurmukhi", "Noto Sans Oriya", "Noto Sans Assamese", "Noto Nastaliq Urdu", sans-serif;
 }
 
 body {
@@ -283,6 +281,8 @@ body.sidebar-open .menu-close-icon {
 }
 
 .language-control { position: relative; flex: 0 0 auto; }
+.language-translation-status { position: absolute; z-index: 20; top: calc(100% + 7px); right: 0; width: min(280px, 85vw); margin: 0; padding: 8px 10px; border: 1px solid rgb(235 255 244 / 24%); border-radius: 9px; background: #064532; color: #edfdf0; font-size: 0.62rem; line-height: 1.4; box-shadow: 0 8px 22px rgb(0 0 0 / 28%); }
+.language-translation-status[hidden] { display: none; }
 .language-menu, .sidebar-account-menu {
   position: absolute;
   z-index: 12;
@@ -404,20 +404,11 @@ body.sidebar-open .menu-close-icon {
 }
 
 .main-panel {
-<<<<<<< HEAD
-  flex: none;
-  min-width: 0;
-  width: calc(100% - var(--sidebar-width));
-  margin-left: var(--sidebar-width);
-  height: 100vh;
-  overflow-y: auto;
-=======
   flex: 1 1 auto;
   min-width: 0;
   width: calc(100% - var(--sidebar-width));
   margin-left: var(--sidebar-width);
   min-height: 100vh;
->>>>>>> raashi-milestone1-backend-db
   padding: 0 22px 16px 24px;
   display: flex;
   flex-direction: column;
@@ -427,17 +418,6 @@ body.sidebar-open .menu-close-icon {
 .top-grid {
   position: relative;
   display: grid;
-<<<<<<< HEAD
-  grid-template-columns: 1.15fr 1.75fr;
-  grid-template-rows: 84px minmax(200px, 1fr);
-  gap: 12px 16px;
-  flex: 0 0 34vh;
-  min-height: 320px;
-  max-height: 360px;
-  margin: 0 -22px 0 -24px;
-  padding: 0 22px 0 24px;
-  background: linear-gradient(180deg, #f7f4e8 0, #eeefdf 84px, transparent 84px);
-=======
   grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
   grid-template-rows: minmax(88px, auto) minmax(250px, auto);
   gap: 12px 16px;
@@ -447,7 +427,6 @@ body.sidebar-open .menu-close-icon {
   margin: 0 -22px 0 -24px;
   padding: 0 22px 0 24px;
   background: linear-gradient(180deg, #f7f4e8 0, #eeefdf 88px, transparent 88px);
->>>>>>> raashi-milestone1-backend-db
 }
 
 .left-stack {
@@ -471,14 +450,10 @@ body.sidebar-open .menu-close-icon {
   z-index: 2;
   grid-column: 1 / -1;
   min-height: 0;
-<<<<<<< HEAD
-  padding: 8px 12px 8px 80px;
-=======
   display: flex;
   align-items: center;
   min-width: 0;
   padding: 12px 18px 12px 80px;
->>>>>>> raashi-milestone1-backend-db
   border: 0;
   border-radius: 0 0 15px 15px;
   background:
@@ -490,10 +465,7 @@ body.sidebar-open .menu-close-icon {
 .greeting-copy {
   position: relative;
   z-index: 1;
-<<<<<<< HEAD
-=======
   min-width: 0;
->>>>>>> raashi-milestone1-backend-db
 }
 
 .greeting-card h1 {
@@ -513,16 +485,10 @@ body.sidebar-open .menu-close-icon {
 .greeting-plant {
   position: absolute;
   left: 0;
-<<<<<<< HEAD
-  top: 4px;
-  width: 72px;
-  height: 72px;
-=======
   top: 50%;
   width: 72px;
   height: 72px;
   transform: translateY(-50%);
->>>>>>> raashi-milestone1-backend-db
   opacity: 0.9;
   filter: drop-shadow(0 8px 10px rgba(58,105,61,0.12));
 }
@@ -539,14 +505,9 @@ body.sidebar-open .menu-close-icon {
   grid-row: 2;
   width: auto;
   height: auto;
-<<<<<<< HEAD
-  min-height: 200px;
-  padding: 16px 18px 14px;
-=======
   min-width: 0;
   min-height: 250px;
   padding: 18px clamp(16px, 1.5vw, 26px);
->>>>>>> raashi-milestone1-backend-db
   border: 1px solid rgba(82,94,84,0.08);
   border-radius: 17px;
   background: rgba(255, 255, 249, 0.95);
@@ -555,12 +516,6 @@ body.sidebar-open .menu-close-icon {
 }
 
 .weather-header-row {
-<<<<<<< HEAD
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 12px;
-=======
   display: grid;
   grid-template-columns: 56px minmax(0, 1fr);
   align-items: center;
@@ -590,7 +545,6 @@ body.sidebar-open .menu-close-icon {
 .weather-location-actions [role="status"] {
   min-width: 0;
   overflow-wrap: anywhere;
->>>>>>> raashi-milestone1-backend-db
 }
 
 .weather-icon {
@@ -609,28 +563,19 @@ body.sidebar-open .menu-close-icon {
 }
 
 .weather-sun {
-<<<<<<< HEAD
-=======
   opacity: 0;
->>>>>>> raashi-milestone1-backend-db
   transform-box: fill-box;
   transform-origin: center;
   animation: weather-sun-turn 24s ease-in-out infinite, weather-sun-glow 5.5s ease-in-out infinite;
 }
 
 .weather-cloud {
-<<<<<<< HEAD
-=======
   opacity: 1;
->>>>>>> raashi-milestone1-backend-db
   transform-box: fill-box;
   transform-origin: center;
   animation: weather-cloud-float 7s ease-in-out infinite;
 }
 
-<<<<<<< HEAD
-.weather-rain-drops {
-=======
 .weather-sun,
 .weather-cloud,
 .weather-rain-drops,
@@ -648,41 +593,20 @@ body.sidebar-open .menu-close-icon {
 .weather-wind,
 .weather-snow,
 .weather-neutral {
->>>>>>> raashi-milestone1-backend-db
   opacity: 0;
   transform-box: fill-box;
   transform-origin: center;
 }
 
-<<<<<<< HEAD
-=======
 .weather-card[data-weather-condition="sunny"] .weather-sun,
 .weather-card[data-weather-condition="partly-cloudy"] .weather-sun {
   opacity: 1;
 }
 
->>>>>>> raashi-milestone1-backend-db
 .weather-card[data-weather-condition="sunny"] .weather-cloud {
   opacity: 0;
 }
 
-<<<<<<< HEAD
-.weather-card[data-weather-condition="cloudy"] .weather-sun,
-.weather-card[data-weather-condition="rain"] .weather-sun {
-  opacity: 0;
-}
-
-.weather-card[data-weather-condition="unknown"] .weather-sun,
-.weather-card[data-weather-condition="unknown"] .weather-cloud {
-  opacity: 0;
-}
-
-.weather-card[data-weather-condition="rain"] .weather-rain-drops {
-  opacity: 1;
-}
-
-.weather-card[data-weather-condition="rain"] .weather-rain-drops path {
-=======
 .weather-card[data-weather-condition="unknown"] .weather-neutral {
   opacity: 1;
 }
@@ -708,19 +632,11 @@ body.sidebar-open .menu-close-icon {
 .weather-card[data-weather-condition="light-rain"] .weather-rain-drops path,
 .weather-card[data-weather-condition="rain"] .weather-rain-drops path,
 .weather-card[data-weather-condition="heavy-rain"] .weather-rain-drops path {
->>>>>>> raashi-milestone1-backend-db
   transform-box: fill-box;
   transform-origin: center;
   animation: weather-main-rain 1.6s ease-in infinite;
 }
 
-<<<<<<< HEAD
-.weather-card[data-weather-condition="rain"] .weather-rain-drops path:nth-child(2) {
-  animation-delay: 500ms;
-}
-
-.weather-card[data-weather-condition="rain"] .weather-rain-drops path:nth-child(3) {
-=======
 .weather-card[data-weather-condition="light-rain"] .weather-rain-drops path:nth-child(2),
 .weather-card[data-weather-condition="rain"] .weather-rain-drops path:nth-child(2),
 .weather-card[data-weather-condition="heavy-rain"] .weather-rain-drops path:nth-child(2) {
@@ -730,7 +646,6 @@ body.sidebar-open .menu-close-icon {
 .weather-card[data-weather-condition="light-rain"] .weather-rain-drops path:nth-child(3),
 .weather-card[data-weather-condition="rain"] .weather-rain-drops path:nth-child(3),
 .weather-card[data-weather-condition="heavy-rain"] .weather-rain-drops path:nth-child(3) {
->>>>>>> raashi-milestone1-backend-db
   animation-delay: 1s;
 }
 
@@ -762,19 +677,11 @@ body.sidebar-open .menu-close-icon {
   display: flex;
   align-items: stretch;
   justify-content: space-between;
-<<<<<<< HEAD
-  gap: 18px;
-}
-
-.temp-block {
-  flex: 1;
-=======
   gap: clamp(12px, 1.5vw, 24px);
 }
 
 .temp-block {
   flex: 1 1 0;
->>>>>>> raashi-milestone1-backend-db
 }
 
 .temperature {
@@ -785,8 +692,6 @@ body.sidebar-open .menu-close-icon {
   color: #1d2a1e;
 }
 
-<<<<<<< HEAD
-=======
 .temperature-indicator {
   display: block;
   width: 14px;
@@ -797,7 +702,6 @@ body.sidebar-open .menu-close-icon {
   background: radial-gradient(circle, #8bbd72 0 3px, #e9f1df 3.5px 100%);
 }
 
->>>>>>> raashi-milestone1-backend-db
 .weather-state {
   margin-top: 8px;
   font-size: 0.96rem;
@@ -805,11 +709,7 @@ body.sidebar-open .menu-close-icon {
 }
 
 .weather-stats {
-<<<<<<< HEAD
-  flex: 1.1;
-=======
   flex: 1 1 0;
->>>>>>> raashi-milestone1-backend-db
   display: grid;
   gap: 9px;
   padding-left: 18px;
@@ -912,10 +812,7 @@ body.sidebar-open .menu-close-icon {
   font-size: 1rem;
   color: #1d2a1e;
   font-weight: 700;
-<<<<<<< HEAD
-=======
   overflow-wrap: anywhere;
->>>>>>> raashi-milestone1-backend-db
 }
 
 @keyframes weather-card-enter {
@@ -967,21 +864,15 @@ body.sidebar-open .menu-close-icon {
   .weather-card,
   .weather-sun,
   .weather-cloud,
-<<<<<<< HEAD
-  .weather-card[data-weather-condition="rain"] .weather-rain-drops path,
-=======
   .weather-card[data-weather-condition="light-rain"] .weather-rain-drops path,
   .weather-card[data-weather-condition="rain"] .weather-rain-drops path,
   .weather-card[data-weather-condition="heavy-rain"] .weather-rain-drops path,
->>>>>>> raashi-milestone1-backend-db
   .humidity-detail-icon,
   .wind-icon .wind-line,
   .rain-icon .rain-stat-drop {
     animation: none;
     transform: none;
   }
-<<<<<<< HEAD
-=======
 
   .weather-sun,
   .weather-cloud,
@@ -993,7 +884,6 @@ body.sidebar-open .menu-close-icon {
   .weather-neutral {
     transition: none;
   }
->>>>>>> raashi-milestone1-backend-db
 }
 
 .hero-card {
@@ -1002,11 +892,8 @@ body.sidebar-open .menu-close-icon {
   grid-column: 2;
   grid-row: 2;
   overflow: hidden;
-<<<<<<< HEAD
-=======
   min-width: 0;
   min-height: 250px;
->>>>>>> raashi-milestone1-backend-db
   border-radius: 18px;
   box-shadow: var(--shadow-soft);
   background: linear-gradient(90deg, rgba(56, 40, 15, 0.32), rgba(12, 29, 14, 0.28)),
@@ -1023,10 +910,7 @@ body.sidebar-open .menu-close-icon {
   flex-direction: column;
   justify-content: center;
   padding: 0;
-<<<<<<< HEAD
-=======
   min-width: 0;
->>>>>>> raashi-milestone1-backend-db
   border-radius: 0;
 }
 
@@ -1044,11 +928,7 @@ body.sidebar-open .menu-close-icon {
 .hero-overlay p {
   margin: 8px 0 0;
   color: rgba(255,255,255,0.92);
-<<<<<<< HEAD
-  font-size: 1.05rem;
-=======
   font-size: clamp(0.9rem, 1vw, 1.05rem);
->>>>>>> raashi-milestone1-backend-db
   max-width: 390px;
 }
 
@@ -1065,16 +945,9 @@ body.sidebar-open .menu-close-icon {
 
 .dashboard-lower {
   display: grid;
-<<<<<<< HEAD
-  grid-template-columns: 1.78fr 1fr;
-  flex: 0 0 39vh;
-  min-height: 340px;
-  max-height: 420px;
-=======
   grid-template-columns: minmax(0, 1.75fr) minmax(300px, 0.9fr);
   flex: 0 0 auto;
   min-width: 0;
->>>>>>> raashi-milestone1-backend-db
   gap: 16px;
 }
 
@@ -1083,10 +956,7 @@ body.sidebar-open .menu-close-icon {
 .quick-actions,
 .season-card {
   min-width: 0;
-<<<<<<< HEAD
-=======
   min-height: 0;
->>>>>>> raashi-milestone1-backend-db
   padding: 14px 15px 13px;
   background: rgba(255,255,255,0.74);
   border-radius: 18px;
@@ -1098,20 +968,14 @@ body.sidebar-open .menu-close-icon {
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 12px;
-<<<<<<< HEAD
-=======
   min-width: 0;
->>>>>>> raashi-milestone1-backend-db
 }
 
 .section-title-wrap {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-<<<<<<< HEAD
-=======
   min-width: 0;
->>>>>>> raashi-milestone1-backend-db
 }
 
 .section-head h3 {
@@ -1119,8 +983,6 @@ body.sidebar-open .menu-close-icon {
   font-size: 1.18rem;
   letter-spacing: -0.05em;
   font-weight: 800;
-<<<<<<< HEAD
-=======
   min-width: 0;
 }
 
@@ -1131,7 +993,6 @@ body.sidebar-open .menu-close-icon {
   flex-wrap: wrap;
   gap: 10px;
   min-width: 0;
->>>>>>> raashi-milestone1-backend-db
 }
 
 .title-leaf,
@@ -1187,11 +1048,6 @@ body.sidebar-open .menu-close-icon {
 
 .fields-layout {
   display: grid;
-<<<<<<< HEAD
-  height: calc(100% - 36px);
-  grid-template-columns: 1.05fr 1.25fr;
-  gap: 14px;
-=======
   grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
   align-items: stretch;
   min-width: 0;
@@ -1202,26 +1058,18 @@ body.sidebar-open .menu-close-icon {
   margin: -4px 0 12px;
   color: var(--text-body);
   font-size: 0.82rem;
->>>>>>> raashi-milestone1-backend-db
 }
 
 .field-map {
   position: relative;
-<<<<<<< HEAD
-  min-height: 0;
-  height: 100%;
-=======
   min-width: 0;
   min-height: 310px;
->>>>>>> raashi-milestone1-backend-db
   border-radius: 14px;
   overflow: hidden;
   background:
     linear-gradient(180deg, rgba(13, 39, 16, 0.04), rgba(13, 39, 16, 0.12)),
     url('/static/images/field-map-aerial.jpg') center 48% / cover no-repeat;
   border: 1px solid rgba(67,88,60,0.12);
-<<<<<<< HEAD
-=======
   perspective: 900px;
 }
 
@@ -1265,7 +1113,6 @@ body.sidebar-open .menu-close-icon {
   background: rgba(20, 36, 23, 0.76);
   color: white;
   font-size: 0.65rem;
->>>>>>> raashi-milestone1-backend-db
 }
 
 .field-shape {
@@ -1397,15 +1244,6 @@ body.sidebar-open .menu-close-icon {
   text-shadow: none;
 }
 
-<<<<<<< HEAD
-.map-zoom span {
-  padding: 4px 6px;
-  border-bottom: 1px solid rgba(255,255,255,0.22);
-}
-
-.map-zoom span:last-child {
-  border-bottom: 0;
-=======
 .map-zoom button,
 .map-view-toggle button {
   min-width: 36px;
@@ -1422,7 +1260,6 @@ body.sidebar-open .menu-close-icon {
 .map-zoom button + button,
 .map-view-toggle button + button {
   border-top: 1px solid rgba(255,255,255,0.22);
->>>>>>> raashi-milestone1-backend-db
 }
 
 .map-legend,
@@ -1475,10 +1312,6 @@ body.sidebar-open .menu-close-icon {
   overflow: hidden;
 }
 
-<<<<<<< HEAD
-.map-view-toggle span {
-  padding: 5px 6px;
-=======
 .map-view-toggle button {
   min-width: 42px;
   min-height: 36px;
@@ -1487,7 +1320,6 @@ body.sidebar-open .menu-close-icon {
 .map-view-toggle button + button {
   border-top: 0;
   border-left: 1px solid rgba(38,52,43,0.14);
->>>>>>> raashi-milestone1-backend-db
 }
 
 .map-view-toggle .selected {
@@ -1495,8 +1327,6 @@ body.sidebar-open .menu-close-icon {
   color: white;
 }
 
-<<<<<<< HEAD
-=======
 .map-zoom button:focus-visible,
 .map-view-toggle button:focus-visible {
   position: relative;
@@ -1505,13 +1335,10 @@ body.sidebar-open .menu-close-icon {
   outline-offset: -3px;
 }
 
->>>>>>> raashi-milestone1-backend-db
 .field-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
-<<<<<<< HEAD
-=======
   min-width: 0;
 }
 
@@ -1530,29 +1357,20 @@ body.sidebar-open .menu-close-icon {
   color: var(--text-body);
   line-height: 1.5;
   text-align: center;
->>>>>>> raashi-milestone1-backend-db
 }
 
 .field-item {
   display: grid;
-<<<<<<< HEAD
-  grid-template-columns: 62px 1fr 24px;
-  gap: 9px;
-  align-items: center;
-=======
   grid-template-columns: 62px minmax(0, 1fr) 28px;
   gap: 9px;
   align-items: center;
   min-width: 0;
->>>>>>> raashi-milestone1-backend-db
   padding: 7px;
   border-radius: 12px;
   background: rgba(224, 233, 224, 0.34);
   border: 1px solid rgba(83,93,81,0.08);
 }
 
-<<<<<<< HEAD
-=======
 .field-item.is-selected {
   border-color: rgba(13,108,83,0.34);
   background: rgba(224,233,224,0.62);
@@ -1580,7 +1398,6 @@ body.sidebar-open .menu-close-icon {
   outline-offset: 2px;
 }
 
->>>>>>> raashi-milestone1-backend-db
 .field-thumb {
   width: 100%;
   height: 60px;
@@ -1605,22 +1422,11 @@ body.sidebar-open .menu-close-icon {
   display: flex;
   flex-direction: column;
   gap: 5px;
-<<<<<<< HEAD
-=======
   min-width: 0;
->>>>>>> raashi-milestone1-backend-db
 }
 
 .field-row {
   display: flex;
-<<<<<<< HEAD
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.field-label {
-=======
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-start;
@@ -1630,15 +1436,11 @@ body.sidebar-open .menu-close-icon {
 
 .field-label {
   min-width: 0;
->>>>>>> raashi-milestone1-backend-db
   font-size: 0.92rem;
   color: #212e22;
   font-weight: 800;
   letter-spacing: -0.03em;
-<<<<<<< HEAD
-=======
   overflow-wrap: anywhere;
->>>>>>> raashi-milestone1-backend-db
 }
 
 .status-pill {
@@ -1690,10 +1492,7 @@ body.sidebar-open .menu-close-icon {
 .detail strong {
   font-size: 0.8rem;
   color: #1d2a1e;
-<<<<<<< HEAD
-=======
   overflow-wrap: anywhere;
->>>>>>> raashi-milestone1-backend-db
 }
 
 .arrow-btn {
@@ -1714,19 +1513,13 @@ body.sidebar-open .menu-close-icon {
 .recommendation-card {
   display: flex;
   flex-direction: column;
-<<<<<<< HEAD
-  gap: 11px;
-=======
   gap: 9px;
   align-self: start;
->>>>>>> raashi-milestone1-backend-db
   min-height: 0;
 }
 
 .recommendation-head {
   margin-bottom: 0;
-<<<<<<< HEAD
-=======
   gap: 8px;
 }
 
@@ -1782,101 +1575,10 @@ body.sidebar-open .menu-close-icon {
   display: flex;
   min-width: 0;
   transition: transform 360ms cubic-bezier(0.2, 0.7, 0.25, 1);
->>>>>>> raashi-milestone1-backend-db
 }
 
 .recommendation-field {
   display: grid;
-<<<<<<< HEAD
-  grid-template-columns: 68px 1fr auto;
-  gap: 9px;
-  align-items: center;
-  background: rgba(241, 241, 226, 0.8);
-  border-radius: 18px;
-  padding: 7px;
-}
-
-.recommendation-thumb {
-  width: 64px;
-  height: 58px;
-  border-radius: 10px;
-  display: block;
-  object-fit: cover;
-  transition: opacity 180ms ease, transform 180ms ease;
-}
-
-.recommendation-field.is-changing .recommendation-thumb,
-.recommendation-field.is-changing .recommendation-meta,
-.recommendation-field.is-changing .status-pill {
-  animation: field-slide-in 260ms ease both;
-}
-
-@keyframes field-slide-in {
-  from {
-    opacity: 0.25;
-    transform: translateX(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-.carousel-dots {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  height: 8px;
-  margin-top: -7px;
-}
-
-.carousel-dot {
-  width: 7px;
-  height: 7px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: #c8d3c4;
-  cursor: pointer;
-  transition: width 180ms ease, background-color 180ms ease;
-}
-
-.carousel-dot.active {
-  width: 18px;
-  border-radius: 99px;
-  background: #14815e;
-}
-
-.carousel-dot:focus-visible {
-  outline: 2px solid #0d6c53;
-  outline-offset: 3px;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .recommendation-thumb,
-  .carousel-dot {
-    transition: none;
-  }
-
-  .recommendation-field.is-changing .recommendation-thumb,
-  .recommendation-field.is-changing .recommendation-meta,
-  .recommendation-field.is-changing .status-pill {
-    animation: none;
-  }
-}
-
-.recommendation-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.field-name-line {
-  font-size: 1rem;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-=======
   grid-template-columns: 94px minmax(0, 1fr);
   align-items: center;
   gap: 10px 14px;
@@ -1923,15 +1625,10 @@ body.sidebar-open .menu-close-icon {
   font-weight: 800;
   letter-spacing: -0.03em;
   overflow-wrap: anywhere;
->>>>>>> raashi-milestone1-backend-db
 }
 
 .crop-name-line {
   color: #596e5e;
-<<<<<<< HEAD
-  font-size: 0.94rem;
-  font-weight: 600;
-=======
   font-size: 0.72rem;
   font-weight: 600;
   line-height: 1.4;
@@ -1965,6 +1662,17 @@ body.sidebar-open .menu-close-icon {
   font-size: 1rem;
   font-weight: 700;
   line-height: 1;
+}
+
+.recommendation-fact-icon svg {
+  display: block;
+  width: 1.1rem;
+  height: 1.1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
 }
 
 .recommendation-fact-icon--water {
@@ -2006,6 +1714,42 @@ body.sidebar-open .menu-close-icon {
   overflow-wrap: anywhere;
 }
 
+.recommendation-data-status--model1 {
+  display: block;
+  padding: 11px 14px;
+  border: 1px solid rgb(255 255 255 / 12%);
+  background: #101714;
+  color: #eef4f0;
+}
+
+.recommendation-data-status--model1 .recommendation-model-content {
+  display: grid;
+  gap: 5px;
+}
+
+.recommendation-data-status--model1 .recommendation-model-class {
+  color: #f3f6f4;
+  font-size: 0.88rem;
+}
+
+.recommendation-data-status--model1 .recommendation-model-label {
+  color: #d3ddd6;
+}
+
+.recommendation-data-status--model1 .recommendation-model-probability {
+  color: #e8eee9;
+  font-size: 0.78rem;
+}
+
+.recommendation-data-status--model1 .recommendation-model-warning {
+  margin-top: 4px;
+  padding: 8px;
+  border-radius: 8px;
+  background: #251909;
+  color: #f4e5c4;
+  font-size: 0.72rem;
+}
+
 .recommendation-info-icon {
   display: grid;
   width: 22px;
@@ -2035,6 +1779,43 @@ body.sidebar-open .menu-close-icon {
 .recommendation-data-status p {
   margin: 0;
   color: #697780;
+}
+
+.recommendation-data-status .recommendation-input-provenance {
+  margin-top: 4px;
+  color: #53636b;
+  font-size: 0.7rem;
+}
+
+.recommendation-data-status .recommendation-input-provenance summary {
+  color: #30404a;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.recommendation-data-status .recommendation-input-provenance ul {
+  display: grid;
+  gap: 2px;
+  margin: 5px 0 0;
+  padding-left: 18px;
+  overflow-wrap: anywhere;
+}
+
+.recommendation-model-retry {
+  width: fit-content;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #176b4e;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.recommendation-model-retry:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
 }
 
 .recommendation-data-status a {
@@ -2246,7 +2027,6 @@ body.sidebar-open .menu-close-icon {
   .carousel-dot::before {
     transition: none;
   }
->>>>>>> raashi-milestone1-backend-db
 }
 
 .status-tight {
@@ -2348,28 +2128,11 @@ body.sidebar-open .menu-close-icon {
   stroke-linejoin: round;
 }
 
-<<<<<<< HEAD
-.recommendation-note {
-  margin: 0;
-  color: #566c5d;
-  font-size: 0.77rem;
-  line-height: 1.35;
-  font-weight: 600;
-}
-
-.bottom-grid {
-  display: grid;
-  grid-template-columns: 1.72fr 1fr;
-  flex: 0 0 20vh;
-  min-height: 190px;
-  max-height: 230px;
-=======
 .bottom-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.72fr) minmax(280px, 1fr);
   flex: 0 0 auto;
   min-width: 0;
->>>>>>> raashi-milestone1-backend-db
   gap: 16px;
 }
 
@@ -2391,13 +2154,8 @@ body.sidebar-open .menu-close-icon {
   appearance: none;
   border: none;
   position: relative;
-<<<<<<< HEAD
-  min-height: 0;
-  height: 100%;
-=======
   min-width: 0;
   min-height: 155px;
->>>>>>> raashi-milestone1-backend-db
   border-radius: 20px;
   padding: 12px 14px 10px;
   text-align: left;
@@ -2446,20 +2204,12 @@ body.sidebar-open .menu-close-icon {
   line-height: 1.2;
   font-weight: 700;
   color: #1e2d22;
-<<<<<<< HEAD
-  max-width: 110px;
-}
-
-.quick-description {
-  max-width: 150px;
-=======
   max-width: 100%;
   overflow-wrap: anywhere;
 }
 
 .quick-description {
   max-width: 100%;
->>>>>>> raashi-milestone1-backend-db
   color: #46564a;
   font-size: 0.76rem;
   line-height: 1.25;
@@ -2588,19 +2338,6 @@ body.sidebar-open .menu-close-icon {
 }
 
 @media (max-width: 1180px) {
-<<<<<<< HEAD
-  .top-grid,
-  .dashboard-lower,
-  .bottom-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .top-grid {
-    grid-template-rows: 84px 210px 240px;
-    flex: none;
-    min-height: 0;
-    max-height: none;
-=======
   .top-grid {
     grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
     grid-template-rows: minmax(84px, auto) minmax(240px, auto);
@@ -2627,7 +2364,6 @@ body.sidebar-open .menu-close-icon {
   .top-grid {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(84px, auto) minmax(240px, auto) minmax(240px, auto);
->>>>>>> raashi-milestone1-backend-db
   }
 
   .weather-card,
@@ -2641,40 +2377,11 @@ body.sidebar-open .menu-close-icon {
 
   .hero-card {
     grid-row: 3;
-<<<<<<< HEAD
-    min-height: 0;
-  }
-
-  .main-panel {
-    height: auto;
-    min-height: 100vh;
-    overflow: visible;
-=======
->>>>>>> raashi-milestone1-backend-db
   }
 
   .dashboard-lower,
   .bottom-grid {
-<<<<<<< HEAD
-    flex: none;
-    max-height: none;
-  }
-
-  .fields-card {
-    min-height: 380px;
-  }
-
-  .recommendation-card,
-  .quick-actions,
-  .season-card {
-    min-height: 260px;
-  }
-
-  .hero-card {
-    min-height: 260px;
-=======
     grid-template-columns: minmax(0, 1fr);
->>>>>>> raashi-milestone1-backend-db
   }
 }
 
@@ -2762,9 +2469,6 @@ body.sidebar-open .menu-close-icon {
     min-height: 0;
     margin: 0 -16px 0;
     padding: 0 16px;
-<<<<<<< HEAD
-    grid-template-rows: auto auto minmax(220px, auto);
-=======
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(260px, auto) minmax(220px, auto);
   }
@@ -2785,7 +2489,6 @@ body.sidebar-open .menu-close-icon {
   .dashboard-lower,
   .bottom-grid {
     grid-template-columns: minmax(0, 1fr);
->>>>>>> raashi-milestone1-backend-db
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -2817,10 +2520,7 @@ body.sidebar-open .menu-close-icon {
 
   .field-map {
     height: 240px;
-<<<<<<< HEAD
-=======
     min-height: 240px;
->>>>>>> raashi-milestone1-backend-db
   }
 
   .weather-main,
@@ -2838,8 +2538,6 @@ body.sidebar-open .menu-close-icon {
     padding-top: 10px;
   }
 }
-<<<<<<< HEAD
-=======
 
 .weather-location-actions {
   display: flex;
@@ -2956,4 +2654,212 @@ body.sidebar-open .menu-close-icon {
     padding-left: 0;
   }
 }
->>>>>>> raashi-milestone1-backend-db
+
+.experimental-lab-card {
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding: 24px;
+  border: 1px solid rgba(82, 94, 84, 0.08);
+  border-radius: 17px;
+  background: rgba(255, 255, 249, 0.97);
+  box-shadow: 0 6px 18px rgba(34, 48, 32, 0.1);
+}
+
+.experimental-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #f5e7b6;
+  color: #5c4820;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.experimental-intro,
+.experimental-validation-note {
+  color: var(--text-body);
+  line-height: 1.55;
+}
+
+.experimental-disclaimer {
+  margin: 18px 0;
+  padding: 14px 16px;
+  border-left: 5px solid #a84632;
+  border-radius: 8px;
+  background: #fff0e9;
+  color: #592b22;
+  font-weight: 700;
+  line-height: 1.55;
+}
+
+.experimental-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.experimental-selection-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.experimental-weather-status,
+.experimental-readiness {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(13, 108, 83, 0.08);
+  color: var(--text-body);
+  line-height: 1.5;
+}
+
+.experimental-weather-refresh {
+  min-height: 40px;
+  margin: 0 0 14px;
+  padding: 8px 14px;
+  border: 1px solid rgba(13, 108, 83, 0.32);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--green);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.experimental-weather-refresh:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.experimental-readiness {
+  font-weight: 700;
+}
+
+.experimental-field {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  color: var(--text-body);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.experimental-field input,
+.experimental-field select {
+  width: 100%;
+  min-height: 46px;
+  padding: 10px 12px;
+  border: 1px solid rgba(49, 81, 57, 0.22);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--text-heading);
+  font: inherit;
+}
+
+.experimental-field input:focus,
+.experimental-field select:focus {
+  outline: 3px solid rgba(13, 108, 83, 0.2);
+  border-color: var(--green);
+}
+
+.experimental-validation-note {
+  margin: 16px 0;
+  font-size: 0.88rem;
+}
+
+.experimental-submit {
+  min-height: 48px;
+  padding: 12px 20px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--green);
+  color: #fff;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.experimental-submit:hover:not(:disabled) {
+  background: #09543f;
+}
+
+.experimental-submit:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.experimental-message {
+  min-height: 26px;
+  margin-top: 14px;
+  color: var(--text-body);
+  font-weight: 600;
+}
+
+.experimental-result {
+  margin-top: 14px;
+  padding: 18px;
+  border: 1px solid rgba(13, 108, 83, 0.18);
+  border-radius: 14px;
+  background: var(--soft-green);
+}
+
+.experimental-result h4 {
+  margin: 0 0 12px;
+  font-size: 1rem;
+}
+
+.experimental-result dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+
+.experimental-result dl > div {
+  min-width: 0;
+}
+
+.experimental-result dt {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.experimental-result dd {
+  margin: 4px 0 0;
+  color: var(--text-heading);
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.experimental-result > p {
+  margin: 14px 0 0;
+  color: var(--text-body);
+  line-height: 1.5;
+}
+
+@media (max-width: 860px) {
+  .experimental-lab-card {
+    padding: 20px;
+  }
+
+  .experimental-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .experimental-selection-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 520px) {
+  .experimental-lab-card {
+    padding: 16px;
+  }
+
+  .experimental-fields,
+  .experimental-result dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

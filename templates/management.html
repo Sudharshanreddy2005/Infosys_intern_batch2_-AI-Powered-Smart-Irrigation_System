@@ -111,10 +111,7 @@
         display: grid;
         gap: 12px;
       }
-<<<<<<< HEAD
-=======
       form[hidden] { display: none; }
->>>>>>> raashi-milestone1-backend-db
 
       .field-group {
         display: grid;
@@ -225,8 +222,6 @@
         padding: 16px 8px;
       }
 
-<<<<<<< HEAD
-=======
       .integration-notice {
         margin: 0 0 20px;
         padding: 14px 16px;
@@ -237,7 +232,6 @@
         line-height: 1.5;
       }
 
->>>>>>> raashi-milestone1-backend-db
       @media (max-width: 980px) {
         .grid { grid-template-columns: 1fr; }
       }
@@ -251,17 +245,12 @@
           <h1>JalSaathi Management</h1>
         </div>
         <select data-language-select aria-label="Select language" style="max-width: 150px; padding: 8px 10px; border: 1px solid #dfe8df; border-radius: 10px;"></select>
-<<<<<<< HEAD
-        <a class="navlink" href="/">Back to Dashboard</a>
-      </div>
-
-=======
+        <span data-translation-status data-i18n-ignore role="status" aria-live="polite" hidden></span>
         <a class="navlink" href="/dashboard">Back to Dashboard</a>
       </div>
 
       <p class="integration-notice" role="status">Farmers, fields, and crops are not connected to server persistence. This management page is unavailable; no changes can be saved.</p>
 
->>>>>>> raashi-milestone1-backend-db
       <div class="grid">
         <div class="card">
           <div class="section-title">
@@ -407,8 +396,8 @@
       </div>
     </div>
 
-    <script src="/static/profile-store.js?v=20261014-sidebar-dropdown2"></script>
-    <script src="/static/i18n.js?v=20261014-complete-language6"></script>
+    <script src="/static/profile-store.js?v=20261028-translation-batching"></script>
+    <script src="/static/i18n.js?v=20261028-translation-batching"></script>
     <script>
       const state = {
         farmers: [],
@@ -482,11 +471,7 @@
             <div class="meta">
               <span class="pill">${field.location || 'Location not set'}</span>
               <span class="pill">${field.area || 0} ${field.area_unit || 'acres'}</span>
-<<<<<<< HEAD
-              <span class="pill">${field.status || 'Optimal'}</span>
-=======
               <span class="pill">${field.status || 'No recorded status'}</span>
->>>>>>> raashi-milestone1-backend-db
             </div>
           </div>
         `).join('');
@@ -523,31 +508,12 @@
       }
 
       async function fetchData() {
-<<<<<<< HEAD
-        const [farmersRes, fieldsRes, cropsRes] = await Promise.all([
-          fetch('/api/farmers'),
-          fetch('/api/fields'),
-          fetch('/api/crops')
-        ]);
-
-        state.farmers = farmersRes.ok ? await farmersRes.json() : [];
-        state.fields = fieldsRes.ok ? await fieldsRes.json() : [];
-        state.crops = cropsRes.ok ? await cropsRes.json() : [];
-
-        renderFarmers();
-        renderFields();
-        renderCrops();
-
-        fillSelect('field-farmer', state.farmers, 'name', 'id');
-        fillSelect('field-crop', state.crops, 'name', 'id');
-=======
         document.querySelectorAll('#farmer-form, #field-form, #crop-form').forEach(form => {
           form.hidden = true;
         });
         document.getElementById('farmers-list').textContent = 'No farmer persistence API is implemented.';
         document.getElementById('fields-list').textContent = 'No field persistence API is implemented.';
         document.getElementById('crops-list').textContent = 'No crop persistence API is implemented.';
->>>>>>> raashi-milestone1-backend-db
       }
 
       async function submitForm(url, formData, reset) {

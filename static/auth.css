@@ -22,7 +22,10 @@ body.auth-body {
   margin: 0;
   color: var(--auth-ink);
   background: var(--auth-cream);
-  font-family: Inter, "Segoe UI", Arial, sans-serif;
+  font-family: Inter, "Noto Sans Devanagari", "Noto Sans Telugu", "Noto Sans Kannada",
+    "Noto Sans Tamil", "Noto Sans Malayalam", "Noto Sans Bengali", "Noto Sans Gujarati",
+    "Noto Sans Gurmukhi", "Noto Sans Oriya", "Noto Sans Assamese", "Noto Nastaliq Urdu",
+    "Segoe UI", Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -167,6 +170,7 @@ button, a, input, select { -webkit-tap-highlight-color: transparent; }
 }
 
 .auth-topline {
+  position: relative;
   display: flex;
   min-height: 43px;
   align-items: center;
@@ -182,6 +186,8 @@ button, a, input, select { -webkit-tap-highlight-color: transparent; }
   background: #fff;
   font-size: 12px;
 }
+.auth-translation-status { position: absolute; top: calc(100% + 6px); right: 0; z-index: 3; width: min(320px, 85vw); padding: 8px 10px; border: 1px solid var(--auth-border); border-radius: 8px; background: #fff; color: var(--auth-muted); font-size: 11px; line-height: 1.4; }
+.auth-translation-status[hidden] { display: none; }
 
 .mobile-brand { display: none; }
 .back-home { display: inline-flex; align-items: center; gap: 5px; color: #68776c; font-size: 12px; font-weight: 600; }

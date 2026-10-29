@@ -1,15 +1,19 @@
 (() => {
   "use strict";
 
-  const languages = ["en", "te", "hi", "kn", "ta", "ml", "mr", "bn"];
-  const localeFor = {
-    en: "en-IN", te: "te-IN", hi: "hi-IN", kn: "kn-IN",
-    ta: "ta-IN", ml: "ml-IN", mr: "mr-IN", bn: "bn-IN",
-  };
-  const nativeNames = {
-    en: "English", te: "తెలుగు", hi: "हिंदी", kn: "ಕನ್ನಡ",
-    ta: "தமிழ்", ml: "മലയാളം", mr: "मराठी", bn: "বাংলা",
-  };
+  const profileApi = window.JalSaathiProfile;
+  const languageCatalog = profileApi?.getLanguages?.() || [{ code: "en", locale: "en-IN", label: "English" }];
+  const languages = languageCatalog.map((language) => language.code);
+  const localeFor = Object.fromEntries(languageCatalog.map(({ code, locale }) => [code, locale]));
+  const nativeNames = Object.fromEntries(languageCatalog.map(({ code, label }) => [code, label]));
+  const localLanguages = ["en", "te", "hi", "kn", "ta", "ml", "mr", "bn"];
+  const MAX_TRANSLATIONS_PER_BATCH = 16;
+  const MAX_BATCH_CHARACTERS = 1800;
+  const DEFAULT_FAILURE_COOLDOWN_MS = 30_000;
+  const RATE_LIMIT_FALLBACK_COOLDOWN_MS = 60_000;
+  const REMOTE_CACHE_KEY = "jalsaathi.i18n.remote-cache.v1";
+  const REMOTE_CACHE_MAX_ENTRIES = 512;
+  const REMOTE_COOLDOWN_KEY = "jalsaathi.i18n.remote-cooldown.v1";
 
   const rows = [
     ["Dashboard", "డాష్‌బోర్డ్", "डैशबोर्ड", "ಡ್ಯಾಶ್‌ಬೋರ್ಡ್", "டாஷ்போர்டு", "ഡാഷ്ബോർഡ്", "डॅशबोर्ड", "ড্যাশবোর্ড"],
@@ -22,7 +26,6 @@
     ["Profile", "ప్రొఫైల్", "प्रोफ़ाइल", "ಪ್ರೊಫೈಲ್", "சுயவிவரம்", "പ്രൊഫൈൽ", "प्रोफाइल", "প্রোফাইল"],
     ["Select language", "భాషను ఎంచుకోండి", "भाषा चुनें", "ಭಾಷೆಯನ್ನು ಆಯ್ಕೆಮಾಡಿ", "மொழியைத் தேர்ந்தெடுக்கவும்", "ഭാഷ തിരഞ്ഞെടുക്കുക", "भाषा निवडा", "ভাষা নির্বাচন করুন"],
     ["Available languages", "అందుబాటులో ఉన్న భాషలు", "उपलब्ध भाषाएँ", "ಲಭ್ಯವಿರುವ ಭಾಷೆಗಳು", "கிடைக்கும் மொழிகள்", "ലഭ്യമായ ഭാഷകൾ", "उपलब्ध भाषा", "উপলব্ধ ভাষা"],
-    ["Selection only; the interface remains in English.", "భాష ఎంపిక మాత్రమే; ఇంటర్‌ఫేస్ ఆంగ్లంలోనే ఉంటుంది.", "केवल चयन; इंटरफ़ेस अंग्रेज़ी में ही रहेगा।", "ಆಯ್ಕೆ ಮಾತ್ರ; ಇಂಟರ್ಫೇಸ್ ಇಂಗ್ಲಿಷ್‌ನಲ್ಲೇ ಇರುತ್ತದೆ.", "தேர்வு மட்டுமே; இடைமுகம் ஆங்கிலத்திலேயே இருக்கும்.", "തിരഞ്ഞെടുപ്പ് മാത്രം; ഇന്റർഫേസ് ഇംഗ്ലീഷിൽ തുടരും.", "फक्त निवड; इंटरफेस इंग्रजीतच राहील.", "শুধু নির্বাচন; ইন্টারফেস ইংরেজিতেই থাকবে।"],
     ["Login", "లాగిన్", "लॉगिन", "ಲಾಗಿನ್", "உள்நுழைவு", "ലോഗിൻ", "लॉगिन", "লগইন"],
     ["My Profile", "నా ప్రొఫైల్", "मेरी प्रोफ़ाइल", "ನನ್ನ ಪ್ರೊಫೈಲ್", "என் சுயவிவரம்", "എന്റെ പ്രൊഫൈൽ", "माझे प्रोफाइल", "আমার প্রোফাইল"],
     ["Logout", "లాగ్ అవుట్", "लॉग आउट", "ಲಾಗ್ ಔಟ್", "வெளியேறு", "ലോഗ് ഔട്ട്", "लॉग आउट", "লগ আউট"],
@@ -445,52 +448,295 @@
     ["Aerial map showing", "చూపించే వైమానిక మ్యాప్", "दिखाने वाला हवाई नक्शा", "ತೋರಿಸುವ ವೈಮಾನಿಕ ನಕ್ಷೆ", "காட்டும் வான்வழி வரைபடம்", "കാണിക്കുന്ന ഏരിയൽ മാപ്പ്", "दाखवणारा हवाई नकाशा", "দেখানো আকাশী মানচিত্র"],
     ["field", "పొలం", "खेत", "ಹೊಲ", "வயல்", "വയൽ", "शेत", "ক্ষেত"],
     ["fields", "పొలాలు", "खेत", "ಹೊಲಗಳು", "வயல்கள்", "വയലുകൾ", "शेते", "ক্ষেত"],
+    ["Only fields saved to your account are shown here.", "మీ ఖాతాలో సేవ్ చేసిన పొలాలు మాత్రమే ఇక్కడ చూపబడతాయి.", "यहाँ केवल आपके खाते में सहेजे गए खेत दिखाए जाते हैं।", "ನಿಮ್ಮ ಖಾತೆಯಲ್ಲಿ ಉಳಿಸಿದ ಹೊಲಗಳನ್ನು ಮಾತ್ರ ಇಲ್ಲಿ ತೋರಿಸಲಾಗುತ್ತದೆ.", "உங்கள் கணக்கில் சேமிக்கப்பட்ட வயல்கள் மட்டுமே இங்கே காட்டப்படும்.", "നിങ്ങളുടെ അക്കൗണ്ടിൽ സേവ് ചെയ്ത വയലുകൾ മാത്രമേ ഇവിടെ കാണിക്കൂ.", "तुमच्या खात्यात जतन केलेली शेतेच येथे दिसतात.", "আপনার অ্যাকাউন্টে সংরক্ষিত ক্ষেতগুলিই এখানে দেখানো হয়।"],
+    ["View All", "అన్నీ చూడండి", "सभी देखें", "ಎಲ್ಲವನ್ನೂ ವೀಕ್ಷಿಸಿ", "அனைத்தையும் காண்க", "എല്ലാം കാണുക", "सर्व पहा", "সব দেখুন"],
+    ["Experimental result", "ప్రయోగాత్మక ఫలితం", "प्रायोगिक परिणाम", "ಪ್ರಾಯೋಗಿಕ ಫಲಿತಾಂಶ", "சோதனை முடிவு", "പരീക്ഷണ ഫലം", "प्रायोगिक निकाल", "পরীক্ষামূলক ফলাফল"],
+    ["Experimental result availability", "ప్రయోగాత్మక ఫలిత లభ్యత", "प्रायोगिक परिणाम की उपलब्धता", "ಪ್ರಾಯೋಗಿಕ ಫಲಿತಾಂಶದ ಲಭ್ಯತೆ", "சோதனை முடிவின் கிடைக்கும் நிலை", "പരീക്ഷണ ഫലത്തിന്റെ ലഭ്യത", "प्रायोगिक निकालाची उपलब्धता", "পরীক্ষামূলক ফলাফলের প্রাপ্যতা"],
+    ["Experimental result unavailable", "ప్రయోగాత్మక ఫలితం అందుబాటులో లేదు", "प्रायोगिक परिणाम उपलब्ध नहीं है", "ಪ್ರಾಯೋಗಿಕ ಫಲಿತಾಂಶ ಲಭ್ಯವಿಲ್ಲ", "சோதனை முடிவு கிடைக்கவில்லை", "പരീക്ഷണ ഫലം ലഭ്യമല്ല", "प्रायोगिक निकाल उपलब्ध नाही", "পরীক্ষামূলক ফলাফল পাওয়া যাচ্ছে না"],
+    ["Experimental result loading", "ప్రయోగాత్మక ఫలితం లోడ్ అవుతోంది", "प्रायोगिक परिणाम लोड हो रहा है", "ಪ್ರಾಯೋಗಿಕ ಫಲಿತಾಂಶ ಲೋಡ್ ಆಗುತ್ತಿದೆ", "சோதனை முடிவு ஏற்றப்படுகிறது", "പരീക്ഷണ ഫലം ലോഡ് ചെയ്യുന്നു", "प्रायोगिक निकाल लोड होत आहे", "পরীক্ষামূলক ফলাফল লোড হচ্ছে"],
+    ["Irrigation Needed", "నీటిపారుదల అవసరం", "सिंचाई आवश्यक है", "ನೀರಾವರಿ ಅಗತ್ಯವಿದೆ", "பாசனம் தேவை", "ജലസേചനം ആവശ്യമാണ്", "सिंचन आवश्यक आहे", "সেচ প্রয়োজন"],
+    ["Irrigation Not Needed", "నీటిపారుదల అవసరం లేదు", "सिंचाई आवश्यक नहीं है", "ನೀರಾವರಿ ಅಗತ್ಯವಿಲ್ಲ", "பாசனம் தேவையில்லை", "ജലസേചനം ആവശ്യമില്ല", "सिंचन आवश्यक नाही", "সেচের প্রয়োজন নেই"],
+    ["Probability:", "సంభావ్యత:", "संभाव्यता:", "ಸಂಭಾವ್ಯತೆ:", "நிகழ்தகவு:", "സാധ്യത:", "संभाव्यता:", "সম্ভাবনা:"],
+    ["Crop:", "పంట:", "फ़सल:", "ಬೆಳೆ:", "பயிர்:", "വിള:", "पीक:", "ফসল:"],
+    ["Recorded crop dates", "నమోదు చేసిన పంట తేదీలు", "दर्ज की गई फसल की तिथियाँ", "ದಾಖಲಾದ ಬೆಳೆ ದಿನಾಂಕಗಳು", "பதிவுசெய்யப்பட்ட பயிர் தேதிகள்", "രേഖപ്പെടുത്തിയ വിള തീയതികൾ", "नोंदवलेल्या पीक तारखा", "নথিভুক্ত ফসলের তারিখ"],
+    ["Season information unavailable", "సీజన్ సమాచారం అందుబాటులో లేదు", "मौसम की जानकारी उपलब्ध नहीं है", "ಋತುವಿನ ಮಾಹಿತಿ ಲಭ್ಯವಿಲ್ಲ", "பருவத் தகவல் கிடைக்கவில்லை", "സീസൺ വിവരം ലഭ്യമല്ല", "हंगामाची माहिती उपलब्ध नाही", "ঋতুর তথ্য পাওয়া যাচ্ছে না"],
+    ["No regional season calendar is configured.", "ప్రాంతీయ పంటకాల క్యాలెండర్ అందుబాటులో లేదు.", "क्षेत्रीय फसल कैलेंडर कॉन्फ़िगर नहीं है।", "ಪ್ರಾದೇಶಿಕ ಬೆಳೆ ಋತು ಕ್ಯಾಲೆಂಡರ್ ಹೊಂದಿಸಲಾಗಿಲ್ಲ.", "பிராந்தியப் பருவ காலண்டர் அமைக்கப்படவில்லை.", "പ്രാദേശിക സീസൺ കലണ്ടർ ക്രമീകരിച്ചിട്ടില്ല.", "प्रादेशिक हंगाम दिनदर्शिका कॉन्फिगर केलेली नाही.", "আঞ্চলিক ঋতু ক্যালেন্ডার সেট করা নেই।"],
+    ["No regional crop calendar is configured.", "ప్రాంతీయ పంటకాల క్యాలెండర్ అందుబాటులో లేదు.", "क्षेत्रीय फसल कैलेंडर कॉन्फ़िगर नहीं है।", "ಪ್ರಾದೇಶಿಕ ಬೆಳೆ ಋತು ಕ್ಯಾಲೆಂಡರ್ ಹೊಂದಿಸಲಾಗಿಲ್ಲ.", "பிராந்தியப் பயிர் பருவக் காலண்டர் அமைக்கப்படவில்லை.", "പ്രാദേശിക വിള സീസൺ കലണ്ടർ ക്രമീകരിച്ചിട്ടില്ല.", "प्रादेशिक पीक हंगाम दिनदर्शिका कॉन्फिगर केलेली नाही.", "আঞ্চলিক ফসলের ঋতু ক্যালেন্ডার সেট করা নেই।"],
+    ["PRIMARY", "ప్రధాన", "मुख्य", "ಮುಖ್ಯ", "முக்கிய", "പ്രധാന", "मुख्य", "প্রধান"],
+    ["ESTIMATED DATE PROGRESS", "అంచనా తేదీ పురోగతి", "अनुमानित तिथि की प्रगति", "ಅಂದಾಜು ದಿನಾಂಕದ ಪ್ರಗತಿ", "மதிப்பிடப்பட்ட தேதியின் முன்னேற்றம்", "കണക്കാക്കിയ തീയതിയുടെ പുരോഗതി", "अंदाजित तारखेची प्रगती", "আনুমানিক তারিখের অগ্রগতি"],
+    ["Estimated date progress", "అంచనా తేదీ పురోగతి", "अनुमानित तिथि की प्रगति", "ಅಂದಾಜು ದಿನಾಂಕದ ಪ್ರಗತಿ", "மதிப்பிடப்பட்ட தேதியின் முன்னேற்றம்", "കണക്കാക്കിയ തീയതിയുടെ പുരോഗതി", "अंदाजित तारखेची प्रगती", "আনুমানিক তারিখের অগ্রগতি"],
+    ["Primary crops", "ప్రధాన పంటలు", "मुख्य फ़सलें", "ಮುಖ್ಯ ಬೆಳೆಗಳು", "முக்கியப் பயிர்கள்", "പ്രധാന വിളകൾ", "मुख्य पिके", "প্রধান ফসল"],
+    ["Crop names unavailable", "పంటల పేర్లు అందుబాటులో లేవు", "फ़सलों के नाम उपलब्ध नहीं हैं", "ಬೆಳೆಗಳ ಹೆಸರುಗಳು ಲಭ್ಯವಿಲ್ಲ", "பயிர்ப் பெயர்கள் கிடைக்கவில்லை", "വിളകളുടെ പേരുകൾ ലഭ്യമല്ല", "पिकांची नावे उपलब्ध नाहीत", "ফসলের নাম পাওয়া যাচ্ছে না"],
+    ["Model Lab", "మోడల్ ల్యాబ్", "मॉडल लैब", "ಮಾದರಿ ಪ್ರಯೋಗಾಲಯ", "மாதிரி ஆய்வகம்", "മോഡൽ ലാബ്", "मॉडेल लॅब", "মডেল ল্যাব"],
+    ["Save", "భద్రపరచండి", "सहेजें", "ಉಳಿಸಿ", "சேமி", "സംരക്ഷിക്കുക", "जतन करा", "সংরক্ষণ করুন"],
+    ["Retry", "మళ్లీ ప్రయత్నించండి", "फिर से प्रयास करें", "ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ", "மீண்டும் முயற்சி செய்", "വീണ്ടും ശ്രമിക്കുക", "पुन्हा प्रयत्न करा", "আবার চেষ্টা করুন"],
+    ["Delete", "తొలగించండి", "हटाएँ", "ಅಳಿಸಿ", "நீக்கு", "ഇല്ലാതാക്കുക", "हटवा", "মুছুন"],
+    ["Edit", "సవరించండి", "संपादित करें", "ಸಂಪಾದಿಸಿ", "திருத்து", "തിരുത്തുക", "संपादित करा", "সম্পাদনা করুন"],
   ];
 
-  const malformedRows = rows.filter((row) => row.length !== languages.length);
+  const malformedRows = rows.filter((row) => row.length !== localLanguages.length);
   if (malformedRows.length) {
     throw new Error(`JalSaathi translations must define every language for every key (${malformedRows.length} invalid rows).`);
   }
 
-  const translationLanguages = languages.slice(1);
+  const translationLanguages = localLanguages.slice(1);
   const dictionaries = Object.fromEntries(translationLanguages.map((code, index) => [
     code,
     Object.fromEntries(rows.map((row) => [row[0], row[index + 1]])),
   ]));
   dictionaries.en = Object.fromEntries(rows.map((row) => [row[0], row[0]]));
-  const wordDictionaries = Object.fromEntries(translationLanguages.map((code, index) => [
-    code,
-    Object.fromEntries(rows
-      .filter((row) => /^[A-Za-z]+$/.test(row[0]) && !row[0].includes(" "))
-      .map((row) => [row[0].toLocaleLowerCase(), row[index + 1]])),
-  ]));
-  wordDictionaries.en = Object.fromEntries(rows
-    .filter((row) => /^[A-Za-z]+$/.test(row[0]) && !row[0].includes(" "))
-    .map((row) => [row[0].toLocaleLowerCase(), row[0]]));
-
-  const profileApi = window.JalSaathiProfile;
+  const translationKeys = Object.freeze({
+    "nav.dashboard": "Dashboard",
+    "nav.fields": "My Fields",
+    "nav.crops": "Crops",
+    "nav.schedule": "Irrigation Schedule",
+    "nav.reports": "Reports",
+    "nav.alerts": "Alerts",
+    "nav.weather": "Weather",
+    "nav.modelLab": "Model Lab",
+    "nav.profile": "Profile",
+    "actions.save": "Save",
+    "actions.cancel": "Cancel",
+    "actions.retry": "Retry",
+    "actions.delete": "Delete",
+    "actions.edit": "Edit",
+    "fields.title": "My Fields",
+    "fields.area": "Field Area",
+    "fields.crop": "Crop",
+    "weather.humidity": "Humidity",
+    "irrigation.recommendation": "Today's Irrigation Recommendation",
+    "auth.login": "Login",
+    "dashboard.savedFieldsHint": "Only fields saved to your account are shown here.",
+    "common.viewAll": "View All",
+    "recommendations.todayTitle": "Today's Irrigation Recommendation",
+    "model.experimentalResult": "Experimental result",
+    "model.experimentalAvailability": "Experimental result availability",
+    "model.experimentalUnavailable": "Experimental result unavailable",
+    "model.experimentalLoading": "Experimental result loading",
+    "model.irrigationNeeded": "Irrigation Needed",
+    "model.irrigationNotNeeded": "Irrigation Not Needed",
+    "model.probabilityLabel": "Probability:",
+    "fields.cropLabel": "Crop:",
+    "season.unavailable": "Season information unavailable",
+    "season.noRegionalCalendar": "No regional crop calendar is configured.",
+    "season.primary": "PRIMARY",
+    "season.estimatedDateProgress": "Estimated date progress",
+    "season.estimatedDateProgressUpper": "ESTIMATED DATE PROGRESS",
+    "season.primaryCrops": "Primary crops",
+    "season.recordedCropDates": "Recorded crop dates",
+  });
+  const keysBySource = new Map(
+    Object.entries(translationKeys).map(([key, source]) => [source, key]),
+  );
   const getLanguage = () => profileApi?.getLanguage?.() || "en";
   const sourceValues = new WeakMap();
   const translatedValues = new WeakMap();
   const ignoredMutations = new WeakSet();
   const missing = new Set();
+  const remoteCache = new Map();
+  const queuedTranslations = new Map();
+  const translationCallbacks = new Map();
+  const translationsInFlight = new Set();
+  const remotelyTranslatable = new Set();
+  const remoteFailureUntil = new Map();
+  const CRITICAL_TEXT = /\b(irrigation needed|irrigation not needed|water requirement|prediction|not a validated|not a real-world|coordinates|sensor reading)\b/i;
+  let translationTimer = 0;
+  let isFlushingTranslations = false;
   let isWriting = false;
+  let observerReady = false;
+
+  const restoreRemoteCache = () => {
+    try {
+      const serialized = sessionStorage.getItem(REMOTE_CACHE_KEY);
+      if (!serialized) return;
+      const cached = JSON.parse(serialized);
+      if (!cached || typeof cached !== "object" || Array.isArray(cached)) return;
+      Object.entries(cached).slice(-REMOTE_CACHE_MAX_ENTRIES).forEach(([key, value]) => {
+        if (typeof value === "string" && value.trim()) remoteCache.set(key, value);
+      });
+    } catch (error) {
+      console.warn("JalSaathi translation cache could not be restored:", error);
+    }
+  };
+
+  const restoreRemoteCooldowns = () => {
+    try {
+      const serialized = sessionStorage.getItem(REMOTE_COOLDOWN_KEY);
+      if (!serialized) return;
+      const cooldowns = JSON.parse(serialized);
+      if (!cooldowns || typeof cooldowns !== "object" || Array.isArray(cooldowns)) return;
+      Object.entries(cooldowns).forEach(([code, until]) => {
+        if (languages.includes(code) && Number.isFinite(until) && until > Date.now()) {
+          remoteFailureUntil.set(code, until);
+        }
+      });
+    } catch (error) {
+      console.warn("JalSaathi translation cooldown could not be restored:", error);
+    }
+  };
+
+  const persistRemoteCooldowns = () => {
+    try {
+      sessionStorage.setItem(REMOTE_COOLDOWN_KEY, JSON.stringify(Object.fromEntries(remoteFailureUntil)));
+    } catch (error) {
+      console.warn("JalSaathi translation cooldown could not be saved:", error);
+    }
+  };
+
+  const rememberRemoteTranslation = (key, translation) => {
+    remoteCache.delete(key);
+    remoteCache.set(key, translation);
+    while (remoteCache.size > REMOTE_CACHE_MAX_ENTRIES) {
+      remoteCache.delete(remoteCache.keys().next().value);
+    }
+    try {
+      sessionStorage.setItem(REMOTE_CACHE_KEY, JSON.stringify(Object.fromEntries(remoteCache)));
+    } catch (error) {
+      console.warn("JalSaathi translation cache could not be saved:", error);
+    }
+  };
+
+  restoreRemoteCache();
+  restoreRemoteCooldowns();
 
   const lookup = (source, code = getLanguage()) => {
+    if (code === "en") return source;
     const dictionary = dictionaries[code];
-    if (!dictionary) throw new Error(`Unsupported JalSaathi locale: ${code}`);
-    if (Object.hasOwn(dictionary, source)) return dictionary[source];
+    if (dictionary && Object.hasOwn(dictionary, source)) return dictionary[source];
     missing.add(source);
-    const words = wordDictionaries[code];
-    let translated = source;
-    Object.keys(dictionary)
-      .filter((phrase) => /\s/.test(phrase) || /[^A-Za-z]/.test(phrase))
-      .sort((left, right) => right.length - left.length)
-      .forEach((phrase) => {
-        const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        translated = translated.replace(new RegExp(escaped, "gi"), dictionary[phrase]);
-      });
-    return translated.replace(/[A-Za-z]+/g, (word) => words[word.toLocaleLowerCase()] || word);
+    return source;
+  };
+
+  const applyRemoteTranslation = (source, code, translated) => {
+    const key = `${code}\u0000${source}`;
+    const callbacks = translationCallbacks.get(key) || [];
+    translationCallbacks.delete(key);
+    translationsInFlight.delete(key);
+    callbacks.forEach((callback) => callback(translated));
+  };
+
+  const hideTranslationStatus = () => {
+    document.querySelectorAll("[data-translation-status]").forEach((node) => {
+      node.textContent = "";
+      node.hidden = true;
+    });
+  };
+
+  const flushTranslations = async () => {
+    if (isFlushingTranslations) return;
+    isFlushingTranslations = true;
+    translationTimer = 0;
+    try {
+      while (queuedTranslations.size) {
+        const code = getLanguage();
+        const unavailableFor = (remoteFailureUntil.get(code) || 0) - Date.now();
+        if (unavailableFor > 0) {
+          queuedTranslations.forEach((item, key) => {
+            queuedTranslations.delete(key);
+            applyRemoteTranslation(item.source, item.code, item.source);
+          });
+          break;
+        }
+
+        const batch = [];
+        let characters = 0;
+        for (const [key, item] of queuedTranslations) {
+          if (item.code !== code) {
+            queuedTranslations.delete(key);
+            applyRemoteTranslation(item.source, item.code, item.source);
+            continue;
+          }
+          const cost = item.source.length + 40;
+          if (batch.length && (
+            batch.length >= MAX_TRANSLATIONS_PER_BATCH ||
+            characters + cost > MAX_BATCH_CHARACTERS
+          )) continue;
+          if (cost > MAX_BATCH_CHARACTERS) {
+            queuedTranslations.delete(key);
+            applyRemoteTranslation(item.source, item.code, item.source);
+            continue;
+          }
+          batch.push([key, item]);
+          characters += cost;
+        }
+        batch.forEach(([key]) => queuedTranslations.delete(key));
+        if (!batch.length) break;
+        try {
+          const result = await profileApi.apiRequest("/api/translate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              texts: batch.map(([, item]) => item.source),
+              source_language_code: "en-IN",
+              target_language_code: localeFor[code],
+            }),
+          });
+          if (!Array.isArray(result?.translations) ||
+              result.translations.length !== batch.length ||
+              result.translations.some((value) => typeof value !== "string" || !value.trim())) {
+            throw new Error("The translation service returned an invalid response.");
+          }
+          batch.forEach(([key, item], index) => {
+            const translated = result.translations[index].trim();
+            rememberRemoteTranslation(key, translated);
+            applyRemoteTranslation(item.source, item.code, translated);
+          });
+          hideTranslationStatus();
+        } catch (error) {
+          const providerRetryAfter = Number(error.retryAfterSeconds);
+          const retryAfterMs = error.status === 429
+            ? Math.max(
+              1_000,
+              (Number.isFinite(providerRetryAfter) ? providerRetryAfter : 60) * 1_000,
+            )
+            : DEFAULT_FAILURE_COOLDOWN_MS;
+          remoteFailureUntil.set(code, Date.now() + retryAfterMs);
+          persistRemoteCooldowns();
+          batch.forEach(([, item]) => applyRemoteTranslation(item.source, item.code, item.source));
+          queuedTranslations.forEach((item, key) => {
+            queuedTranslations.delete(key);
+            applyRemoteTranslation(item.source, item.code, item.source);
+          });
+          hideTranslationStatus();
+          break;
+        }
+      }
+    } finally {
+      isFlushingTranslations = false;
+      if (queuedTranslations.size && !translationTimer) {
+        translationTimer = window.setTimeout(() => {
+          translationTimer = 0;
+          void flushTranslations();
+        }, 80);
+      }
+    }
+  };
+
+  const scheduleTranslationFlush = () => {
+    if (translationTimer || isFlushingTranslations) return;
+    translationTimer = window.setTimeout(() => {
+      translationTimer = 0;
+      void flushTranslations();
+    }, 80);
+  };
+
+  const queueTranslation = (source, code, callback) => {
+    if (code === "en" || !remotelyTranslatable.has(source) || source.length > 240 ||
+        /[\r\n\d]/.test(source) ||
+        /[\/@]/.test(source) || (CRITICAL_TEXT.test(source) && !keysBySource.has(source)) ||
+        (remoteFailureUntil.get(code) || 0) > Date.now()) return;
+    const key = `${code}\u0000${source}`;
+    if (remoteCache.has(key)) {
+      callback(remoteCache.get(key));
+      return;
+    }
+    const callbacks = translationCallbacks.get(key) || [];
+    callbacks.push(callback);
+    translationCallbacks.set(key, callbacks);
+    if (translationsInFlight.has(key)) return;
+    translationsInFlight.add(key);
+    queuedTranslations.set(key, { source, code });
+    scheduleTranslationFlush();
   };
 
   const setNodeText = (node, source) => {
@@ -498,34 +744,64 @@
     const leading = source.match(/^\s*/)?.[0] || "";
     const trailing = source.match(/\s*$/)?.[0] || "";
     const content = source.slice(leading.length, source.length - trailing.length);
-    const value = `${leading}${lookup(content)}${trailing}`;
+    const code = getLanguage();
+    const value = `${leading}${lookup(content, code)}${trailing}`;
     if (node.nodeValue !== value) {
-      ignoredMutations.add(node);
+      if (observerReady) ignoredMutations.add(node);
       node.nodeValue = value;
     }
+    if (Object.hasOwn(dictionaries[code] || {}, content)) return;
+    queueTranslation(content, code, (translated) => {
+      if (sourceValues.get(node) !== source || getLanguage() !== code) return;
+      const updated = `${leading}${translated}${trailing}`;
+      if (node.nodeValue !== updated) {
+        ignoredMutations.add(node);
+        node.nodeValue = updated;
+      }
+    });
   };
 
   const translatedAttributes = ["aria-label", "title", "placeholder", "alt"];
   const translateAttributes = (element) => {
+    if (element.closest("[data-user-content], [data-i18n-ignore]") ||
+        element.matches("[data-field-select], [data-edit-field], [data-delete-field]")) return;
     translatedAttributes.forEach((name) => {
       if (!element.hasAttribute(name)) return;
       const current = element.getAttribute(name);
       const originals = translatedValues.get(element) || {};
       if (!(name in originals)) originals[name] = current;
-      const value = lookup(originals[name]);
+      const source = originals[name];
+      const code = getLanguage();
+      const value = lookup(source, code);
       if (current !== value) element.setAttribute(name, value);
       translatedValues.set(element, originals);
+      if (element.closest("[data-i18n-static]") &&
+          !element.closest("[data-user-content], [data-i18n-ignore]")) {
+        remotelyTranslatable.add(source);
+      }
+      if (!Object.hasOwn(dictionaries[code] || {}, source)) {
+        queueTranslation(source, code, (translated) => {
+          if (translatedValues.get(element)?.[name] !== source || getLanguage() !== code) return;
+          element.setAttribute(name, translated);
+        });
+      }
     });
   };
 
   const excluded = (node) => node.parentElement?.closest(
-    "script, style, noscript, code, pre, input, textarea, [contenteditable='true'], [data-user-content]",
+    "script, style, noscript, code, pre, input, textarea, [contenteditable='true'], [data-user-content], [data-user-name], [data-recommendation-name], [data-i18n-ignore]",
   );
 
   const translateTree = (root) => {
     if (root instanceof Text) {
-      if (!excluded(root) && root.nodeValue.trim()) {
-        const source = sourceValues.has(root) ? sourceValues.get(root) : root.nodeValue;
+      if ((!excluded(root) || root.parentElement?.closest("[data-i18n-crop]")) && root.nodeValue.trim()) {
+        const key = root.parentElement?.closest("[data-i18n-key]")?.getAttribute("data-i18n-key");
+        const keyedSource = key ? translationKeys[key] : undefined;
+        const cropOnly = Boolean(root.parentElement?.closest("[data-i18n-crop]"));
+        const source = sourceValues.has(root) ? sourceValues.get(root) : keyedSource || root.nodeValue;
+        if (root.parentElement?.closest("[data-i18n-static]") && !cropOnly) {
+          remotelyTranslatable.add(source.trim());
+        }
         setNodeText(root, source);
       }
       return;
@@ -535,20 +811,21 @@
     const nodes = [];
     while (walker.nextNode()) nodes.push(walker.currentNode);
     nodes.forEach((node) => {
-      if (excluded(node) || !node.nodeValue.trim()) return;
-      const source = sourceValues.has(node) ? sourceValues.get(node) : node.nodeValue;
+      const cropOnly = Boolean(node.parentElement?.closest("[data-i18n-crop]"));
+      if ((excluded(node) && !cropOnly) || !node.nodeValue.trim()) return;
+      const key = node.parentElement?.closest("[data-i18n-key]")?.getAttribute("data-i18n-key");
+      const keyedSource = key ? translationKeys[key] : undefined;
+      const source = sourceValues.has(node) ? sourceValues.get(node) : keyedSource || node.nodeValue;
+      if (node.parentElement?.closest("[data-i18n-static]") && !cropOnly) {
+        remotelyTranslatable.add(source.trim());
+      }
       setNodeText(node, source);
     });
     const elements = root instanceof Document ? [root.documentElement, ...root.documentElement.querySelectorAll("*")] : [root, ...root.querySelectorAll("*")];
     elements.forEach((element) => {
       translateAttributes(element);
     });
-    document.documentElement.lang = codeToHtmlLanguage[getLanguage()] || getLanguage();
-  };
-
-  const codeToHtmlLanguage = {
-    en: "en", te: "te-IN", hi: "hi-IN", kn: "kn-IN",
-    ta: "ta-IN", ml: "ml-IN", mr: "mr-IN", bn: "bn-IN",
+    document.documentElement.lang = localeFor[getLanguage()] || "en-IN";
   };
 
   const observer = new MutationObserver((records) => {
@@ -582,6 +859,7 @@
   const onLanguageChange = (event) => {
     const code = event.detail?.code || getLanguage();
     if (!languages.includes(code)) throw new Error(`Unsupported JalSaathi locale: ${code}`);
+    hideTranslationStatus();
     document.querySelectorAll("[data-language-select]").forEach((select) => {
       if (select instanceof HTMLSelectElement) select.value = code;
     });
@@ -595,6 +873,7 @@
         const option = document.createElement("option");
         option.value = code;
         option.textContent = nativeNames[code];
+        option.setAttribute("data-i18n-ignore", "");
         return option;
       }));
       select.value = getLanguage();
@@ -602,36 +881,65 @@
     });
   };
 
+  const approveStaticInterfaceText = () => {
+    Object.values(translationKeys).forEach((source) => remotelyTranslatable.add(source));
+  };
+
   const formatDate = (date, options = {}) => new Intl.DateTimeFormat(localeFor[getLanguage()], options).format(date);
   const formatNumber = (value, options = {}) => new Intl.NumberFormat(localeFor[getLanguage()], options).format(value);
   const audit = () => {
     missing.clear();
     translateTree(document);
-    const result = [...missing].filter((source) => !/^[\s\d.,:;/%+−–—°!?()·→←✓×*#-]+$/.test(source));
-    if (result.length) console.warn(`JalSaathi i18n missing keys for ${getLanguage()}:`, result);
-    else console.info(`JalSaathi i18n audit passed for ${getLanguage()}.`);
-    return result;
+    const missingKeys = [...missing]
+      .filter((source) => !/^[\s\d.,:;/%+−–—°!?()·→←✓×*#-]+$/.test(source))
+      .map((source) => keysBySource.get(source) || `unkeyed: ${source}`);
+    const untranslatedStaticStrings = [];
+    if (getLanguage() !== "en") {
+      const walker = document.createTreeWalker(document, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        if (excluded(node)) continue;
+        const source = sourceValues.get(node) || node.nodeValue;
+        if (
+          remotelyTranslatable.has(source.trim()) &&
+          node.nodeValue.trim() === source.trim() &&
+          !Object.hasOwn(dictionaries[getLanguage()] || {}, source.trim())
+        ) {
+          untranslatedStaticStrings.push(source.trim());
+        }
+      }
+    }
+    const report = { missingKeys, untranslatedStaticStrings };
+    if (missingKeys.length || untranslatedStaticStrings.length) {
+      console.warn(`JalSaathi i18n audit for ${getLanguage()}:`, report);
+    } else {
+      console.info(`JalSaathi i18n audit passed for ${getLanguage()}.`);
+    }
+    return report;
   };
 
   window.JalSaathiI18n = {
-    languages: languages.map((code) => ({ code, label: nativeNames[code] })),
+    languages: languageCatalog.map((language) => ({ ...language })),
     getLanguage,
-    t: lookup,
+    t: (keyOrText, code = getLanguage()) =>
+      lookup(translationKeys[keyOrText] || keyOrText, code),
+    translationKeys,
     setLanguage,
     formatDate,
     formatNumber,
+    translate: (root = document) => translateTree(root),
     audit,
     dictionaries,
   };
 
   window.addEventListener("jalsaathi:language-changed", onLanguageChange);
-  window.addEventListener("storage", (event) => {
-    if (event.key === "jalsaathi.language.v1") apply();
-  });
   document.addEventListener("DOMContentLoaded", () => {
+    hideTranslationStatus();
+    approveStaticInterfaceText();
     initializeLanguageSelects();
     apply();
     observer.observe(document.documentElement, { subtree: true, childList: true, characterData: true });
+    observerReady = true;
     if (new URLSearchParams(location.search).has("i18nCheck")) audit();
   }, { once: true });
 })();

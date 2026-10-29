@@ -5,8 +5,12 @@
   const DISPLAY_CACHE_KEY = "jalsaathi.weather.display-cache.v1";
   const CACHE_MILLISECONDS = 10 * 60 * 1000;
   const DISPLAY_CACHE_MAX_AGE = 24 * 60 * 60 * 1000;
+  const MAX_TRANSIENT_WEATHER_RETRIES = 2;
+  const MAX_WEATHER_RETRY_DELAY_MS = 2_000;
   const inFlight = new Map();
+  const currentInFlight = new Map();
   const cache = new Map();
+  const currentCache = new Map();
   const displayWeatherFields = [
     "temperature_c",
     "feels_like_c",
@@ -157,17 +161,41 @@
     if (!hasCoordinates && selection.location) query.set("location", selection.location);
     const queryString = query.toString();
     const url = `${path}${queryString ? `?${queryString}` : ""}`;
-    const response = await fetch(url, hasCoordinates ? {
+    const requestOptions = hasCoordinates ? {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(selection.coordinates),
       credentials: "same-origin",
-    } : { credentials: "same-origin" });
+    } : { credentials: "same-origin" };
+    let response;
+    for (let attempt = 0; attempt <= MAX_TRANSIENT_WEATHER_RETRIES; attempt += 1) {
+      response = await fetch(url, requestOptions);
+      if (response.ok || ![429, 503].includes(response.status) ||
+          attempt === MAX_TRANSIENT_WEATHER_RETRIES) break;
+
+      const retryAfter = response.headers?.get?.("retry-after");
+      if (retryAfter) break;
+      const delay = Math.min(MAX_WEATHER_RETRY_DELAY_MS, 250 * (2 ** attempt));
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
     const payload = await response.json().catch(() => null);
     if (!response.ok) {
-      throw new Error(payload && typeof payload.detail === "string"
+      const error = new Error(payload && typeof payload.detail === "string"
         ? payload.detail
         : "Weather data is unavailable. Check the provider configuration and try again.");
+      error.status = response.status;
+      const retryAfter = response.headers?.get?.("retry-after");
+      if (retryAfter) {
+        error.hasRetryAfter = true;
+        const retryAfterSeconds = Number(retryAfter);
+        const retryAfterDate = Date.parse(retryAfter);
+        error.retryAfterSeconds = Number.isFinite(retryAfterSeconds)
+          ? Math.max(0, retryAfterSeconds)
+          : Number.isFinite(retryAfterDate)
+            ? Math.max(0, (retryAfterDate - Date.now()) / 1000)
+            : null;
+      }
+      throw error;
     }
     return payload;
   };
@@ -214,6 +242,26 @@
       return data;
     }).finally(() => inFlight.delete(key));
     inFlight.set(key, request);
+    return request;
+  };
+
+  const loadCurrent = (selection = {}, { refresh = false } = {}) => {
+    const normalized = selection.coordinates
+      ? { coordinates: validateCoordinates(selection.coordinates) }
+      : { location: selection.location?.trim() || "" };
+    const key = selectionKey(normalized);
+    const existing = currentCache.get(key);
+    if (!refresh && existing && Date.now() - existing.time < CACHE_MILLISECONDS) {
+      return Promise.resolve(existing.data);
+    }
+    if (currentInFlight.has(key)) return currentInFlight.get(key);
+
+    const request = requestJson("/weather/current", normalized).then((current) => {
+      const data = { current, hourly: [], daily: [], selection: normalized };
+      currentCache.set(key, { time: Date.now(), data });
+      return data;
+    }).finally(() => currentInFlight.delete(key));
+    currentInFlight.set(key, request);
     return request;
   };
 
@@ -284,6 +332,14 @@
           manualError = error;
         }
       }
+      if (manualError?.hasRetryAfter) {
+        return {
+          data: null,
+          source: "unavailable",
+          locationError: `${locationError} Saved city weather is rate limited.`,
+          weatherError: manualError,
+        };
+      }
       try {
         return {
           data: await load({}, { refresh }),
@@ -318,6 +374,30 @@
       return loadLocationFallback(error.message);
     }
     return { data: await load({ coordinates }, { refresh }), source: "current-location" };
+  };
+
+  const loadAutomaticWithFallback = async ({ refresh = false, explicit = false } = {}) => {
+    try {
+      return await loadAutomatic({ refresh, explicit });
+    } catch (automaticError) {
+      if (automaticError.hasRetryAfter) throw automaticError;
+      const manualLocation = getManualLocation();
+      const fallbackLocations = manualLocation ? [manualLocation, ""] : [""];
+      let fallbackError = automaticError;
+      for (const location of fallbackLocations) {
+        try {
+          return {
+            data: await load({ location }, { refresh }),
+            source: location ? "manual" : "configured",
+            locationError: `Automatic location unavailable: ${automaticError.message}`,
+          };
+        } catch (error) {
+          fallbackError = error;
+          if (error.hasRetryAfter) break;
+        }
+      }
+      return { data: null, source: "unavailable", weatherError: fallbackError };
+    }
   };
 
   const formatNumber = (value, suffix = "") => value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value))
@@ -460,8 +540,6 @@
     const manualLocation = getManualLocation();
     const cached = readDisplayWeather({ location: manualLocation || undefined });
     let hasWeather = Boolean(cached?.data?.current);
-    let refreshSucceeded = false;
-    let liveLocationResolved = false;
     let requestGeneration = 0;
     if (cached) renderDashboard(root, cached);
     else {
@@ -492,13 +570,11 @@
       }
       renderDashboard(root, { data: null, source: "unavailable", weatherError: error });
     };
-    const commit = (result, generation, { fallback = false } = {}) => {
-      if (generation !== requestGeneration || (fallback && liveLocationResolved)) return;
+    const commit = (result, generation) => {
+      if (generation !== requestGeneration) return;
       if (!result.data?.current) {
         return false;
       }
-      refreshSucceeded = true;
-      if (result.source === "current-location") liveLocationResolved = true;
       hasWeather = true;
       const saved = saveDisplayWeather(result.data, result.source);
       renderDashboard(root, {
@@ -510,35 +586,12 @@
     };
     const startRefresh = (generation, explicit = false) => {
       setLoading(true);
-      const location = getManualLocation();
-      let fallbackDone = false;
-      let automaticDone = false;
-      let fallbackError = null;
-      let automaticError = null;
-      const showFailureWhenSettled = () => {
-        if (generation !== requestGeneration || refreshSucceeded || !fallbackDone || !automaticDone) return;
-        renderFailure(automaticError || fallbackError || new Error("Weather data is unavailable."), generation);
-      };
-      load({ location }, { refresh: true }).then((data) => {
-        if (!commit({ data, source: location ? "manual" : "configured" }, generation, { fallback: true })) {
-          fallbackError = new Error("Weather data is unavailable.");
-        }
-      }).catch((error) => {
-        fallbackError = error;
-      }).finally(() => {
-        fallbackDone = true;
-        showFailureWhenSettled();
-      });
-      loadAutomatic({ refresh: true, explicit }).then((result) => {
+      loadAutomaticWithFallback({ refresh: true, explicit }).then((result) => {
         if (!commit(result, generation)) {
-          automaticError = result.weatherError || new Error("Weather data is unavailable.");
+          renderFailure(result.weatherError || new Error("Weather data is unavailable."), generation);
         }
-      }).catch((error) => {
-        automaticError = error;
-      }).finally(() => {
-        automaticDone = true;
+      }).catch((error) => renderFailure(error, generation)).finally(() => {
         if (generation === requestGeneration) setLoading(false);
-        showFailureWhenSettled();
       });
     };
     const generation = ++requestGeneration;
@@ -547,7 +600,6 @@
       const location = typeof event.detail?.location === "string" ? event.detail.location.trim() : "";
       if (!location) return;
       requestGeneration += 1;
-      liveLocationResolved = true;
       const currentGeneration = requestGeneration;
       const matchingCache = readDisplayWeather({ location });
       hasWeather = Boolean(matchingCache?.data?.current);
@@ -587,8 +639,6 @@
     const cached = readDisplayWeather({ location: savedLocation || undefined });
     let hasWeather = Boolean(cached?.data?.current);
     let requestGeneration = 0;
-    let liveLocationResolved = false;
-    let refreshSucceeded = false;
     if (!cached) {
       setValue(currentRoot, "[data-weather-location]", savedLocation || "Finding location…");
       setValue(currentRoot, "[data-weather-temperature]", "Loading…");
@@ -683,14 +733,11 @@
       }
       render({ data: null, source: "unavailable", weatherError: error });
     };
-    const applyResult = (result, generation, fallback = false, deferFailure = false) => {
-      if (generation !== requestGeneration || (fallback && liveLocationResolved)) return;
+    const applyResult = (result, generation) => {
+      if (generation !== requestGeneration) return;
       if (!result.data?.current) {
-        if (!deferFailure) renderFailure(result.weatherError || new Error("Weather data is unavailable."), generation);
         return false;
       }
-      refreshSucceeded = true;
-      if (result.source === "current-location") liveLocationResolved = true;
       hasWeather = true;
       const saved = saveDisplayWeather(result.data, result.source);
       render({ ...result, cacheTime: saved?.savedAt, cacheLocation: saved?.locationLabel });
@@ -702,7 +749,6 @@
       const location = saveManualLocation(input.value);
       requestGeneration += 1;
       const generation = requestGeneration;
-      liveLocationResolved = true;
       const matchingCache = readDisplayWeather({ location });
       hasWeather = Boolean(matchingCache?.data?.current);
       if (matchingCache) render(matchingCache);
@@ -727,35 +773,11 @@
     });
     const generation = ++requestGeneration;
     if (!hasWeather) status.textContent = "Loading weather…";
-    const fallbackLocation = getManualLocation();
-    let fallbackDone = false;
-    let automaticDone = false;
-    let fallbackError = null;
-    let automaticError = null;
-    const showFailureWhenSettled = () => {
-      if (generation !== requestGeneration || refreshSucceeded || !fallbackDone || !automaticDone) return;
-      renderFailure(automaticError || fallbackError || new Error("Weather data is unavailable."), generation);
-    };
-    load({ location: fallbackLocation }, { refresh: true }).then((data) => {
-      if (!applyResult({ data, source: fallbackLocation ? "manual" : "configured" }, generation, true, true)) {
-        fallbackError = new Error("Weather data is unavailable.");
+    loadAutomaticWithFallback({ refresh: true }).then((result) => {
+      if (!applyResult(result, generation)) {
+        renderFailure(result.weatherError || new Error("Weather data is unavailable."), generation);
       }
-    }).catch((error) => {
-      fallbackError = error;
-    }).finally(() => {
-      fallbackDone = true;
-      showFailureWhenSettled();
-    });
-    loadAutomatic({ refresh: true }).then((result) => {
-      if (!applyResult(result, generation, false, true)) {
-        automaticError = result.weatherError || new Error("Weather data is unavailable.");
-      }
-    }).catch((error) => {
-      automaticError = error;
-    }).finally(() => {
-      automaticDone = true;
-      showFailureWhenSettled();
-    });
+    }).catch((error) => renderFailure(error, generation));
   };
 
   const escapeText = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({
@@ -764,10 +786,12 @@
 
   window.JalSaathiWeather = {
     formatCurrentTemperature,
+    formatCurrentCondition: condition,
     getManualLocation,
     saveManualLocation,
     getCoordinates,
     load,
+    loadCurrent,
     loadAutomatic,
     initializeDashboard,
     initializeWeatherPage,

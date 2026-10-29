@@ -66,11 +66,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const renderAccount = () => {
     const profileApi = window.JalSaathiProfile;
-<<<<<<< HEAD
-    const session = profileApi?.getDemoSession?.() || null;
-=======
     const session = profileApi?.getProfile?.() || null;
->>>>>>> raashi-milestone1-backend-db
     sidebar.querySelectorAll("[data-sidebar-account]").forEach((account) => {
       const login = account.querySelector("[data-sidebar-login]");
       const trigger = account.querySelector("[data-sidebar-profile]");
@@ -104,7 +100,10 @@ document.addEventListener("DOMContentLoaded", () => {
       const label = control.querySelector("[data-language-label]");
       const options = control.querySelector("[data-language-options]");
       const menu = control.querySelector("[data-language-menu]");
-      if (label) label.textContent = languages.find((language) => language.code === activeLanguage)?.label || "English";
+      if (label) {
+        label.setAttribute("data-i18n-ignore", "");
+        label.textContent = languages.find((language) => language.code === activeLanguage)?.label || "English";
+      }
       if (!(options instanceof HTMLElement) || !(menu instanceof HTMLElement)) return;
       options.replaceChildren();
       languages.forEach((language) => {
@@ -112,6 +111,7 @@ document.addEventListener("DOMContentLoaded", () => {
         option.type = "button";
         option.setAttribute("role", "option");
         option.setAttribute("aria-selected", String(language.code === activeLanguage));
+        option.setAttribute("data-i18n-ignore", "");
         option.dataset.languageCode = language.code;
         option.textContent = language.label;
         options.append(option);
@@ -185,27 +185,16 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   sidebar.querySelectorAll("[data-sidebar-logout]").forEach((button) => {
-<<<<<<< HEAD
-    button.addEventListener("click", () => {
-      if (!window.confirm(window.JalSaathiI18n?.t("Log out of this demonstration session?") || "Log out of this demonstration session?")) return;
-      try {
-        window.JalSaathiProfile.logoutDemoSession();
-=======
     button.addEventListener("click", async () => {
       if (!window.confirm(window.JalSaathiI18n?.t("Log out of your JalSaathi account?") || "Log out of your JalSaathi account?")) return;
       try {
         await window.JalSaathiProfile.logoutSession();
->>>>>>> raashi-milestone1-backend-db
         renderAccount();
         closeDropdowns();
         closeMenu({ restoreFocus: false });
         window.location.href = "/static/auth.html?view=login";
       } catch (error) {
-<<<<<<< HEAD
-        console.error("JalSaathi demo logout failed:", error);
-=======
         console.error("JalSaathi logout failed:", error);
->>>>>>> raashi-milestone1-backend-db
         window.alert(window.JalSaathiI18n?.t(error instanceof Error ? error.message : "Could not log out.") || (error instanceof Error ? error.message : "Could not log out."));
       }
     });

@@ -1,7 +1,14 @@
 from datetime import date, datetime
-from typing import Literal
+import math
+from typing import Literal, get_args
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, StrictStr, field_validator, model_validator
+
+
+def _validate_coordinate_number(value):
+    if isinstance(value, bool):
+        raise ValueError("Coordinates must be finite numeric values.")
+    return value
 
 
 class FarmerRegister(BaseModel):
@@ -92,6 +99,49 @@ class FarmerProfile(BaseModel):
     village: str | None
 
 
+SarvamLanguageCode = Literal[
+    "en-IN", "bn-IN", "gu-IN", "hi-IN", "kn-IN", "ml-IN", "mr-IN",
+    "od-IN", "pa-IN", "ta-IN", "te-IN", "as-IN", "brx-IN", "doi-IN",
+    "kok-IN", "ks-IN", "mai-IN", "mni-IN", "ne-IN", "sa-IN", "sat-IN",
+    "sd-IN", "ur-IN",
+]
+SARVAM_LANGUAGE_CODES = get_args(SarvamLanguageCode)
+
+
+class TranslationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    texts: list[StrictStr] = Field(min_length=1, max_length=16)
+    source_language_code: SarvamLanguageCode
+    target_language_code: SarvamLanguageCode
+
+    @field_validator("texts")
+    @classmethod
+    def validate_translation_texts(cls, texts):
+        normalized = []
+        for text in texts:
+            if not isinstance(text, str):
+                raise ValueError("Translation text must be a string.")
+            value = text.strip()
+            if not value or len(value) > 2000 or "\n" in value or "\r" in value:
+                raise ValueError("Translation text must contain 1 to 2000 characters on one line.")
+            normalized.append(value)
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("Translation text entries must be unique.")
+        return normalized
+
+    @model_validator(mode="after")
+    def enforce_sarvam_input_limit(self):
+        marker_overhead = len(self.texts) * 32
+        if sum(map(len, self.texts)) + marker_overhead > 2000:
+            raise ValueError("Combined translation text exceeds Sarvam's 2000-character limit.")
+        return self
+
+
+class TranslationResponse(BaseModel):
+    translations: list[str]
+
+
 class FieldCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -115,6 +165,11 @@ class FieldCreate(BaseModel):
             return value
         return " ".join(value.split()) or None
 
+    @field_validator("latitude", "longitude", mode="before")
+    @classmethod
+    def validate_coordinate_number(cls, value):
+        return _validate_coordinate_number(value)
+
     @model_validator(mode="after")
     def require_coordinate_pair(self):
         if (self.latitude is None) != (self.longitude is None):
@@ -137,6 +192,11 @@ class FieldPatch(BaseModel):
     @classmethod
     def normalize_text(cls, value):
         return (" ".join(value.split()) or None) if isinstance(value, str) else value
+
+    @field_validator("latitude", "longitude", mode="before")
+    @classmethod
+    def validate_coordinate_number(cls, value):
+        return _validate_coordinate_number(value)
 
     @model_validator(mode="after")
     def require_coordinate_pair(self):
@@ -239,3 +299,167 @@ class WeatherCoordinates(BaseModel):
 
     latitude: float = Field(ge=-90, le=90, allow_inf_nan=False)
     longitude: float = Field(ge=-180, le=180, allow_inf_nan=False)
+
+
+EXPERIMENTAL_CROP_NAMES = (
+    "apple",
+    "banana",
+    "blackgram",
+    "chickpea",
+    "coconut",
+    "coffee",
+    "cotton",
+    "grapes",
+    "jute",
+    "kidneybeans",
+    "lentil",
+    "maize",
+    "mango",
+    "mothbeans",
+    "mungbean",
+    "muskmelon",
+    "orange",
+    "papaya",
+    "pigeonpeas",
+    "pomegranate",
+    "rice",
+    "watermelon",
+)
+ExperimentalCropName = Literal[
+    "apple",
+    "banana",
+    "blackgram",
+    "chickpea",
+    "coconut",
+    "coffee",
+    "cotton",
+    "grapes",
+    "jute",
+    "kidneybeans",
+    "lentil",
+    "maize",
+    "mango",
+    "mothbeans",
+    "mungbean",
+    "muskmelon",
+    "orange",
+    "papaya",
+    "pigeonpeas",
+    "pomegranate",
+    "rice",
+    "watermelon",
+]
+
+
+class ExperimentalPredictionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    temperature_c: float = Field(allow_inf_nan=False)
+    humidity_percent: float = Field(allow_inf_nan=False)
+    rain_probability_percent: float = Field(allow_inf_nan=False)
+    N: float = Field(allow_inf_nan=False)
+    P: float = Field(allow_inf_nan=False)
+    K: float = Field(allow_inf_nan=False)
+    ph: float = Field(allow_inf_nan=False)
+    organic_matter: float = Field(allow_inf_nan=False)
+    crop_density: float = Field(allow_inf_nan=False)
+    sunlight_exposure: float = Field(allow_inf_nan=False)
+    wind_speed: float = Field(allow_inf_nan=False)
+    frost_risk: float = Field(allow_inf_nan=False)
+    crop_name: ExperimentalCropName
+    soil_type: Literal[1, 2, 3]
+    growth_stage: Literal[1, 2, 3]
+
+    @field_validator(
+        "temperature_c",
+        "humidity_percent",
+        "rain_probability_percent",
+        "N",
+        "P",
+        "K",
+        "ph",
+        "organic_matter",
+        "crop_density",
+        "sunlight_exposure",
+        "wind_speed",
+        "frost_risk",
+        mode="before",
+    )
+    @classmethod
+    def validate_finite_numeric_input(cls, value):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError("A finite JSON number is required.")
+        if not math.isfinite(value):
+            raise ValueError("A finite JSON number is required.")
+        return float(value)
+
+    @field_validator("soil_type", "growth_stage", mode="before")
+    @classmethod
+    def validate_integer_category(cls, value):
+        if type(value) is not int:
+            raise ValueError("An integer category code is required.")
+        return value
+
+
+class ExperimentalPredictionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    prediction: Literal[0, 1]
+    proxy_positive_probability: float = Field(ge=0, le=1, allow_inf_nan=False)
+    target: Literal["irrigation_needed_proxy"]
+    warning: str
+    model_status: Literal["Experimental"]
+    dataset_provenance: Literal["synthetic_or_synthetic_augmented"]
+
+
+class ReducedWeatherPredictionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    field_id: int = Field(gt=0)
+
+
+class ReducedWeatherPredictionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    prediction: Literal[0, 1]
+    proxy_positive_probability: float = Field(ge=0, le=1, allow_inf_nan=False)
+    target: Literal["irrigation_needed_proxy"]
+    proxy_rule: Literal["soil_moisture <= 20.0"]
+    warning: str = Field(min_length=1)
+    model_status: Literal["Experimental"]
+    dataset_provenance: Literal["synthetic_or_synthetic_augmented"]
+    selected_model: Literal["logistic_regression", "random_forest"]
+    feature_sources: dict[
+        Literal["temperature_c", "humidity_percent"],
+        Literal["selected_field_current_weather_api"],
+    ]
+    observation_time: datetime
+
+
+class FarmerAssistantRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    question: str = Field(min_length=1, max_length=1500)
+
+    @field_validator("question", mode="before")
+    @classmethod
+    def normalize_question(cls, value):
+        if not isinstance(value, str):
+            return value
+        question = value.strip()
+        if not question:
+            raise ValueError("Enter a question.")
+        return question
+
+
+class Model2ExplanationRequest(FarmerAssistantRequest):
+    field_id: int = Field(gt=0)
+    crop_id: int = Field(gt=0)
+
+
+class WaterRequirementRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    field_id: int = Field(gt=0)
+    crop_id: int = Field(gt=0)
+    prediction_period_hours: Literal[24]

@@ -3,20 +3,12 @@
 
   const STORAGE_KEY = "jalsaathi.demo.fields.v1";
   const seedFields = [
-<<<<<<< HEAD
-    { id: "sample-north", name: "Field 1 - North Plot", location: "North Plot", crop: "Paddy", area: 2.5, areaUnit: "acres", moisture: 32, moistureSource: "demonstration", lastIrrigated: "", plantingDate: "", boundary: null },
-    { id: "sample-east", name: "Field 2 - East Plot", location: "East Plot", crop: "Sugarcane", area: 3, areaUnit: "acres", moisture: 18, moistureSource: "demonstration", lastIrrigated: "", plantingDate: "", boundary: null },
-    { id: "sample-south", name: "Field 3 - South Field", location: "South Field", crop: "Ragi", area: 1.75, areaUnit: "acres", moisture: 12, moistureSource: "demonstration", lastIrrigated: "", plantingDate: "", boundary: null },
-  ];
-  let memoryFields = seedFields;
-=======
     { id: "sample-north", name: "Field 1 - North Plot", location: "North Plot", crop: "Paddy", area: 2.5, areaUnit: "acres", moisture: null, moistureSource: "demonstration", lastIrrigated: "", plantingDate: "", boundary: null },
     { id: "sample-east", name: "Field 2 - East Plot", location: "East Plot", crop: "Sugarcane", area: 3, areaUnit: "acres", moisture: null, moistureSource: "demonstration", lastIrrigated: "", plantingDate: "", boundary: null },
     { id: "sample-south", name: "Field 3 - South Field", location: "South Field", crop: "Ragi", area: 1.75, areaUnit: "acres", moisture: null, moistureSource: "demonstration", lastIrrigated: "", plantingDate: "", boundary: null },
   ];
   let memoryFields = seedFields;
   let serverFields = [];
->>>>>>> raashi-milestone1-backend-db
   let persistenceWarning = "";
 
   const normalize = (value) => {
@@ -28,17 +20,28 @@
         typeof field.crop !== "string" || !Number.isFinite(Number(field.area)) ||
         typeof field.areaUnit !== "string"
       ) throw new Error("Saved field data contains an invalid record.");
-<<<<<<< HEAD
-      const moisture = field.moisture === null || field.moisture === undefined || field.moisture === "" ? null : Number(field.moisture);
-=======
       const moisture = field.moistureSource !== "user-provided" || field.moisture === null || field.moisture === undefined || field.moisture === "" ? null : Number(field.moisture);
->>>>>>> raashi-milestone1-backend-db
+      const latitude = field.latitude === null || field.latitude === undefined || field.latitude === ""
+        ? null
+        : Number(field.latitude);
+      const longitude = field.longitude === null || field.longitude === undefined || field.longitude === ""
+        ? null
+        : Number(field.longitude);
       if (Number(field.area) <= 0 || (moisture !== null && (!Number.isFinite(moisture) || moisture < 0 || moisture > 100))) {
         throw new Error("Saved field data contains an out-of-range area or moisture value.");
+      }
+      if (
+        (latitude !== null && (typeof field.latitude === "boolean" || !Number.isFinite(latitude) || latitude < -90 || latitude > 90)) ||
+        (longitude !== null && (typeof field.longitude === "boolean" || !Number.isFinite(longitude) || longitude < -180 || longitude > 180)) ||
+        ((latitude === null) !== (longitude === null))
+      ) {
+        throw new Error("Saved field data contains an invalid coordinate pair.");
       }
       return {
         ...field,
         area: Number(field.area),
+        latitude,
+        longitude,
         moisture,
         boundary: Array.isArray(field.boundary) ? field.boundary : null,
         plantingDate: typeof field.plantingDate === "string" ? field.plantingDate : "",
@@ -94,8 +97,6 @@
     return { ...existing };
   };
 
-<<<<<<< HEAD
-=======
   const fromServer = (field) => ({
     id: String(field.id),
     name: field.name,
@@ -103,6 +104,8 @@
     crop: field.crop || "",
     area: Number(field.area),
     areaUnit: field.area_unit,
+    latitude: field.latitude === null || field.latitude === undefined ? null : Number(field.latitude),
+    longitude: field.longitude === null || field.longitude === undefined ? null : Number(field.longitude),
     moisture: null,
     moistureSource: "server",
     lastIrrigated: "",
@@ -124,6 +127,12 @@
     crop: field.crop || null,
     area: Number(field.area),
     area_unit: field.areaUnit,
+    latitude: field.latitude === null || field.latitude === undefined || field.latitude === ""
+      ? null
+      : Number(field.latitude),
+    longitude: field.longitude === null || field.longitude === undefined || field.longitude === ""
+      ? null
+      : Number(field.longitude),
   });
 
   const addServerField = async (field) => {
@@ -155,7 +164,6 @@
 
   const getServerFields = () => serverFields.map((field) => ({ ...field }));
 
->>>>>>> raashi-milestone1-backend-db
   load();
   window.addEventListener("storage", (event) => {
     if (event.key !== STORAGE_KEY || event.newValue === null) return;
@@ -167,9 +175,6 @@
       console.error("JalSaathi field data sync failed:", error);
     }
   });
-<<<<<<< HEAD
-  window.JalSaathiFieldStore = { getFields, getPersistenceWarning, addField, updateField, deleteField };
-=======
   window.JalSaathiFieldStore = {
     getFields,
     getPersistenceWarning,
@@ -182,5 +187,4 @@
     updateServerField,
     deleteServerField,
   };
->>>>>>> raashi-milestone1-backend-db
 })();
