@@ -7,6 +7,10 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY main.py .
+COPY irrigation_optimizer/ ./irrigation_optimizer/
+COPY weather_api/ ./weather_api/
+COPY model2/ ./model2/
+COPY model3/ ./model3/
 
 EXPOSE 8000
 

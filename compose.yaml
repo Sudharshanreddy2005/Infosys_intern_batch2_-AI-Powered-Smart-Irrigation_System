@@ -1,3 +1,4 @@
+
 services:
   db:
     image: postgres:18
@@ -22,6 +23,8 @@ services:
     container_name: smart_irrigation_backend
     environment:
       DATABASE_URL: postgresql+psycopg://irrigation_user:${DB_PASSWORD}@db:5432/smart_irrigation_db
+      TOMORROW_API_KEY: ${TOMORROW_API_KEY:-}
+      IRRIGATION_API_KEY: ${IRRIGATION_API_KEY:-}
     ports:
       - "8000:8000"
     depends_on:
