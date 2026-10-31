@@ -1,0 +1,81 @@
+SMART IRRIGATION - DATA INSPECTION REPORT
+=======================================================
+
+Input file: Smart_Irrigation_Final_8500_Rows.csv
+Rows: 8500
+Columns: 36
+Exact duplicate rows: 0
+Total missing cells: 0
+
+COLUMN PROFILE
+-------------------------------------------------------
+synthetic_record_number: type=int64, missing=0 (0.0%), unique=8500
+timestamp: type=str, missing=0 (0.0%), unique=8500
+field_id: type=str, missing=0 (0.0%), unique=100
+sensor_id: type=str, missing=0 (0.0%), unique=50
+label: type=str, missing=0 (0.0%), unique=22
+growth_stage: type=int64, missing=0 (0.0%), unique=3
+crop_density: type=float64, missing=0 (0.0%), unique=8469
+soil_type: type=int64, missing=0 (0.0%), unique=3
+soil_moisture: type=float64, missing=0 (0.0%), unique=8466
+N: type=int64, missing=0 (0.0%), unique=137
+P: type=int64, missing=0 (0.0%), unique=117
+K: type=int64, missing=0 (0.0%), unique=73
+ph: type=float64, missing=0 (0.0%), unique=8499
+organic_matter: type=float64, missing=0 (0.0%), unique=8461
+temperature_c: type=float64, missing=0 (0.0%), unique=2138
+temperature: type=float64, missing=0 (0.0%), unique=8499
+humidity_percent: type=float64, missing=0 (0.0%), unique=4212
+humidity: type=float64, missing=0 (0.0%), unique=8476
+rainfall_mm_per_hr: type=float64, missing=0 (0.0%), unique=6
+rainfall: type=float64, missing=0 (0.0%), unique=8473
+rain_probability_percent: type=int64, missing=0 (0.0%), unique=92
+sunlight_exposure: type=float64, missing=0 (0.0%), unique=8470
+wind_speed: type=float64, missing=0 (0.0%), unique=8471
+co2_concentration: type=float64, missing=0 (0.0%), unique=8471
+frost_risk: type=float64, missing=0 (0.0%), unique=8456
+urban_area_proximity: type=float64, missing=0 (0.0%), unique=8476
+pest_pressure: type=float64, missing=0 (0.0%), unique=8448
+fertilizer_usage: type=float64, missing=0 (0.0%), unique=8455
+irrigation_status: type=str, missing=0 (0.0%), unique=3
+irrigation_frequency: type=int64, missing=0 (0.0%), unique=6
+irrigation_duration_minutes: type=int64, missing=0 (0.0%), unique=42
+water_used_liters: type=float64, missing=0 (0.0%), unique=4415
+water_usage_efficiency: type=float64, missing=0 (0.0%), unique=8464
+water_source_type: type=int64, missing=0 (0.0%), unique=3
+sensor_status: type=str, missing=0 (0.0%), unique=2
+data_origin: type=str, missing=0 (0.0%), unique=1
+
+IDENTIFIER CHECKS
+-------------------------------------------------------
+synthetic_record_number: unique=8500, repeated non-missing values beyond first occurrence=0
+sensor_id: unique=50, repeated non-missing values beyond first occurrence=8450
+field_id: unique=100, repeated non-missing values beyond first occurrence=8400
+
+DATA ORIGIN COUNTS
+-------------------------------------------------------
+synthetic_or_synthetic_augmented: 8500
+
+TIMESTAMP CHECK
+-------------------------------------------------------
+Unparseable timestamps: 0
+Earliest parsed timestamp: 2026-01-01 00:00:00+00:00
+Latest parsed timestamp: 2026-03-30 12:45:00+00:00
+
+SIMILAR COLUMN CHECKS
+-------------------------------------------------------
+temperature_c vs temperature: comparable rows=8500, identical values=0, mean absolute difference=0.002491, maximum absolute difference=0.005000
+humidity_percent vs humidity: comparable rows=8500, identical values=0, mean absolute difference=0.002470, maximum absolute difference=0.005000
+rainfall_mm_per_hr vs rainfall: comparable rows=8500, identical values=0, mean absolute difference=101.580161, maximum absolute difference=298.560117
+
+NUMERIC SUMMARY
+-------------------------------------------------------
+       synthetic_record_number  growth_stage  crop_density  soil_type  soil_moisture         N         P         K        ph  organic_matter  temperature_c  temperature  humidity_percent  humidity  rainfall_mm_per_hr  rainfall  rain_probability_percent  sunlight_exposure  wind_speed  co2_concentration  frost_risk  urban_area_proximity  pest_pressure  fertilizer_usage  irrigation_frequency  irrigation_duration_minutes  water_used_liters  water_usage_efficiency  water_source_type
+count                 8500.000       8500.00      8500.000   8500.000       8500.000  8500.000  8500.000  8500.000  8500.000        8500.000       8500.000     8500.000          8500.000  8500.000            8500.000  8500.000                  8500.000           8500.000    8500.000           8500.000    8500.000              8500.000       8500.000          8500.000              8500.000                     8500.000           8500.000                8500.000           8500.000
+mean                  4250.500          2.00        12.346      1.988         20.199    50.523    53.484    48.476     6.479           5.480         25.571       25.571            71.476    71.476               0.719   102.299                    55.241              8.601      10.186            399.429      50.197                24.948         49.830           125.955                 3.511                       14.347             35.190                   2.997              2.001
+std                   2453.883          0.82         4.305      0.815          5.735    36.924    33.140    51.120     0.783           2.595          5.057        5.057            22.205    22.206               0.932    54.071                    29.452              1.995       5.736             28.531      28.823                14.523         28.879            43.211                 1.708                       13.407             35.121                   1.135              0.814
+min                      1.000          1.00         5.004      1.000         10.024     0.000     5.000     5.000     3.505           1.003          8.830        8.826            14.260    14.258               0.000    20.211                     0.000              5.001       0.003            350.001       0.055                 0.018          0.038            50.210                 1.000                        0.000              0.000                   1.002              1.000
+25%                   2125.750          1.00         8.578      1.000         15.286    21.000    28.000    20.000     5.974           3.234         22.680       22.683            60.118    60.115               0.000    64.418                    28.000              6.946       5.328            374.576      25.497                12.483         24.583            88.939                 2.000                        0.000              0.000                   2.070              1.000
+50%                   4250.500          2.00        12.295      2.000         20.281    37.000    51.000    32.000     6.428           5.432         25.570       25.571            80.445    80.445               0.200    94.340                    63.000              8.660      10.152            399.383      50.144                24.941         49.263           126.907                 4.000                       13.000             28.315                   2.983              2.000
+75%                   6375.250          3.00        15.978      3.000         25.219    84.000    68.000    49.000     6.923           7.693         28.560       28.557            89.852    89.855               1.000   121.095                    80.000             10.266      15.161            424.028      75.509                37.545         74.519           163.197                 5.000                       22.000             55.695                   3.968              3.000
+max                   8500.000          3.00        19.988      3.000         29.998   140.000   145.000   205.000     9.935          10.000         43.680       43.675            99.980    99.982               3.000   298.560                   100.000             11.991      19.991            449.984      99.957                49.992         99.984           199.982                 6.000                       45.000            119.970                   4.997              3.000

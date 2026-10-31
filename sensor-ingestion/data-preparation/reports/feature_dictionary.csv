@@ -1,0 +1,17 @@
+feature,data_type,source_column,description_and_caveat
+soil_moisture,numeric,soil_moisture,Numeric candidate; reported on a 0-100 scale. Confirm sensor definition and units.
+temperature_c,numeric,temperature_c,Numeric candidate; selected instead of temperature. Paired columns are nearly identical.
+humidity_percent,numeric,humidity_percent,Numeric candidate; selected instead of humidity. Paired columns are nearly identical.
+rain_probability_percent,numeric,rain_probability_percent,Numeric candidate; meaning and synthetic generation should be documented.
+N,numeric,N,Numeric candidate; confirm units.
+P,numeric,P,Numeric candidate; confirm units.
+K,numeric,K,Numeric candidate; confirm units.
+ph,numeric,ph,Numeric candidate; check agronomic plausibility.
+organic_matter,numeric,organic_matter,Numeric candidate; confirm units.
+crop_density,numeric,crop_density,Numeric candidate; confirm units.
+sunlight_exposure,numeric,sunlight_exposure,Numeric candidate; confirm units.
+wind_speed,numeric,wind_speed,Numeric candidate; confirm units.
+frost_risk,numeric,frost_risk,Numeric candidate; confirm scale and meaning.
+crop_name,categorical,label,Categorical crop name derived from label.
+soil_type,categorical,soil_type,Categorical code; category meanings unverified.
+growth_stage,categorical,growth_stage,Categorical code; stage meanings unverified.

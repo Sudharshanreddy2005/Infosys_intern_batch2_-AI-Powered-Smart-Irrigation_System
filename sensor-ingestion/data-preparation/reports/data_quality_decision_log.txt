@@ -1,0 +1,153 @@
+SMART IRRIGATION - DATA QUALITY INVESTIGATION
+============================================================
+Dataset shape: (8500, 36)
+
+1. SIMILAR COLUMN COMPARISONS
+---------------------------------------------
+temperature_c vs temperature
+  Comparable rows: 8500
+  Exact matches: 0
+  Mean absolute difference: 0.002491
+  Maximum absolute difference: 0.005000
+  Correlation: 1.000000
+  temperature_c range: 8.8300 to 43.6800
+  temperature range: 8.8257 to 43.6755
+
+humidity_percent vs humidity
+  Comparable rows: 8500
+  Exact matches: 0
+  Mean absolute difference: 0.002470
+  Maximum absolute difference: 0.005000
+  Correlation: 1.000000
+  humidity_percent range: 14.2600 to 99.9800
+  humidity range: 14.2580 to 99.9819
+
+rainfall_mm_per_hr vs rainfall
+  Comparable rows: 8500
+  Exact matches: 0
+  Mean absolute difference: 101.580161
+  Maximum absolute difference: 298.560117
+  Correlation: 0.005029
+  rainfall_mm_per_hr range: 0.0000 to 3.0000
+  rainfall range: 20.2113 to 298.5601
+
+2. CATEGORICAL AND CODED VALUES
+---------------------------------------------
+label:
+  mothbeans: 416
+  chickpea: 405
+  mango: 404
+  cotton: 403
+  coconut: 400
+  grapes: 399
+  maize: 396
+  blackgram: 396
+  banana: 396
+  watermelon: 394
+  orange: 393
+  apple: 390
+  mungbean: 389
+  pomegranate: 388
+  coffee: 383
+  lentil: 380
+  papaya: 375
+  rice: 368
+  muskmelon: 364
+  pigeonpeas: 360
+  kidneybeans: 358
+  jute: 343
+
+growth_stage:
+  3: 2856
+  1: 2852
+  2: 2792
+
+soil_type:
+  1: 2875
+  2: 2854
+  3: 2771
+
+irrigation_status:
+  ON: 3253
+  OFF: 2672
+  SCHEDULED: 2575
+
+irrigation_frequency:
+  4: 1480
+  1: 1435
+  5: 1431
+  6: 1413
+  3: 1375
+  2: 1366
+
+water_source_type:
+  2: 2867
+  3: 2822
+  1: 2811
+
+sensor_status:
+  ACTIVE: 6423
+  CHECK: 2077
+
+data_origin:
+  synthetic_or_synthetic_augmented: 8500
+
+3. SENSOR AND TIMESTAMP CHECKS
+---------------------------------------------
+Rows involved in repeated sensor/timestamp pairs: 0
+Rows involved in repeated field/timestamp pairs: 0
+Time gaps between consecutive readings per sensor (minutes):
+  Minimum: 750.00
+  Median: 750.00
+  Maximum: 750.00
+  Non-positive gaps: 0
+
+4. SYNTHETIC DATA REVIEW
+---------------------------------------------
+data_origin counts:
+data_origin
+synthetic_or_synthetic_augmented    8500
+Unique synthetic record numbers: 8500
+Missing synthetic record numbers: 0
+Note: This report cannot establish how synthetic records were generated. Confirm their provenance with the dataset creator or project documentation.
+
+5. NUMERIC VALUE RANGES
+---------------------------------------------
+                                  min     median        max        std
+synthetic_record_number        1.0000  4250.5000  8500.0000  2453.8830
+growth_stage                   1.0000     2.0000     3.0000     0.8195
+crop_density                   5.0043    12.2951    19.9885     4.3046
+soil_type                      1.0000     2.0000     3.0000     0.8150
+soil_moisture                 10.0243    20.2809    29.9979     5.7350
+N                              0.0000    37.0000   140.0000    36.9237
+P                              5.0000    51.0000   145.0000    33.1404
+K                              5.0000    32.0000   205.0000    51.1196
+ph                             3.5048     6.4277     9.9351     0.7833
+organic_matter                 1.0033     5.4320    10.0000     2.5952
+temperature_c                  8.8300    25.5700    43.6800     5.0573
+temperature                    8.8257    25.5705    43.6755     5.0573
+humidity_percent              14.2600    80.4450    99.9800    22.2055
+humidity                      14.2580    80.4446    99.9819    22.2055
+rainfall_mm_per_hr             0.0000     0.2000     3.0000     0.9325
+rainfall                      20.2113    94.3400   298.5601    54.0707
+rain_probability_percent       0.0000    63.0000   100.0000    29.4525
+sunlight_exposure              5.0007     8.6597    11.9910     1.9952
+wind_speed                     0.0029    10.1520    19.9913     5.7358
+co2_concentration            350.0014   399.3834   449.9844    28.5309
+frost_risk                     0.0549    50.1438    99.9573    28.8225
+urban_area_proximity           0.0178    24.9413    49.9920    14.5233
+pest_pressure                  0.0381    49.2626    99.9838    28.8792
+fertilizer_usage              50.2100   126.9073   199.9822    43.2113
+irrigation_frequency           1.0000     4.0000     6.0000     1.7084
+irrigation_duration_minutes    0.0000    13.0000    45.0000    13.4067
+water_used_liters              0.0000    28.3150   119.9700    35.1208
+water_usage_efficiency         1.0021     2.9827     4.9971     1.1355
+water_source_type              1.0000     2.0000     3.0000     0.8141
+
+6. INITIAL DECISIONS
+---------------------------------------------
+No columns were deleted.
+No records were deleted.
+No values were imputed.
+Column meanings and units still require verification.
+Feature selection must wait until the prediction target is agreed.

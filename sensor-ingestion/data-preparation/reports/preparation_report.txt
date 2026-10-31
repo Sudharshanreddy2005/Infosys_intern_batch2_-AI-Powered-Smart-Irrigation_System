@@ -1,0 +1,100 @@
+SMART IRRIGATION - MILESTONE 2 PREPARATION REPORT
+============================================================
+Input file: Smart_Irrigation_Final_8500_Rows.csv
+Original rows: 8500
+Original columns: 36
+
+SCHEMA CHECK
+----------------------------------------
+Missing expected columns: []
+Unexpected columns: []
+
+TEXT NORMALIZATION
+----------------------------------------
+Text cells with surrounding whitespace: 0
+Common missing-value markers found: 0
+
+NUMERIC CONVERSION
+----------------------------------------
+synthetic_record_number: 0 non-missing values could not be converted
+growth_stage: 0 non-missing values could not be converted
+crop_density: 0 non-missing values could not be converted
+soil_type: 0 non-missing values could not be converted
+soil_moisture: 0 non-missing values could not be converted
+N: 0 non-missing values could not be converted
+P: 0 non-missing values could not be converted
+K: 0 non-missing values could not be converted
+ph: 0 non-missing values could not be converted
+organic_matter: 0 non-missing values could not be converted
+temperature_c: 0 non-missing values could not be converted
+temperature: 0 non-missing values could not be converted
+humidity_percent: 0 non-missing values could not be converted
+humidity: 0 non-missing values could not be converted
+rainfall_mm_per_hr: 0 non-missing values could not be converted
+rainfall: 0 non-missing values could not be converted
+rain_probability_percent: 0 non-missing values could not be converted
+sunlight_exposure: 0 non-missing values could not be converted
+wind_speed: 0 non-missing values could not be converted
+co2_concentration: 0 non-missing values could not be converted
+frost_risk: 0 non-missing values could not be converted
+urban_area_proximity: 0 non-missing values could not be converted
+pest_pressure: 0 non-missing values could not be converted
+fertilizer_usage: 0 non-missing values could not be converted
+irrigation_frequency: 0 non-missing values could not be converted
+irrigation_duration_minutes: 0 non-missing values could not be converted
+water_used_liters: 0 non-missing values could not be converted
+water_usage_efficiency: 0 non-missing values could not be converted
+water_source_type: 0 non-missing values could not be converted
+
+TIMESTAMP VALIDATION
+----------------------------------------
+Unparseable or missing timestamps: 0
+Earliest timestamp: 2026-01-01 00:00:00+00:00
+Latest timestamp: 2026-03-30 12:45:00+00:00
+
+DUPLICATE CHECK
+----------------------------------------
+Exact duplicate rows after normalization: 0
+No rows were automatically removed.
+
+VALIDATION SUMMARY
+----------------------------------------
+soil_moisture outside 0-100: 0
+humidity_percent outside 0-100: 0
+humidity outside 0-100: 0
+rain_probability_percent outside 0-100: 0
+ph outside 0-14: 0
+crop_density negative values: 0
+N negative values: 0
+P negative values: 0
+K negative values: 0
+organic_matter negative values: 0
+rainfall_mm_per_hr negative values: 0
+rainfall negative values: 0
+sunlight_exposure negative values: 0
+wind_speed negative values: 0
+co2_concentration negative values: 0
+frost_risk negative values: 0
+urban_area_proximity negative values: 0
+pest_pressure negative values: 0
+fertilizer_usage negative values: 0
+irrigation_frequency negative values: 0
+irrigation_duration_minutes negative values: 0
+water_used_liters negative values: 0
+water_usage_efficiency negative values: 0
+Rows with at least one quality flag: 0
+Flagged records were retained.
+
+OUTPUT SUMMARY
+----------------------------------------
+Output rows: 8500
+Output columns: 36
+Rows removed: 0
+Cleaned dataset: C:\Users\vardh\OneDrive\Desktop\Infosys_intern_batch2_-AI-Powered-Smart-Irrigation_System\sensor-ingestion\data-preparation\output\cleaned_dataset_m2.csv
+Missing-value report: C:\Users\vardh\OneDrive\Desktop\Infosys_intern_batch2_-AI-Powered-Smart-Irrigation_System\sensor-ingestion\data-preparation\reports\missing_values_m2.csv
+Quality flags: C:\Users\vardh\OneDrive\Desktop\Infosys_intern_batch2_-AI-Powered-Smart-Irrigation_System\sensor-ingestion\data-preparation\reports\data_quality_flags.csv
+
+Original raw dataset was not modified.
+Milestone 1 outputs were not modified.
+No missing values were imputed.
+No outliers were automatically deleted.
