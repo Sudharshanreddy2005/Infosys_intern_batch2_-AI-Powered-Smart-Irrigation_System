@@ -222,14 +222,3 @@ plans = optimize_schedule([field], forecast)
 The router is registered in `main.py` and protected with the same login and rate limiting as the weather
 endpoints. The package is also copied in the `Dockerfile`.
 
-## Assumptions and limitations
-
-- **The crop and soil values and the 60 mm per-event cap are approximate** (FAO-56 and textbook values)
-  and still need validation per crop and soil type.
-- The dataset is synthetic, so the plans have not been validated on a real farm.
-- The optimizer is rule-based. The Model 2 water-amount prediction is not used as an input yet, and the
-  optimizer keeps its own soil-water balance because the model does not predict the field's actual water level.
-- The latest soil moisture is passed in the request. It is not yet read automatically from the sensor database.
-- Plans are not stored, and one weather location is used per request.
-- Rice is treated like a non-flooded crop. Ponded paddy irrigation is not modelled.
-- Pump flow must be measured on the real pump, otherwise the pump minutes will be wrong.
