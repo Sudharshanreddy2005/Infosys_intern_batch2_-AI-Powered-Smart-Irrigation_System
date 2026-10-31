@@ -3,3 +3,11 @@ venv/
 __pycache__/
 .pytest_cache/
 cache/
+# Large trained model artifacts
+*.joblib
+*.pkl
+
+# Python generated files
+*.pyc
+# Include Model 1 artifacts
+!model1/artifacts/*.joblib

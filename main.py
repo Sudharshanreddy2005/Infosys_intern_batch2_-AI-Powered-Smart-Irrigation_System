@@ -1,4 +1,4 @@
-
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from fastapi import FastAPI, HTTPException, Query, Depends, Header
 from sqlalchemy import create_engine, text
@@ -9,6 +9,7 @@ import hmac
 import joblib
 import pandas as pd
 from pathlib import Path
+from model1.inference import load_artifact_bundle, predict_records
 
 
 app = FastAPI(
@@ -21,7 +22,7 @@ app = FastAPI(
 # --------------------------------------------------
 # DATABASE CONFIGURATION
 # --------------------------------------------------
-
+load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
@@ -43,7 +44,20 @@ model2 = joblib.load(
 model3 = joblib.load(
     BASE_DIR / "model3" / "zone4_ridge.joblib"
 )
+# Load Model 4 - Crop Stress Prediction
+model4 = joblib.load(
+    BASE_DIR / "model4_crop_stress.joblib"
+)
+# Load Model 1 artifacts
+model1_full = load_artifact_bundle(
+    BASE_DIR / "model1" / "artifacts" /
+    "random_forest_without_soil_moisture_tuned_candidate_v3.joblib"
+)
 
+model1_weather = load_artifact_bundle(
+    BASE_DIR / "model1" / "artifacts" /
+    "reduced_weather_proxy_v1.joblib"
+)
 
 # --------------------------------------------------
 # MODEL 2: WATER REQUIREMENT REQUEST
@@ -87,6 +101,60 @@ class Model3Request(BaseModel):
     hour: int | None = Field(default=None, ge=0, le=23)
     day_period: int | None = None
     quarter: int | None = Field(default=None, ge=1, le=4)
+    # --------------------------------------------------
+# MODEL 1: FULL MODEL REQUEST
+# --------------------------------------------------
+
+class Model1FullRequest(BaseModel):
+    temperature_c: float
+    humidity_percent: float = Field(ge=0, le=100)
+    rain_probability_percent: float = Field(ge=0, le=100)
+    N: float
+    P: float
+    K: float
+    ph: float
+    organic_matter: float
+    crop_density: float
+    sunlight_exposure: float
+    wind_speed: float
+    frost_risk: float
+    crop_name: str
+    soil_type: int = Field(ge=1, le=3)
+    growth_stage: int = Field(ge=1, le=3)
+
+
+# --------------------------------------------------
+# MODEL 1: REDUCED WEATHER REQUEST
+# --------------------------------------------------
+
+class Model1WeatherRequest(BaseModel):
+    temperature_c: float
+    humidity_percent: float = Field(ge=0, le=100)
+    # --------------------------------------------------
+# MODEL 4: CROP STRESS REQUEST
+# --------------------------------------------------
+
+class Model4Request(BaseModel):
+    soil_type: str
+    bulk_density: float
+    organic_matter_pct: float
+    cation_exchange_capacity: float
+    salinity_ec: float
+    buffering_capacity: float
+    soil_moisture_pct: float
+    moisture_limit_dry: float
+    moisture_limit_wet: float
+    moisture_regime: str
+    thermal_regime: str
+    nutrient_balance: str
+    plant_category: str
+    soil_temp_c: float
+    air_temp_c: float
+    light_intensity_par: float
+    soil_ph: float
+    nitrogen_ppm: float
+    phosphorus_ppm: float
+    potassium_ppm: float
 
 
 # --------------------------------------------------
@@ -338,4 +406,125 @@ def predict_soil_moisture(request: Model3Request):
         raise HTTPException(
             status_code=500,
             detail="Soil moisture prediction failed"
+        )
+    # --------------------------------------------------
+# MODEL 1: FULL 15-FEATURE PREDICTION
+# --------------------------------------------------
+
+@app.post("/api/models/model1/full/predict")
+def predict_model1_full(request: Model1FullRequest):
+    try:
+        result = predict_records(
+            model1_full,
+            [request.model_dump()]
+        )
+
+        return {
+            "model": "Model 1 - Full 15-feature proxy classifier",
+            **result[0]
+        }
+
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Model 1 full prediction failed"
+        )
+
+
+# --------------------------------------------------
+# MODEL 1: REDUCED WEATHER PREDICTION
+# --------------------------------------------------
+
+@app.post("/api/models/model1/weather/predict")
+def predict_model1_weather(
+    request: Model1WeatherRequest,
+    _: None = Depends(irrigation_guard)
+):
+    try:
+        metadata = model1_weather["metadata"]
+        ranges = metadata["feature_training_ranges"]
+
+        if not (
+            ranges["temperature_c"]["minimum"]
+            <= request.temperature_c
+            <= ranges["temperature_c"]["maximum"]
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="Temperature is outside the model's training range."
+            )
+
+        if not (
+            ranges["humidity_percent"]["minimum"]
+            <= request.humidity_percent
+            <= ranges["humidity_percent"]["maximum"]
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="Humidity is outside the model's training range."
+            )
+
+        result = predict_records(
+            model1_weather,
+            [request.model_dump()]
+        )
+
+        return {
+            "model": "Model 1 - Reduced Weather Proxy",
+            **result[0]
+        }
+
+    except HTTPException:
+        raise
+
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Model 1 weather prediction failed"
+        )
+    # --------------------------------------------------
+# MODEL 4: CROP STRESS PREDICTION
+# --------------------------------------------------
+
+@app.post("/api/models/model4/predict")
+def predict_crop_stress(request: Model4Request):
+
+    try:
+        input_data = pd.DataFrame(
+            [request.model_dump()],
+            columns=model4.feature_names_in_
+        )
+
+        prediction = int(model4.predict(input_data)[0])
+
+        stress_levels = {
+            0: "Low Stress",
+            1: "Moderate Stress",
+            2: "High Stress"
+        }
+
+        probabilities = model4.predict_proba(input_data)[0]
+
+        return {
+            "model": "Model 4 - Crop Stress Prediction",
+            "predicted_class": prediction,
+            "stress_level": stress_levels[prediction],
+            "class_probabilities": {
+                str(int(class_label)): float(probability)
+                for class_label, probability
+                in zip(model4.classes_, probabilities)
+            },
+            "note": "Prediction generated using the trained Random Forest model."
+        }
+
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Crop stress prediction failed"
         )
