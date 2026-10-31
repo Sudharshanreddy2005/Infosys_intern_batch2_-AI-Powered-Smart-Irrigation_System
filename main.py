@@ -62,6 +62,7 @@ from sarvam_translation import (
     translate_texts,
 )
 from weather_api.integrations.reverse_geocoding import get_locality
+from irrigation_optimizer.api import router as irrigation_router
 from farmer_assistant import (
     AssistantServiceError,
     answer_farmer_question,
@@ -1097,6 +1098,13 @@ def translate_ui_text(
         ) from error
     return TranslationResponse(translations=translations)
 
+def irrigation_guard(context: tuple[Farmer, AuthSession] = Depends(get_auth_context)) -> None:
+    # The irrigation plan calls the paid weather API: require a signed-in farmer and rate-limit it.
+    _limit_weather_requests(context[0].id)
+
+
+
+app.include_router(irrigation_router, dependencies=[Depends(irrigation_guard)])
 
 @app.get("/health")
 def health_check():
