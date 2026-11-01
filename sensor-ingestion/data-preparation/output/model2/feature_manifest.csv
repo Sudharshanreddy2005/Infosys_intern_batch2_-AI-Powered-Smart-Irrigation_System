@@ -1,0 +1,16 @@
+column,role,data_origin,description
+crop_type,feature,source_or_derived_from_source,Source crop label
+growth_stage,feature,source_or_derived_from_source,Source growth stage
+soil_type,feature,source_or_derived_from_source,Source soil type
+soil_moisture_percent,feature,source_or_derived_from_source,Source soil moisture percentage
+temperature_c,feature,source_or_derived_from_source,Source temperature in Celsius
+humidity_percent,feature,source_or_derived_from_source,Source humidity percentage
+rainfall_mm,feature,source_or_derived_from_source,One-hour amount derived from source rate; assumes mm/hour
+forecast_rainfall_mm,feature,synthetic_input,Synthetic forecast rainfall
+field_area_acres,feature,synthetic_input,Synthetic area fixed per field ID
+irrigation_method,feature,synthetic_input,Synthetic method fixed per field ID
+wind_speed,feature,source_or_derived_from_source,Source wind speed; units require confirmation
+et0_mm_day,feature,synthetic_input,Synthetic evapotranspiration estimate
+crop_coefficient_kc,feature,synthetic_input,Synthetic growth-stage-based coefficient
+previous_irrigation_mm,feature,synthetic_input,Synthetic previous irrigation depth
+required_water_liters,target,synthetic_simulation,"Synthetic stochastic target, not observed ground truth"
