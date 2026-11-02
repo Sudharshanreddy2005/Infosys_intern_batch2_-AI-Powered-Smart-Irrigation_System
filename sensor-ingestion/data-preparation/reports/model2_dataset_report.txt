@@ -1,0 +1,38 @@
+MODEL 2 DATA PREPARATION REPORT
+================================
+Source file: C:\Users\vardh\OneDrive\Desktop\Infosys_intern_batch2_-AI-Powered-Smart-Irrigation_System\sensor-ingestion\data\raw\Smart_Irrigation_Final_8500_Rows.csv
+Source shape: (8500, 36)
+Prepared dataset shape: (8500, 20)
+Source exact duplicate rows: 0
+Source missing cells: 0
+Prepared missing cells: 0
+Imputed source columns: []
+Feature count: 14
+Target: required_water_liters
+Training rows: 6800
+Testing rows: 1700
+Split: chronological 80/20
+Original source SHA-256 unchanged: True
+
+DATA PROVENANCE AND LIMITATIONS
+-------------------------------
+Target meaning: simulated required water in litres per 24 hours.
+Each source row is a 15-minute observation, not a 15-minute water target.
+The original source CSV is not modified.
+Forecast rainfall, field area, irrigation method, ET0,
+crop coefficient and previous irrigation are synthetic.
+The target required_water_liters is a stochastic simulation,
+not an observed measurement or verified ground-truth label.
+Synthetic variability does not establish real-world validity.
+Model scores measure agreement with this simulation only.
+The rainfall feature assumes the source rate is mm/hour
+and represents a one-hour period; confirm with the team.
+Wind-speed units and source measurement definitions need confirmation.
+Replace synthetic fields and target with validated observations
+before making real-world irrigation accuracy claims.
+
+Features:
+crop_type, growth_stage, soil_type, soil_moisture_percent, temperature_c, humidity_percent, rainfall_mm, forecast_rainfall_mm, field_area_acres, irrigation_method, wind_speed, et0_mm_day, crop_coefficient_kc, previous_irrigation_mm
+
+Trace columns excluded from X:
+timestamp, field_id
