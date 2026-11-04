@@ -418,6 +418,13 @@ class ReducedWeatherPredictionRequest(BaseModel):
     field_id: int = Field(gt=0)
 
 
+class ReducedWeatherFeatureInputs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    temperature_c: float = Field(allow_inf_nan=False)
+    humidity_percent: float = Field(ge=0, le=100, allow_inf_nan=False)
+
+
 class ReducedWeatherPredictionResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -429,6 +436,7 @@ class ReducedWeatherPredictionResponse(BaseModel):
     model_status: Literal["Experimental"]
     dataset_provenance: Literal["synthetic_or_synthetic_augmented"]
     selected_model: Literal["logistic_regression", "random_forest"]
+    feature_inputs: ReducedWeatherFeatureInputs
     feature_sources: dict[
         Literal["temperature_c", "humidity_percent"],
         Literal["selected_field_current_weather_api"],

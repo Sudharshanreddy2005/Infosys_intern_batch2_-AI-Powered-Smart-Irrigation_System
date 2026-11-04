@@ -19,7 +19,7 @@
       <select data-ai-crop-record aria-label="Select associated crop record"></select>
     </label>
     <div class="ai-field-facts" aria-live="polite">
-      <div><span class="ai-fact-icon" aria-hidden="true">♧</span><span><small>Crop</small><strong data-ai-crop>Not selected</strong></span></div>
+      <div><span class="ai-fact-icon" aria-hidden="true">♧</span><span><small>Crop</small><strong data-ai-crop data-user-content>Not selected</strong></span></div>
       <div><span class="ai-fact-icon" aria-hidden="true">⌖</span><span><small>Zone</small><strong data-ai-zone-value>Not selected</strong></span></div>
       <div><span class="ai-fact-icon" aria-hidden="true">▧</span><span><small>Area</small><strong data-ai-area>Not selected</strong></span></div>
     </div>
@@ -53,13 +53,13 @@
       </header>
       <div class="ai-model-body">
         <div class="ai-result-box" data-ai-result="model1" role="status" aria-live="polite">Select a field with saved coordinates to request its actual field-weather prediction.</div>
-        <div class="ai-weather-readings" data-ai-weather hidden>
-          <div><small>Temperature</small><strong data-ai-temperature>—</strong></div>
-          <div><small>Humidity</small><strong data-ai-humidity>—</strong></div>
-          <div><small>Rainfall</small><strong data-ai-rainfall>—</strong></div>
-        </div>
-        <div class="ai-model-meta"><span>Field</span><strong data-ai-field-name>—</strong></div>
+        <div class="ai-model-meta"><span>Field</span><strong data-ai-field-name data-user-content>—</strong></div>
         <div class="ai-model-meta"><span>Zone</span><strong data-ai-zone-meta>—</strong></div>
+        <details class="ai-input-details" data-ai-model-input-details="model1">
+          <summary>Model Input Details</summary>
+          <p class="ai-input-status" data-ai-input-status="model1">No current-field model inputs have been submitted.</p>
+          <div class="ai-input-list" data-ai-input-list="model1"></div>
+        </details>
         <p class="ai-model-timestamp" data-ai-timestamp="model1">Prediction time: —</p>
       </div>
     </article>
@@ -72,8 +72,8 @@
       </header>
       <div class="ai-model-body">
         <div class="ai-result-box" data-ai-result="model2" role="status" aria-live="polite">Choose a field and its saved crop record to check the validated production service.</div>
-        <div class="ai-model-meta"><span>Crop type</span><strong data-ai-model2-crop>—</strong></div>
-        <div class="ai-model-meta"><span>Growth stage</span><strong data-ai-growth-stage>Not recorded</strong></div>
+        <div class="ai-model-meta"><span>Crop type</span><strong data-ai-model2-crop data-user-content>—</strong></div>
+        <div class="ai-model-meta"><span>Growth stage</span><strong data-ai-growth-stage data-user-content>Not recorded</strong></div>
         <div class="ai-model-meta"><span>Field area</span><strong data-ai-model2-area>—</strong></div>
         <div class="ai-model-meta"><span>Irrigation method</span><strong>Not recorded</strong></div>
         <p class="ai-model-timestamp" data-ai-timestamp="model2">Last checked: —</p>
@@ -92,7 +92,7 @@
           <div><small>Predicted soil moisture</small><strong data-ai-predicted-moisture>—</strong><div class="ai-moisture-track"><span data-ai-predicted-bar></span></div></div>
         </div>
         <div class="ai-model-meta"><span>Prediction horizon</span><strong data-ai-horizon>—</strong></div>
-        <div class="ai-model-meta"><span>Field / Zone</span><strong data-ai-model3-field>—</strong></div>
+        <div class="ai-model-meta"><span>Field / Zone</span><strong data-ai-model3-field data-user-content>—</strong></div>
         <div class="ai-model-meta"><span>Strategy</span><strong data-ai-strategy>—</strong></div>
         <p class="ai-model-note">Comparative performance against persistence has not been established; do not treat this prediction as more accurate than the baseline.</p>
         <form class="ai-compact-form" data-ai-model3-form>
@@ -135,8 +135,8 @@
         </div>
         <div class="ai-model4-probability"><small>Model-estimated probability</small><strong data-ai-model4-probability>—</strong><span>Not a calibrated confidence score</span></div>
         <div class="ai-model4-details">
-          <div class="ai-model-meta"><span>Crop type</span><strong data-ai-model4-crop>—</strong></div>
-          <div class="ai-model-meta"><span>Field ID</span><strong data-ai-model4-field>—</strong></div>
+          <div class="ai-model-meta"><span>Crop type</span><strong data-ai-model4-crop data-user-content>—</strong></div>
+          <div class="ai-model-meta"><span>Field ID</span><strong data-ai-model4-field data-user-content>—</strong></div>
           <div class="ai-model-meta"><span>Zone ID</span><strong data-ai-model4-zone>—</strong></div>
           <div class="ai-model-meta"><span>Prediction time</span><strong data-ai-model4-time>—</strong></div>
         </div>

@@ -25,6 +25,22 @@ test("all four cards call their existing backend prediction APIs", () => {
   assert.doesNotMatch(script, /\/api\/models\/model2\/predict/);
 });
 
+test("AI dashboard does not depend on the removed page-specific topbar context", () => {
+  assert.doesNotMatch(script, /\btopbarContext\b/);
+  assert.match(dashboard, /data-ai-card="model1"/);
+  assert.match(dashboard, /data-ai-card="model2"/);
+  assert.match(dashboard, /data-ai-card="model3"/);
+  assert.match(dashboard, /data-ai-card="model4"/);
+});
+
+test("Model 1 exposes only the exact automatic model inputs with source metadata", () => {
+  assert.match(dashboard, /<summary>Model Input Details<\/summary>/);
+  assert.match(dashboard, /data-ai-input-list="model1"/);
+  assert.match(script, /feature_inputs/);
+  assert.match(script, /selected_field_current_weather_api/);
+  assert.doesNotMatch(script, /apiRequest\("\/weather\/current"/);
+});
+
 test("dashboard requires observed inputs and does not invent Model 4 class labels", () => {
   assert.match(dashboard, /name="current_moisture_percent"[^>]*required/);
   assert.match(dashboard, /data-ai-zone4-inputs/);

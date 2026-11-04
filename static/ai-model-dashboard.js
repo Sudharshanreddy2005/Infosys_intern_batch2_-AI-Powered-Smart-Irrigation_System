@@ -14,6 +14,10 @@
     "weather_wind_speed", "weather_radiation", "soil_temperature_0_7cm",
     "soil_temperature_7_18cm", "month", "day", "hour", "day_period", "quarter",
   ];
+  const model1InputFeatures = [
+    { name: "temperature_c", unit: "°C" },
+    { name: "humidity_percent", unit: "%" },
+  ];
 
   const displayTime = (value) => {
     if (!value) return "—";
@@ -73,14 +77,6 @@
     if (!api || typeof api.apiRequest !== "function") {
       throw new Error("The authenticated JalSaathi API helper is unavailable.");
     }
-    const topbar = document.querySelector(".portal-topbar");
-    const topbarContext = document.querySelector("[data-ai-topbar-context]");
-    if (topbar instanceof HTMLElement && topbarContext instanceof HTMLElement) {
-      topbar.classList.add("ai-dashboard-topbar");
-      topbarContext.hidden = false;
-      text(topbarContext, "[data-ai-topbar-farmer]", api.getDisplayName?.() || "Farmer");
-    }
-
     let fields;
     let crops = [];
     try {
@@ -103,6 +99,7 @@
       const option = document.createElement("option");
       option.value = String(field.id);
       option.textContent = field.name;
+      option.setAttribute("data-user-content", "");
       fieldSelect.append(option);
     });
     if (fields.length === 0) {
@@ -132,6 +129,7 @@
         const option = document.createElement("option");
         option.value = String(crop.id);
         option.textContent = crop.name;
+        option.setAttribute("data-user-content", "");
         cropSelect.append(option);
       });
       if (matches.length) cropSelect.value = String(matches[0].id);
@@ -141,7 +139,6 @@
       const field = selectedField();
       const crop = selectedCrop();
       const cropName = crop?.name || field?.crop || "";
-      text(topbarContext || page, "[data-ai-topbar-location]", field?.location ? `Field: ${field.location}` : "Location unavailable");
       text(page, "[data-ai-crop]", crop?.name || field?.crop || "Crop not recorded");
       text(page, "[data-ai-zone-value]", zoneSelect.value ? `Zone ${zoneSelect.value}` : "Select zone");
       text(page, "[data-ai-area]", field ? `${field.area} ${field.areaUnit}` : "Not selected");
@@ -201,49 +198,13 @@
       updateSummary();
     };
 
-    const loadFieldWeather = async (field, generation) => {
-      const weatherNode = page.querySelector("[data-ai-weather]");
-      if (!(weatherNode instanceof HTMLElement)) return;
-      weatherNode.hidden = true;
-      if (field?.latitude === null || field?.latitude === undefined ||
-          field?.longitude === null || field?.longitude === undefined) {
-        weatherNode.hidden = true;
-        return;
-      }
-      try {
-        const weather = await api.apiRequest("/weather/current", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ latitude: field.latitude, longitude: field.longitude }),
-        });
-        if (generation !== requestGeneration) return;
-        text(page, "[data-ai-temperature]", finiteNumber(weather.temperature_c) ? `${weather.temperature_c} °C` : "Not returned");
-        text(page, "[data-ai-humidity]", finiteNumber(weather.humidity_percent) ? `${weather.humidity_percent}%` : "Not returned");
-        text(page, "[data-ai-rainfall]", finiteNumber(weather.rainfall_mm_per_hr) ? `${weather.rainfall_mm_per_hr} mm/hr` : "Not returned");
-        text(topbarContext || page, "[data-ai-topbar-location]", weather.locality
-          ? `Village: ${weather.locality}`
-          : field.location ? `Field: ${field.location}` : "Location unavailable");
-        text(topbarContext || page, "[data-ai-topbar-temperature]", finiteNumber(weather.temperature_c)
-          ? `${weather.temperature_c} °C`
-          : "Weather unavailable");
-        text(topbarContext || page, "[data-ai-topbar-condition]", finiteNumber(weather.weather_code)
-          ? `Weather code ${weather.weather_code}`
-          : "Current field weather");
-        weatherNode.hidden = false;
-      } catch (error) {
-        if (generation !== requestGeneration) return;
-        weatherNode.hidden = true;
-        console.warn("Field weather details could not be loaded for the prediction card:", error);
-      }
-    };
-
     const runModel1 = async (field, generation) => {
       if (!field || !Number.isSafeInteger(Number(field.id)) || Number(field.id) <= 0) {
         setState("model1", "input", "Select an account field with a valid numeric ID.");
         return;
       }
       setState("model1", "loading", "Requesting the current field-weather proxy prediction…");
-      void loadFieldWeather(field, generation);
+      text(page, '[data-ai-input-status="model1"]', "Collecting fresh weather for the selected field.");
       try {
         const result = await api.apiRequest("/api/ml/reduced-weather-prediction", {
           method: "POST",
@@ -253,9 +214,15 @@
         if (generation !== requestGeneration) return;
         if ((result.prediction !== 0 && result.prediction !== 1) ||
             !finiteNumber(result.proxy_positive_probability) ||
-            typeof result.observation_time !== "string") {
+            typeof result.observation_time !== "string" ||
+            !result.feature_inputs ||
+            !model1InputFeatures.every(({ name }) => finiteNumber(result.feature_inputs[name])) ||
+            !result.feature_sources ||
+            !model1InputFeatures.every(({ name }) =>
+              result.feature_sources[name] === "selected_field_current_weather_api")) {
           throw new Error("Model 1 returned an invalid response.");
         }
+        renderModel1Inputs(page, result);
         const output = result.prediction === 1
           ? "Proxy indicates irrigation needed"
           : "Proxy indicates irrigation not needed";
@@ -529,7 +496,11 @@
 
   const clearModelOutput = (page, name) => {
     const clear = (selector, value = "—") => text(page, selector, value);
-    if (name === "model1") clear('[data-ai-timestamp="model1"]', "Prediction time: —");
+    if (name === "model1") {
+      clear('[data-ai-timestamp="model1"]', "Prediction time: —");
+      page.querySelector('[data-ai-input-list="model1"]')?.replaceChildren();
+      text(page, '[data-ai-input-status="model1"]', "No current-field model inputs have been submitted.");
+    }
     if (name === "model2") clear('[data-ai-timestamp="model2"]', "Last checked: —");
     if (name === "model3") {
       clear("[data-ai-current-moisture]");
@@ -546,6 +517,37 @@
       clear("[data-ai-model4-time]");
       clear('[data-ai-timestamp="model4"]', "Prediction time: —");
     }
+  };
+
+  const renderModel1Inputs = (page, result) => {
+    const list = page.querySelector('[data-ai-input-list="model1"]');
+    const status = page.querySelector('[data-ai-input-status="model1"]');
+    if (!(list instanceof HTMLElement) || !(status instanceof HTMLElement)) return;
+
+    const fragment = document.createDocumentFragment();
+    model1InputFeatures.forEach(({ name, unit }) => {
+      const row = document.createElement("section");
+      row.className = "ai-input-row";
+      const value = document.createElement("strong");
+      value.className = "ai-input-value";
+      value.textContent = `${String(result.feature_inputs[name])} ${unit}`;
+      const feature = document.createElement("span");
+      feature.className = "ai-input-feature";
+      feature.textContent = name;
+      const source = document.createElement("span");
+      source.className = "ai-input-source";
+      source.textContent = `Source: ${result.feature_sources[name]}`;
+      const timestamp = document.createElement("span");
+      timestamp.className = "ai-input-time";
+      timestamp.textContent = `Observed: ${displayTime(result.observation_time)}`;
+      const availability = document.createElement("span");
+      availability.className = "ai-input-availability";
+      availability.textContent = "Available";
+      row.append(feature, value, source, timestamp, availability);
+      fragment.append(row);
+    });
+    list.replaceChildren(fragment);
+    status.textContent = "These are the exact values returned from the weather record passed to Model 1.";
   };
 
   window.JalSaathiAIDashboard = Object.freeze({ initialize });

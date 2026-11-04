@@ -237,7 +237,7 @@
       }
     </style>
   </head>
-  <body>
+  <body data-i18n-static>
     <div class="page-shell">
       <div class="topbar">
         <div class="brand">
@@ -270,11 +270,7 @@
               </div>
               <div class="field-group">
                 <label for="farmer-language">Language</label>
-                <select id="farmer-language" name="language">
-                  <option value="English">English</option>
-                  <option value="Kannada">Kannada</option>
-                  <option value="Hindi">Hindi</option>
-                </select>
+                <select id="farmer-language" name="language"></select>
               </div>
             </div>
             <div class="field-group">
@@ -396,14 +392,29 @@
       </div>
     </div>
 
-    <script src="/static/profile-store.js?v=20261028-translation-batching"></script>
-    <script src="/static/i18n.js?v=20261028-translation-batching"></script>
+    <script src="/static/profile-store.js?v=20261103-six-language-catalog"></script>
+    <script src="/static/i18n/en.js?v=20261109-locale-resources3"></script>
+    <script src="/static/i18n/te.js?v=20261109-locale-resources3"></script>
+    <script src="/static/i18n/hi.js?v=20261109-locale-resources3"></script>
+    <script src="/static/i18n/kn.js?v=20261109-locale-resources3"></script>
+    <script src="/static/i18n/ta.js?v=20261109-locale-resources3"></script>
+    <script src="/static/i18n/ml.js?v=20261109-locale-resources3"></script>
+    <script src="/static/i18n.js?v=20261109-locale-resources3"></script>
     <script>
       const state = {
         farmers: [],
         fields: [],
         crops: []
       };
+
+      const farmerLanguageSelect = document.getElementById('farmer-language');
+      window.JalSaathiProfile.getLanguages().forEach(language => {
+        const option = document.createElement('option');
+        option.value = language.label;
+        option.textContent = language.label;
+        option.setAttribute('data-i18n-ignore', '');
+        farmerLanguageSelect.appendChild(option);
+      });
 
       function fillSelect(selectId, items, labelKey, valueKey) {
         const select = document.getElementById(selectId);

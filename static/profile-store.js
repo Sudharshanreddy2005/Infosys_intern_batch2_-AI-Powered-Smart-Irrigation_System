@@ -8,28 +8,11 @@
   const message = (source) => window.JalSaathiI18n?.t(source) || source;
   const languages = [
     { code: "en", locale: "en-IN", label: "English" },
-    { code: "bn", locale: "bn-IN", label: "বাংলা" },
-    { code: "gu", locale: "gu-IN", label: "ગુજરાતી" },
+    { code: "te", locale: "te-IN", label: "తెలుగు" },
     { code: "hi", locale: "hi-IN", label: "हिन्दी" },
     { code: "kn", locale: "kn-IN", label: "ಕನ್ನಡ" },
-    { code: "ml", locale: "ml-IN", label: "മലയാളം" },
-    { code: "mr", locale: "mr-IN", label: "मराठी" },
-    { code: "od", locale: "od-IN", label: "ଓଡ଼ିଆ" },
-    { code: "pa", locale: "pa-IN", label: "ਪੰਜਾਬੀ" },
     { code: "ta", locale: "ta-IN", label: "தமிழ்" },
-    { code: "te", locale: "te-IN", label: "తెలుగు" },
-    { code: "as", locale: "as-IN", label: "অসমীয়া" },
-    { code: "brx", locale: "brx-IN", label: "बड़ो" },
-    { code: "doi", locale: "doi-IN", label: "डोगरी" },
-    { code: "kok", locale: "kok-IN", label: "कोंकणी" },
-    { code: "ks", locale: "ks-IN", label: "کٲشُر" },
-    { code: "mai", locale: "mai-IN", label: "मैथिली" },
-    { code: "mni", locale: "mni-IN", label: "ꯃꯤꯇꯩꯂꯣꯟ" },
-    { code: "ne", locale: "ne-IN", label: "नेपाली" },
-    { code: "sa", locale: "sa-IN", label: "संस्कृतम्" },
-    { code: "sat", locale: "sat-IN", label: "ᱥᱟᱱᱛᱟᱲᱤ" },
-    { code: "sd", locale: "sd-IN", label: "سنڌي" },
-    { code: "ur", locale: "ur-IN", label: "اردو" },
+    { code: "ml", locale: "ml-IN", label: "മലയാളം" },
   ];
   const anonymousLanguageKey = `${LANGUAGE_KEY}.guest`;
   const languageKeyFor = (profile) => profile

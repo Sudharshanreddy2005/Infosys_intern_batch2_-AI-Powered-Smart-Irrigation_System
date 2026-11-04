@@ -12,6 +12,8 @@ const i18nSource = fs.readFileSync(
   path.join(__dirname, "..", "static", "i18n.js"),
   "utf8",
 );
+const localeSources = ["en", "te", "hi", "kn", "ta", "ml"].map((code) =>
+  fs.readFileSync(path.join(__dirname, "..", "static", "i18n", `${code}.js`), "utf8"));
 
 function createProfileStore(storage = new Map(), fetchImpl = async () => ({ status: 401 })) {
   const listeners = new Map();
@@ -135,8 +137,9 @@ function descendants(root) {
   return values;
 }
 
-function createI18nHarness(apiRequest, storage = new Map()) {
+function createI18nHarness(apiRequest, storage = new Map(), { remote = false } = {}) {
   let language = "en";
+  let mutationHandler;
   const listeners = new Map();
   const languageSelect = new MockSelect({ "data-language-select": "" });
   const status = new MockElement({ "data-translation-status": "", "data-i18n-ignore": "" });
@@ -145,8 +148,13 @@ function createI18nHarness(apiRequest, storage = new Map()) {
   const duplicateText = new MockText("Green water advice");
   const localText = new MockText("Dashboard");
   const userText = new MockText("private field name");
+  const remoteTextRoot = new MockElement(
+    remote ? { "data-i18n-remote": "" } : {},
+    [firstText, duplicateText],
+  );
   const body = new MockElement({ "data-i18n-static": "" }, [
-    new MockElement({}, [firstText, duplicateText, localText]),
+    remoteTextRoot,
+    new MockElement({}, [localText]),
     new MockElement({ "data-user-content": "" }, [userText]),
     languageSelect,
     status,
@@ -192,6 +200,10 @@ function createI18nHarness(apiRequest, storage = new Map()) {
     }
   }
   class MutationObserver {
+    constructor(callback) {
+      mutationHandler = callback;
+    }
+
     observe() {}
   }
   const profileApi = {
@@ -200,7 +212,8 @@ function createI18nHarness(apiRequest, storage = new Map()) {
       { code: "te", locale: "te-IN", label: "తెలుగు" },
       { code: "hi", locale: "hi-IN", label: "हिन्दी" },
       { code: "kn", locale: "kn-IN", label: "ಕನ್ನಡ" },
-      { code: "as", locale: "as-IN", label: "অসমীয়া" },
+      { code: "ta", locale: "ta-IN", label: "தமிழ்" },
+      { code: "ml", locale: "ml-IN", label: "മലയാളം" },
     ],
     getLanguage: () => language,
     setLanguage(code) {
@@ -242,6 +255,7 @@ function createI18nHarness(apiRequest, storage = new Map()) {
       removeItem: (key) => storage.delete(key),
     },
   };
+  localeSources.forEach((source) => vm.runInNewContext(source, context));
   vm.runInNewContext(i18nSource, context);
   document.ready();
   return {
@@ -252,6 +266,10 @@ function createI18nHarness(apiRequest, storage = new Map()) {
     body,
     documentElement,
     storage,
+    mutateText(node, value) {
+      node.nodeValue = value;
+      mutationHandler([{ type: "characterData", target: node }]);
+    },
   };
 }
 
@@ -260,10 +278,12 @@ test("language catalog uses native labels and preferences are account-scoped", a
   const languageCodes = Array.from(api.getLanguages(), (language) => language.code);
 
   assert.deepEqual(languageCodes, [
-    "en", "bn", "gu", "hi", "kn", "ml", "mr", "od", "pa", "ta", "te",
-    "as", "brx", "doi", "kok", "ks", "mai", "mni", "ne", "sa", "sat", "sd", "ur",
+    "en", "te", "hi", "kn", "ta", "ml",
   ]);
   assert.equal(api.getLanguages().find((language) => language.code === "te").label, "తెలుగు");
+  assert.equal(api.getLanguages().find((language) => language.code === "ta").label, "தமிழ்");
+  assert.equal(api.getLanguages().find((language) => language.code === "ml").label, "മലയാളം");
+  assert.throws(() => api.setLanguage("bn"), /Choose a supported language/);
   api.setLanguage("te");
   api.setCurrentProfile({ id: 41, name: "Farmer One" });
   assert.equal(api.getLanguage(), "te");
@@ -275,6 +295,148 @@ test("language catalog uses native labels and preferences are account-scoped", a
   api.setCurrentProfile({ id: 42, name: "Farmer Two" });
   assert.equal(api.getLanguage(), "en");
   assert.equal(storage.get("jalsaathi.language.v2.42"), undefined);
+});
+
+test("all six languages update dashboard text without a page reload", () => {
+  const { api, nodes, documentElement } = createI18nHarness(async () => ({ translations: [] }));
+  const dashboardLabels = {
+    en: ["Dashboard", "en-IN"],
+    te: ["డాష్‌బోర్డ్", "te-IN"],
+    hi: ["डैशबोर्ड", "hi-IN"],
+    kn: ["ಡ್ಯಾಶ್‌ಬೋರ್ಡ್", "kn-IN"],
+    ta: ["டாஷ்போர்டு", "ta-IN"],
+    ml: ["ഡാഷ്ബോർഡ്", "ml-IN"],
+  };
+
+  for (const [code, [label, locale]] of Object.entries(dashboardLabels)) {
+    api.setLanguage(code);
+    assert.equal(nodes[2].nodeValue, label);
+    assert.equal(documentElement.lang, locale);
+  }
+});
+
+test("fixed interface gaps stay local-only and are reported by the audit", async () => {
+  let requests = 0;
+  const harness = createI18nHarness(async () => {
+    requests += 1;
+    return { translations: [] };
+  });
+
+  harness.api.setLanguage("te");
+  await new Promise((resolve) => setTimeout(resolve, 120));
+
+  assert.equal(requests, 0);
+  assert.equal(harness.nodes[0].nodeValue, "Green water advice");
+  assert.ok(harness.api.audit().missingKeys.includes("unkeyed: Green water advice"));
+});
+
+test("weather labels have local translations in all six languages", () => {
+  const { api } = createI18nHarness(async () => ({ translations: [] }));
+  assert.deepEqual(Object.keys(api.dictionaries).sort(), ["en", "hi", "kn", "ml", "ta", "te"]);
+  const expected = {
+    en: ["Feels like", "Rain probability"],
+    te: ["అనిపించే ఉష్ణోగ్రత", "వర్షం పడే అవకాశం"],
+    hi: ["महसूस होने वाला तापमान", "बारिश की संभावना"],
+    kn: ["ಅನಿಸುವ ತಾಪಮಾನ", "ಮಳೆಯ ಸಾಧ್ಯತೆ"],
+    ta: ["உணரப்படும் வெப்பநிலை", "மழை வாய்ப்பு"],
+    ml: ["അനുഭവപ്പെടുന്ന താപനില", "മഴയ്ക്ക് സാധ്യത"],
+  };
+
+  Object.entries(expected).forEach(([code, labels]) => {
+    assert.deepEqual([
+      api.t("weather.feelsLike", code),
+      api.t("weather.rainProbability", code),
+    ], labels);
+  });
+});
+
+test("translation lookup supports semantic keys and named interpolation parameters", () => {
+  const { api } = createI18nHarness(async () => ({ translations: [] }));
+  api.dictionaries.te["Hello {name}"] = "హలో {name}";
+  api.setLanguage("te");
+
+  assert.equal(api.t("fields.title"), "నా పొలాలు");
+  assert.equal(api.t("Hello {name}", { name: "Ravi" }), "హలో Ravi");
+});
+
+test("shared header labels have local translations in all six languages", () => {
+  const { api } = createI18nHarness(async () => ({ translations: [] }));
+  const expected = {
+    en: ["Notifications", "Account Settings", "Unread notifications", "No alerts are available.", "Field Predictions", "AI Model Predictions"],
+    te: ["నోటిఫికేషన్‌లు", "ఖాతా సెట్టింగ్‌లు", "చదవని నోటిఫికేషన్‌లు", "హెచ్చరికలు అందుబాటులో లేవు.", "పొలం అంచనాలు", "AI మోడల్ అంచనాలు"],
+    hi: ["सूचनाएँ", "खाता सेटिंग", "अपठित सूचनाएँ", "कोई अलर्ट उपलब्ध नहीं हैं।", "खेत पूर्वानुमान", "AI मॉडल पूर्वानुमान"],
+    kn: ["ಅಧಿಸೂಚನೆಗಳು", "ಖಾತೆ ಸೆಟ್ಟಿಂಗ್‌ಗಳು", "ಓದದ ಅಧಿಸೂಚನೆಗಳು", "ಯಾವುದೇ ಎಚ್ಚರಿಕೆಗಳು ಲಭ್ಯವಿಲ್ಲ.", "ಹೊಲದ ಮುನ್ಸೂಚನೆಗಳು", "AI ಮಾದರಿ ಮುನ್ಸೂಚನೆಗಳು"],
+    ta: ["அறிவிப்புகள்", "கணக்கு அமைப்புகள்", "படிக்காத அறிவிப்புகள்", "எச்சரிக்கைகள் எதுவும் இல்லை.", "வயல் கணிப்புகள்", "AI மாதிரி கணிப்புகள்"],
+    ml: ["അറിയിപ്പുകൾ", "അക്കൗണ്ട് ക്രമീകരണങ്ങൾ", "വായിക്കാത്ത അറിയിപ്പുകൾ", "അലേർട്ടുകൾ ലഭ്യമല്ല.", "വയൽ പ്രവചനങ്ങൾ", "AI മോഡൽ പ്രവചനങ്ങൾ"],
+  };
+
+  Object.entries(expected).forEach(([code, labels]) => {
+    assert.deepEqual([
+      api.t("Notifications", code),
+      api.t("Account Settings", code),
+      api.t("Unread notifications", code),
+      api.t("No alerts are available.", code),
+      api.t("Field Predictions", code),
+      api.t("AI Model Predictions", code),
+    ], labels);
+  });
+});
+
+test("both authenticated app shells mount the same header and keep sidebar navigation only", () => {
+  const dashboardHtml = fs.readFileSync(path.join(__dirname, "..", "templates", "index.html"), "utf8");
+  const sectionsHtml = fs.readFileSync(path.join(__dirname, "..", "static", "sections.html"), "utf8");
+  const topbarHtml = fs.readFileSync(path.join(__dirname, "..", "static", "topbar.html"), "utf8");
+
+  for (const html of [dashboardHtml, sectionsHtml]) {
+    assert.match(html, /data-common-topbar/);
+    assert.match(html, /\/static\/topbar\.js/);
+    assert.match(html, /\/static\/topbar\.css/);
+    const sidebar = html.match(/<aside\b[\s\S]*?<\/aside>/)?.[0];
+    assert.ok(sidebar, "application shell should contain its sidebar");
+    assert.doesNotMatch(sidebar, /data-language-control|data-sidebar-account|data-sidebar-profile/);
+    assert.doesNotMatch(sidebar, /view=profile/);
+    for (const view of ["predictions", "ai-model-predictions"]) {
+      assert.match(sidebar, new RegExp(`view=${view}`));
+    }
+  }
+  assert.match(topbarHtml, /data-language-toggle/);
+  assert.match(topbarHtml, /data-notification-toggle/);
+  assert.match(topbarHtml, /data-profile-toggle/);
+  assert.match(topbarHtml, /Account Settings/);
+  assert.match(topbarHtml, /data-topbar-logout/);
+});
+
+test("management farmer language options use the shared catalog and preserve existing values", () => {
+  const { api, storage } = createProfileStore();
+  const managementHtml = fs.readFileSync(
+    path.join(__dirname, "..", "templates", "management.html"),
+    "utf8",
+  );
+  const initializer = managementHtml.match(
+    /const farmerLanguageSelect = document\.getElementById\('farmer-language'\);[\s\S]*?farmerLanguageSelect\.appendChild\(option\);\s*\}\);/,
+  );
+  assert.ok(initializer, "management form should populate its language field from the profile catalog");
+
+  const options = [];
+  const farmerLanguageSelect = { appendChild: (option) => options.push(option) };
+  vm.runInNewContext(initializer[0], {
+    window: { JalSaathiProfile: api },
+    document: {
+      getElementById: () => farmerLanguageSelect,
+      createElement: () => ({ setAttribute() {} }),
+    },
+  });
+
+  assert.deepEqual(options.map(({ value, textContent }) => [value, textContent]), [
+    ["English", "English"],
+    ["తెలుగు", "తెలుగు"],
+    ["हिन्दी", "हिन्दी"],
+    ["ಕನ್ನಡ", "ಕನ್ನಡ"],
+    ["தமிழ்", "தமிழ்"],
+    ["മലയാളം", "മലയാളം"],
+  ]);
+  assert.match(managementHtml, /form\.language\.value = farmer\.language \|\| 'English'/);
+  assert.equal(storage.has("jalsaathi.language.v2.guest"), false);
 });
 
 test("profile API errors preserve the server Retry-After value", async () => {
@@ -298,27 +460,52 @@ test("profile API errors preserve the server Retry-After value", async () => {
   });
 });
 
-test("Sarvam fallback batches approved static text and avoids duplicate requests", async () => {
+test("Sarvam translates only explicitly marked dynamic text and avoids duplicate requests", async () => {
   const requests = [];
   const harness = createI18nHarness(async (_path, options) => {
     const body = JSON.parse(options.body);
     requests.push(body);
     return { translations: body.texts.map(() => "अनुवादित पाठ") };
-  });
+  }, new Map(), { remote: true });
 
-  harness.api.setLanguage("as");
+  harness.api.setLanguage("ml");
   await new Promise((resolve) => setTimeout(resolve, 120));
 
   assert.equal(requests.length, 1);
-  assert.equal(requests[0].target_language_code, "as-IN");
-  assert.deepEqual(requests[0].texts, ["Green water advice", "Dashboard"]);
+  assert.equal(requests[0].target_language_code, "ml-IN");
+  assert.deepEqual(requests[0].texts, ["Green water advice"]);
   assert.deepEqual(
     harness.languageSelect.childNodes.map((option) => option.textContent),
-    ["English", "తెలుగు", "हिन्दी", "ಕನ್ನಡ", "অসমীয়া"],
+    ["English", "తెలుగు", "हिन्दी", "ಕನ್ನಡ", "தமிழ்", "മലയാളം"],
   );
   assert.equal(harness.nodes[0].nodeValue, "अनुवादित पाठ");
   assert.equal(harness.nodes[1].nodeValue, "अनुवादित पाठ");
+  assert.equal(harness.nodes[2].nodeValue, "ഡാഷ്ബോർഡ്");
   assert.equal(harness.nodes[3].nodeValue, "private field name");
+});
+
+test("Sarvam fallback uses each supported regional language code", async () => {
+  const locales = {
+    te: "te-IN",
+    hi: "hi-IN",
+    kn: "kn-IN",
+    ta: "ta-IN",
+    ml: "ml-IN",
+  };
+
+  for (const [code, locale] of Object.entries(locales)) {
+    const requests = [];
+    const harness = createI18nHarness(async (_path, options) => {
+      const body = JSON.parse(options.body);
+      requests.push(body);
+      return { translations: body.texts.map(() => "Translated") };
+    }, new Map(), { remote: true });
+
+    harness.api.setLanguage(code);
+    await new Promise((resolve) => setTimeout(resolve, 120));
+
+    assert.equal(requests[0]?.target_language_code, locale);
+  }
 });
 
 test("successful remote translations persist in the shared session cache", async () => {
@@ -329,13 +516,13 @@ test("successful remote translations persist in the shared session cache", async
     const body = JSON.parse(options.body);
     return { translations: body.texts.map((text) => `T:${text}`) };
   };
-  const first = createI18nHarness(request, storage);
-  first.api.setLanguage("as");
+  const first = createI18nHarness(request, storage, { remote: true });
+  first.api.setLanguage("ml");
   await new Promise((resolve) => setTimeout(resolve, 120));
 
   const afterFirstLoad = requests;
-  const restored = createI18nHarness(request, storage);
-  restored.api.setLanguage("as");
+  const restored = createI18nHarness(request, storage, { remote: true });
+  restored.api.setLanguage("ml");
   await new Promise((resolve) => setTimeout(resolve, 120));
 
   assert.ok(afterFirstLoad > 0);
@@ -350,7 +537,7 @@ test("local dictionary remains available and HTTP 502 keeps fallback text withou
     const error = new Error("provider details must not be shown");
     error.status = 502;
     throw error;
-  });
+  }, new Map(), { remote: true });
 
   harness.api.setLanguage("hi");
   await new Promise((resolve) => setTimeout(resolve, 120));
@@ -391,30 +578,41 @@ test("stable UI keys have verified Telugu, Hindi, and Kannada local translations
   assert.equal(api.t("model.experimentalResult", "en"), "Experimental result");
 });
 
-test("dynamic approved UI subtrees are batched while user content stays private", async () => {
+test("dynamic UI subtrees translate locally while user content stays private", async () => {
   const requests = [];
   const harness = createI18nHarness(async (_path, options) => {
     const body = JSON.parse(options.body);
     requests.push(body);
     return { translations: body.texts.map((text) => `T:${text}`) };
-  });
+  }, new Map(), { remote: true });
   const dynamicText = new MockText("Only fields saved to your account are shown here.");
   const privateText = new MockText("private farmer-entered content");
   const privateNode = new MockElement({ "data-user-content": "" }, [privateText]);
   const dynamicRoot = new MockElement({ "data-i18n-static": "" }, [dynamicText, privateNode]);
 
-  harness.api.setLanguage("as");
+  harness.api.setLanguage("ml");
   harness.body.childNodes.push(dynamicRoot);
   dynamicRoot.parentElement = harness.body;
   harness.api.translate(dynamicRoot);
   await new Promise((resolve) => setTimeout(resolve, 120));
 
   assert.equal(requests.length, 1);
-  assert.equal(requests[0].target_language_code, "as-IN");
-  assert.ok(requests[0].texts.includes("Only fields saved to your account are shown here."));
+  assert.deepEqual(requests[0].texts, ["Green water advice"]);
+  assert.ok(!requests[0].texts.includes("Only fields saved to your account are shown here."));
   assert.ok(!requests[0].texts.includes("private farmer-entered content"));
-  assert.equal(dynamicText.nodeValue, "T:Only fields saved to your account are shown here.");
+  assert.equal(dynamicText.nodeValue, harness.api.t("dashboard.savedFieldsHint", "ml"));
   assert.equal(privateText.nodeValue, "private farmer-entered content");
+});
+
+test("farmer-entered crop names stay unchanged after a language switch", () => {
+  const harness = createI18nHarness(async () => ({ translations: [] }));
+  const privateNode = harness.nodes[3].parentElement;
+  privateNode.setAttribute("data-i18n-crop", "");
+
+  harness.api.setLanguage("te");
+  harness.mutateText(harness.nodes[3], "Paddy");
+
+  assert.equal(harness.nodes[3].nodeValue, "Paddy");
 });
 
 test("unmarked page text is not automatically approved for Sarvam", async () => {
@@ -424,7 +622,7 @@ test("unmarked page text is not automatically approved for Sarvam", async () => 
     requests.push(body);
     return { translations: body.texts.map((text) => `T:${text}`) };
   });
-  harness.api.setLanguage("as");
+  harness.api.setLanguage("ml");
   await new Promise((resolve) => setTimeout(resolve, 120));
   const requestCount = requests.length;
   const unapprovedText = new MockText("This page text is not approved.");
@@ -453,7 +651,7 @@ test("translation batches contain up to sixteen missing strings", async () => {
     "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen",
   ];
   const texts = suffixes.map((suffix) => new MockText(`Batch message ${suffix}`));
-  const root = new MockElement({ "data-i18n-static": "" }, texts);
+  const root = new MockElement({ "data-i18n-static": "", "data-i18n-remote": "" }, texts);
 
   harness.body.childNodes.push(root);
   root.parentElement = harness.body;
@@ -480,17 +678,17 @@ test("overlapping UI mutations share one serial translation flush", async () => 
     activeRequests -= 1;
     return { translations: body.texts.map((text) => `T:${text}`) };
   });
-  harness.api.setLanguage("as");
+  harness.api.setLanguage("ml");
   await new Promise((resolve) => setTimeout(resolve, 120));
   requests.length = 0;
   const firstText = new MockText("Concurrent first message");
-  const firstRoot = new MockElement({ "data-i18n-static": "" }, [firstText]);
+  const firstRoot = new MockElement({ "data-i18n-static": "", "data-i18n-remote": "" }, [firstText]);
   harness.body.childNodes.push(firstRoot);
   firstRoot.parentElement = harness.body;
   harness.api.translate(firstRoot);
   await new Promise((resolve) => setTimeout(resolve, 100));
   const secondText = new MockText("Concurrent second message");
-  const secondRoot = new MockElement({ "data-i18n-static": "" }, [secondText]);
+  const secondRoot = new MockElement({ "data-i18n-static": "", "data-i18n-remote": "" }, [secondText]);
   harness.body.childNodes.push(secondRoot);
   secondRoot.parentElement = harness.body;
   harness.api.translate(secondRoot);
@@ -528,7 +726,7 @@ test("429 fallback honors Retry-After and does not send later batches", async ()
     "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen",
   ];
   const texts = suffixes.map((suffix) => new MockText(`Rate limited ${suffix}`));
-  const root = new MockElement({ "data-i18n-static": "" }, texts);
+  const root = new MockElement({ "data-i18n-static": "", "data-i18n-remote": "" }, texts);
   harness.body.childNodes.push(root);
   root.parentElement = harness.body;
   harness.api.translate(root);
@@ -551,11 +749,11 @@ test("429 fallback honors Retry-After and does not send later batches", async ()
   const restored = createI18nHarness(async (_path, options) => {
     requests.push(JSON.parse(options.body));
     return { translations: JSON.parse(options.body).texts.map((text) => `T:${text}`) };
-  }, storage);
+  }, storage, { remote: true });
   restored.api.setLanguage("te");
   await new Promise((resolve) => setTimeout(resolve, 120));
   const afterReload = new MockText("Still in cooldown");
-  const afterReloadRoot = new MockElement({ "data-i18n-static": "" }, [afterReload]);
+  const afterReloadRoot = new MockElement({ "data-i18n-static": "", "data-i18n-remote": "" }, [afterReload]);
   restored.body.childNodes.push(afterReloadRoot);
   afterReloadRoot.parentElement = restored.body;
   restored.api.translate(afterReloadRoot);
@@ -579,5 +777,6 @@ test("translation audit reports missing keys and static text still untranslated"
 
   assert.ok(report.missingKeys.includes("unkeyed: Green water advice"));
   assert.ok(report.untranslatedStaticStrings.includes("Green water advice"));
+  assert.ok(!report.untranslatedStaticStrings.includes(""));
   assert.ok(!report.untranslatedStaticStrings.includes("private field name"));
 });

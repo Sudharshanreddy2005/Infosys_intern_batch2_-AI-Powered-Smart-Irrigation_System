@@ -1,0 +1,55 @@
+<header class="common-topbar" data-i18n-static>
+  <div class="common-topbar-heading">
+    <button class="common-topbar-menu" type="button" aria-label="Open navigation menu" aria-controls="sidebar-navigation" aria-expanded="false">
+      <svg class="menu-open-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+      <svg class="menu-close-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+    </button>
+    <a class="common-topbar-brand" href="/dashboard" aria-label="JalSaathi Smart Irrigation, Brighter Tomorrow">
+      <span class="common-topbar-logo" aria-hidden="true">
+        <svg viewBox="0 0 64 48"><path d="M30 39C13 34 6 23 8 8c13 0 23 5 27 17C37 13 46 5 60 5c0 15-7 27-23 32l-4 7h-5l2-5z" fill="#d9ef00"></path><path d="M32 43c1-13 8-23 18-31M31 35C23 24 17 17 9 10" stroke="#7fae00" stroke-width="2.5" stroke-linecap="round" fill="none"></path></svg>
+      </span>
+      <strong class="common-topbar-brand-name">JalSaathi</strong>
+      <span class="common-topbar-brand-divider" aria-hidden="true"></span>
+      <span class="common-topbar-brand-details">
+        <span>Smart Irrigation</span>
+        <small>Brighter Tomorrow</small>
+      </span>
+    </a>
+  </div>
+  <div class="common-topbar-controls">
+    <div class="common-topbar-control common-notification-control">
+      <button class="common-icon-button" type="button" data-notification-toggle aria-haspopup="dialog" aria-controls="notification-panel" aria-expanded="false" aria-label="Notifications">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9zm-8 12h4" /></svg>
+        <span class="common-notification-count" data-notification-count hidden>0</span>
+      </button>
+      <section class="common-dropdown common-notification-panel" id="notification-panel" data-notification-panel role="dialog" aria-label="Notifications" tabindex="-1" hidden>
+        <div class="common-dropdown-heading">
+          <strong>Notifications</strong>
+          <span data-notification-summary>Unread notifications</span>
+        </div>
+        <p class="common-notification-empty" data-notification-empty>No alerts are available.</p>
+        <div data-notification-list></div>
+      </section>
+    </div>
+    <div class="common-topbar-control common-language-control">
+      <button class="common-language-toggle" type="button" data-language-toggle aria-haspopup="listbox" aria-expanded="false" aria-label="Select language">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18m0-18a14 14 0 0 0 0 18" /></svg>
+        <span data-language-label data-i18n-ignore>English</span>
+        <span class="common-caret" aria-hidden="true"></span>
+      </button>
+      <div class="common-dropdown common-language-menu" data-language-menu hidden>
+        <div data-language-options role="listbox" aria-label="Available languages"></div>
+      </div>
+    </div>
+    <div class="common-topbar-control common-profile-control">
+      <button class="common-profile-toggle" type="button" data-profile-toggle aria-haspopup="menu" aria-controls="profile-menu" aria-expanded="false" aria-label="Farmer profile" hidden>
+        <span class="common-profile-avatar" data-profile-avatar data-user-content aria-hidden="true">F</span>
+      </button>
+      <div class="common-dropdown common-profile-menu" id="profile-menu" data-profile-menu role="menu" aria-label="Profile actions" hidden>
+        <a href="/static/sections.html?view=profile" role="menuitem">Profile</a>
+        <a href="/static/sections.html?view=profile" role="menuitem">Account Settings</a>
+        <button type="button" role="menuitem" data-topbar-logout>Logout</button>
+      </div>
+    </div>
+  </div>
+</header>

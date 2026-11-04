@@ -1485,6 +1485,7 @@ def reduced_weather_prediction(
         "model_status": "Experimental",
         "dataset_provenance": bundle["metadata"]["dataset_provenance"],
         "selected_model": bundle["metadata"]["model_name"],
+        "feature_inputs": record,
         "feature_sources": {
             "temperature_c": "selected_field_current_weather_api",
             "humidity_percent": "selected_field_current_weather_api",

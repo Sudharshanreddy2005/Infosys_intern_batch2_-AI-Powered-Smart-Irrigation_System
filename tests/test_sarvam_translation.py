@@ -274,13 +274,16 @@ def test_translation_key_is_absent_from_browser_assets(monkeypatch):
     assert "browser-must-not-see-this-secret" not in page.text
 
 
-def test_public_landing_page_has_language_selector_and_translation_fallback():
+def test_public_landing_page_loads_all_locales_before_translation_service():
     with TestClient(main.app) as client:
         response = client.get("/")
 
     assert response.status_code == 200
     assert 'data-language-select aria-label="Select language"' in response.text
-    assert "/static/i18n.js?v=20261028-translation-batching" in response.text
+    service_index = response.text.index("/static/i18n.js?")
+    for language in ("en", "te", "hi", "kn", "ta", "ml"):
+        locale_index = response.text.index(f"/static/i18n/{language}.js?")
+        assert locale_index < service_index
     assert 'data-translation-status' in response.text
 
 

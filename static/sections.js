@@ -343,7 +343,7 @@
             <div class="portal-profile-detail"><span>Email</span><strong data-profile-email data-user-content>Not provided</strong></div>
             <div class="portal-profile-detail"><span>Phone</span><strong data-profile-phone data-user-content>Not provided</strong></div>
             <div class="portal-profile-detail"><span>Location</span><strong data-profile-location data-user-content>Not provided</strong></div>
-            <div class="portal-profile-detail"><span>Preferred language</span><strong>English</strong></div>
+            <div class="portal-profile-detail"><span>Preferred language</span><strong data-profile-language data-i18n-ignore>English</strong></div>
             <div class="portal-profile-detail"><span>Managed fields</span><strong>Account-saved fields</strong></div>
             <div class="portal-profile-detail"><span>Account status</span><strong>Active</strong></div>
           </div>
@@ -440,6 +440,7 @@
   content.innerHTML = page.render;
   window.JalSaathiI18n.translate(content);
   document.title = `JalSaathi | ${page.title}`;
+  window.dispatchEvent(new CustomEvent("jalsaathi:page-changed"));
   document.querySelectorAll("[data-view-link]").forEach((link) => {
     const active = link.dataset.viewLink === view;
     link.classList.toggle("is-active", active);
@@ -1528,8 +1529,9 @@
     const emailNode = root.querySelector("[data-profile-email]");
     const phoneNode = root.querySelector("[data-profile-phone]");
     const locationNode = root.querySelector("[data-profile-location]");
+    const languageNode = root.querySelector("[data-profile-language]");
     const input = form?.elements.namedItem("displayName");
-    if (!(form instanceof HTMLFormElement) || !(profileName instanceof HTMLElement) || !(initial instanceof HTMLElement) || !(message instanceof HTMLElement) || !(input instanceof HTMLInputElement) || !(privateProfile instanceof HTMLElement) || !(loggedOut instanceof HTMLElement) || !(emailNode instanceof HTMLElement) || !(phoneNode instanceof HTMLElement) || !(locationNode instanceof HTMLElement)) return;
+    if (!(form instanceof HTMLFormElement) || !(profileName instanceof HTMLElement) || !(initial instanceof HTMLElement) || !(message instanceof HTMLElement) || !(input instanceof HTMLInputElement) || !(privateProfile instanceof HTMLElement) || !(loggedOut instanceof HTMLElement) || !(emailNode instanceof HTMLElement) || !(phoneNode instanceof HTMLElement) || !(locationNode instanceof HTMLElement) || !(languageNode instanceof HTMLElement)) return;
 
     const syncProfile = () => {
       const session = window.JalSaathiProfile.getProfile();
@@ -1543,6 +1545,10 @@
       emailNode.textContent = session.email || "Not provided";
       phoneNode.textContent = session.phone || "Not provided";
       locationNode.textContent = [session.village, session.district, session.state].filter(Boolean).join(", ") || "Not provided";
+      const selectedLanguage = window.JalSaathiProfile.getLanguages().find(
+        ({ code }) => code === window.JalSaathiProfile.getLanguage(),
+      );
+      languageNode.textContent = selectedLanguage?.label || "English";
     };
     syncProfile();
     form.addEventListener("submit", async (event) => {
@@ -1561,5 +1567,6 @@
       }
     });
     window.addEventListener("jalsaathi:profile-changed", syncProfile);
+    window.addEventListener("jalsaathi:language-changed", syncProfile);
   }
 })();

@@ -1,26 +1,59 @@
-
-
 # Python virtual environments
 venv/
+.venv/
+.venv_model4/
 
 # Python cache and test artifacts
 __pycache__/
 *.py[cod]
 .pytest_cache/
 cache/
-# Large trained model artifacts
+
+# Ignore trained model artifacts by default
 *.joblib
 *.pkl
 
-# Python generated files
-*.pyc
 # Include Model 1 artifacts
+!model1/
+!model1/artifacts/
 !model1/artifacts/*.joblib
 
+# Include Model 2 artifacts
+!model2/
+!model2/*.joblib
+
+# Include Model 3 artifacts
+!model3/
+!model3/*.joblib
+
+# Include Model 4 artifact
+!model4/
+!model4/model4_crop_stress.joblib
+
+# Include backend Model 2 artifact
+!backend/
+!backend/models/
+!backend/models/model2/
+!backend/models/model2/*.joblib
+
+# Python generated files
+*.pyc
+
+# Environment variables
 .env
+.env.*
+!.env.example
 
-# Large Model 4 artifact stored in Google Drive
-model4/model4_crop_stress.joblib
+# Node dependencies and build files
+node_modules/
+.next/
+dist/
+build/
 
-# Model 4 artifact stored in Google Drive
-/model4/model4_crop_stress.joblib
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db

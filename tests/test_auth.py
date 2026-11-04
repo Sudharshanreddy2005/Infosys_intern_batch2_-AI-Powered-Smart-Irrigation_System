@@ -600,6 +600,7 @@ def test_reduced_weather_prediction_uses_owned_field_and_fresh_weather(
         "temperature_c": "selected_field_current_weather_api",
         "humidity_percent": "selected_field_current_weather_api",
     }
+    assert response.json()["feature_inputs"] == seen_records[0]
     assert seen_locations == ["12.500000,77.600000"]
     assert seen_records == [{"temperature_c": 25.0, "humidity_percent": 60.0}]
 
@@ -632,6 +633,10 @@ def test_reduced_weather_endpoint_runs_the_saved_model_with_current_field_weathe
     assert body["feature_sources"] == {
         "temperature_c": "selected_field_current_weather_api",
         "humidity_percent": "selected_field_current_weather_api",
+    }
+    assert body["feature_inputs"] == {
+        "temperature_c": 25.0,
+        "humidity_percent": 60.0,
     }
 
 

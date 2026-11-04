@@ -300,6 +300,7 @@
         const option = document.createElement("option");
         option.value = String(getId(record));
         option.textContent = getLabel(record);
+        option.setAttribute("data-user-content", "");
         select.append(option);
       }
       select.disabled = records.length === 0;
