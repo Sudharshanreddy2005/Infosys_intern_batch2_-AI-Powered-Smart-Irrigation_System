@@ -1,0 +1,175 @@
+<section class="ai-dashboard" data-ai-dashboard>
+  <div class="ai-dashboard-toolbar">
+    <label class="ai-field-picker">Select field
+      <select data-ai-field required aria-label="Select field">
+        <option value="">Loading fields…</option>
+      </select>
+    </label>
+    <label class="ai-field-picker ai-zone-picker">Zone
+      <select data-ai-zone required aria-label="Select field zone">
+        <option value="">Select zone</option>
+        <option value="1">Zone 1</option>
+        <option value="2">Zone 2</option>
+        <option value="3">Zone 3</option>
+        <option value="4">Zone 4</option>
+        <option value="5">Zone 5</option>
+      </select>
+    </label>
+    <label class="ai-field-picker ai-crop-picker" data-ai-crop-picker hidden>Crop record
+      <select data-ai-crop-record aria-label="Select associated crop record"></select>
+    </label>
+    <div class="ai-field-facts" aria-live="polite">
+      <div><span class="ai-fact-icon" aria-hidden="true">♧</span><span><small>Crop</small><strong data-ai-crop>Not selected</strong></span></div>
+      <div><span class="ai-fact-icon" aria-hidden="true">⌖</span><span><small>Zone</small><strong data-ai-zone-value>Not selected</strong></span></div>
+      <div><span class="ai-fact-icon" aria-hidden="true">▧</span><span><small>Area</small><strong data-ai-area>Not selected</strong></span></div>
+    </div>
+    <button class="portal-action ai-refresh" type="button" data-ai-refresh>
+      <span aria-hidden="true">↻</span> Refresh Predictions
+    </button>
+  </div>
+
+  <header class="ai-dashboard-heading">
+    <div class="ai-heading-mark" aria-hidden="true">♧</div>
+    <div>
+      <h1>AI Model Predictions</h1>
+      <p>Real-time AI predictions to help you make better irrigation and crop management decisions.</p>
+    </div>
+    <p class="ai-last-updated" data-ai-last-updated>Last updated: —</p>
+  </header>
+
+  <section class="ai-summary" aria-label="Prediction summary">
+    <div class="ai-summary-item"><span class="ai-summary-icon ai-summary-icon--models" aria-hidden="true">▦</span><span><strong data-ai-total-models>—</strong><small>Total Models</small></span></div>
+    <div class="ai-summary-item"><span class="ai-summary-icon ai-summary-icon--success" aria-hidden="true">✓</span><span><strong data-ai-success-count>0</strong><small>Successful Predictions</small></span></div>
+    <div class="ai-summary-item"><span class="ai-summary-icon ai-summary-icon--unavailable" aria-hidden="true">!</span><span><strong data-ai-unavailable-count>0</strong><small>Unavailable Models</small></span></div>
+    <div class="ai-summary-item"><span class="ai-summary-icon ai-summary-icon--time" aria-hidden="true">◷</span><span><strong data-ai-last-time>—</strong><small>Last Successful Update</small></span></div>
+  </section>
+
+  <div class="ai-model-grid">
+    <article class="ai-model-card ai-model-card--green" data-ai-card="model1" aria-labelledby="ai-model1-title">
+      <header class="ai-model-heading">
+        <span class="ai-model-icon" aria-hidden="true">☼</span>
+        <div><p>Model 1</p><h2 id="ai-model1-title">Weather-Based Prediction</h2><small>Experimental weather proxy; not a validated agronomic recommendation.</small></div>
+        <span class="ai-status" data-ai-status="model1">Input required</span>
+      </header>
+      <div class="ai-model-body">
+        <div class="ai-result-box" data-ai-result="model1" role="status" aria-live="polite">Select a field with saved coordinates to request its actual field-weather prediction.</div>
+        <div class="ai-weather-readings" data-ai-weather hidden>
+          <div><small>Temperature</small><strong data-ai-temperature>—</strong></div>
+          <div><small>Humidity</small><strong data-ai-humidity>—</strong></div>
+          <div><small>Rainfall</small><strong data-ai-rainfall>—</strong></div>
+        </div>
+        <div class="ai-model-meta"><span>Field</span><strong data-ai-field-name>—</strong></div>
+        <div class="ai-model-meta"><span>Zone</span><strong data-ai-zone-meta>—</strong></div>
+        <p class="ai-model-timestamp" data-ai-timestamp="model1">Prediction time: —</p>
+      </div>
+    </article>
+
+    <article class="ai-model-card ai-model-card--blue" data-ai-card="model2" aria-labelledby="ai-model2-title">
+      <header class="ai-model-heading">
+        <span class="ai-model-icon" aria-hidden="true">◉</span>
+        <div><p>Model 2</p><h2 id="ai-model2-title">Water Requirement Prediction</h2><small>Validated production estimate, when available.</small></div>
+        <span class="ai-status" data-ai-status="model2">Waiting</span>
+      </header>
+      <div class="ai-model-body">
+        <div class="ai-result-box" data-ai-result="model2" role="status" aria-live="polite">Choose a field and its saved crop record to check the validated production service.</div>
+        <div class="ai-model-meta"><span>Crop type</span><strong data-ai-model2-crop>—</strong></div>
+        <div class="ai-model-meta"><span>Growth stage</span><strong data-ai-growth-stage>Not recorded</strong></div>
+        <div class="ai-model-meta"><span>Field area</span><strong data-ai-model2-area>—</strong></div>
+        <div class="ai-model-meta"><span>Irrigation method</span><strong>Not recorded</strong></div>
+        <p class="ai-model-timestamp" data-ai-timestamp="model2">Last checked: —</p>
+      </div>
+    </article>
+
+    <article class="ai-model-card ai-model-card--gold" data-ai-card="model3" aria-labelledby="ai-model3-title">
+      <header class="ai-model-heading">
+        <span class="ai-model-icon" aria-hidden="true">♣</span>
+        <div><p>Model 3</p><h2 id="ai-model3-title">Future Soil Moisture Prediction</h2><small>Enter an actual current soil-moisture observation.</small></div>
+        <span class="ai-status" data-ai-status="model3">Input required</span>
+      </header>
+      <div class="ai-model-body">
+        <div class="ai-moisture-values">
+          <div><small>Current soil moisture</small><strong data-ai-current-moisture>—</strong><div class="ai-moisture-track"><span data-ai-current-bar></span></div></div>
+          <div><small>Predicted soil moisture</small><strong data-ai-predicted-moisture>—</strong><div class="ai-moisture-track"><span data-ai-predicted-bar></span></div></div>
+        </div>
+        <div class="ai-model-meta"><span>Prediction horizon</span><strong data-ai-horizon>—</strong></div>
+        <div class="ai-model-meta"><span>Field / Zone</span><strong data-ai-model3-field>—</strong></div>
+        <div class="ai-model-meta"><span>Strategy</span><strong data-ai-strategy>—</strong></div>
+        <p class="ai-model-note">Comparative performance against persistence has not been established; do not treat this prediction as more accurate than the baseline.</p>
+        <form class="ai-compact-form" data-ai-model3-form>
+          <label>Current soil moisture (%)<input name="current_moisture_percent" type="number" min="1" max="100" step="any" required /></label>
+          <div class="ai-zone4-inputs" data-ai-zone4-inputs hidden>
+            <p>Zone 4 also requires all actual weather and soil-temperature inputs below.</p>
+            <label>Weather temperature (°C)<input name="weather_temp" type="number" step="any" /></label>
+            <label>Weather humidity (%)<input name="weather_humidity" type="number" min="0" max="100" step="any" /></label>
+            <label>Weather rain<input name="weather_rain" type="number" step="any" /></label>
+            <label>Weather pressure<input name="weather_pressure" type="number" step="any" /></label>
+            <label>Weather wind speed<input name="weather_wind_speed" type="number" step="any" /></label>
+            <label>Weather radiation<input name="weather_radiation" type="number" step="any" /></label>
+            <label>Soil temperature 0–7 cm<input name="soil_temperature_0_7cm" type="number" step="any" /></label>
+            <label>Soil temperature 7–18 cm<input name="soil_temperature_7_18cm" type="number" step="any" /></label>
+            <label>Month<input name="month" type="number" min="1" max="12" step="1" /></label>
+            <label>Day<input name="day" type="number" min="1" max="31" step="1" /></label>
+            <label>Hour<input name="hour" type="number" min="0" max="23" step="1" /></label>
+            <label>Day period<input name="day_period" type="number" step="any" /></label>
+            <label>Quarter<input name="quarter" type="number" min="1" max="4" step="1" /></label>
+          </div>
+          <p class="ai-form-message" data-ai-form-error="model3" role="alert" hidden></p>
+          <button class="ai-secondary-action" type="submit">Run Model 3</button>
+        </form>
+        <p class="ai-model-timestamp" data-ai-timestamp="model3">Prediction time: —</p>
+      </div>
+    </article>
+
+    <article class="ai-model-card ai-model-card--red ai-model-card--wide" data-ai-card="model4" aria-labelledby="ai-model4-title">
+      <header class="ai-model-heading">
+        <span class="ai-model-icon" aria-hidden="true">⌁</span>
+        <div><p>Model 4</p><h2 id="ai-model4-title">Crop Stress Risk Prediction</h2><small>Numeric classes only; original class meanings are not verified.</small></div>
+        <span class="ai-status" data-ai-status="model4">Input required</span>
+      </header>
+      <div class="ai-model-body ai-model4-body">
+        <div class="ai-result-box ai-model4-result" data-ai-result="model4" role="status" aria-live="polite" hidden>Enter the required actual field and crop observations to request a prediction.</div>
+        <div class="ai-model4-class">
+          <small>Predicted class</small>
+          <strong data-ai-predicted-class>—</strong>
+          <span data-ai-class-label>Class mapping requires verification.</span>
+        </div>
+        <div class="ai-model4-probability"><small>Model-estimated probability</small><strong data-ai-model4-probability>—</strong><span>Not a calibrated confidence score</span></div>
+        <div class="ai-model4-details">
+          <div class="ai-model-meta"><span>Crop type</span><strong data-ai-model4-crop>—</strong></div>
+          <div class="ai-model-meta"><span>Field ID</span><strong data-ai-model4-field>—</strong></div>
+          <div class="ai-model-meta"><span>Zone ID</span><strong data-ai-model4-zone>—</strong></div>
+          <div class="ai-model-meta"><span>Prediction time</span><strong data-ai-model4-time>—</strong></div>
+        </div>
+        <p class="ai-model-note ai-model-note--warning">The class label mapping is not verified. The numeric value is shown as predicted by the original Model 4 training code.</p>
+      </div>
+      <details class="ai-observation-details">
+        <summary>Enter actual soil and crop observations to run Model 4</summary>
+        <form class="ai-observation-form" data-ai-model4-form>
+          <label>Soil type<input name="soil_type" required /></label>
+          <label>Bulk density<input name="bulk_density" type="number" step="any" required /></label>
+          <label>Organic matter (%)<input name="organic_matter_pct" type="number" step="any" required /></label>
+          <label>Cation exchange capacity<input name="cation_exchange_capacity" type="number" step="any" required /></label>
+          <label>Salinity EC<input name="salinity_ec" type="number" step="any" required /></label>
+          <label>Buffering capacity<input name="buffering_capacity" type="number" step="any" required /></label>
+          <label>Soil moisture (%)<input name="soil_moisture_pct" type="number" step="any" required /></label>
+          <label>Dry moisture limit<input name="moisture_limit_dry" type="number" step="any" required /></label>
+          <label>Wet moisture limit<input name="moisture_limit_wet" type="number" step="any" required /></label>
+          <label>Moisture regime<input name="moisture_regime" required /></label>
+          <label>Thermal regime<input name="thermal_regime" required /></label>
+          <label>Nutrient balance<input name="nutrient_balance" required /></label>
+          <label>Plant category<input name="plant_category" required /></label>
+          <label>Soil temperature (°C)<input name="soil_temp_c" type="number" step="any" required /></label>
+          <label>Air temperature (°C)<input name="air_temp_c" type="number" step="any" required /></label>
+          <label>Light intensity PAR<input name="light_intensity_par" type="number" step="any" required /></label>
+          <label>Soil pH<input name="soil_ph" type="number" step="any" required /></label>
+          <label>Nitrogen (ppm)<input name="nitrogen_ppm" type="number" step="any" required /></label>
+          <label>Phosphorus (ppm)<input name="phosphorus_ppm" type="number" step="any" required /></label>
+          <label>Potassium (ppm)<input name="potassium_ppm" type="number" step="any" required /></label>
+          <p class="ai-form-message" data-ai-form-error="model4" role="alert" hidden></p>
+          <button class="ai-secondary-action" type="submit">Run Model 4</button>
+        </form>
+      </details>
+      <p class="ai-model-timestamp" data-ai-timestamp="model4">Prediction time: —</p>
+    </article>
+  </div>
+</section>

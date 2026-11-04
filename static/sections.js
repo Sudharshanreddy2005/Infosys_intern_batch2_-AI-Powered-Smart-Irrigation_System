@@ -143,13 +143,108 @@
     },
     schedule: {
       title: "Irrigation Schedule",
-      subtitle: "No irrigation schedule is currently available.",
+      subtitle: "Plan irrigation from your saved fields, measured inputs, local weather, and recorded reservoir water.",
       render: `
         <div class="portal-page-heading">
-          <div><h1>Irrigation Schedule</h1><p>No verified live sensor stream or irrigation recommendation model is connected.</p></div>
-          <span class="portal-demo-tag">Unavailable</span>
+          <div><h1>Irrigation Schedule</h1><p>Recommendations use the selected field's saved crop, area, and coordinates. Enter a current measured soil-moisture reading and actual irrigation equipment details; unavailable information is never estimated.</p></div>
+          <span class="portal-demo-tag">Account data</span>
         </div>
-        <section class="portal-card portal-card--padded"><p class="portal-empty-note">No watering times or durations are provided. Use verified field and sensor information before making irrigation decisions.</p></section>
+        <p data-irrigation-feedback class="portal-field-feedback" role="status" aria-live="polite">Loading your fields and water sources…</p>
+        <div class="portal-grid portal-grid--2 portal-section-gap">
+          <section class="portal-card portal-card--padded" aria-labelledby="irrigation-field-title">
+            <div class="portal-card-heading"><h2 id="irrigation-field-title">Selected field</h2><span class="portal-muted">Saved to your account</span></div>
+            <label class="portal-form-field">Field
+              <select data-irrigation-field required><option value="">Loading fields…</option></select>
+            </label>
+            <dl class="portal-irrigation-details" data-irrigation-field-details>
+              <div><dt>Field name</dt><dd data-irrigation-field-name>Not selected</dd></div>
+              <div><dt>Crop type</dt><dd data-irrigation-field-crop>Not recorded</dd></div>
+              <div><dt>Area</dt><dd data-irrigation-field-area>Not recorded</dd></div>
+              <div><dt>Zone</dt><dd data-irrigation-field-zone>Not recorded</dd></div>
+              <div><dt>Saved crop stage</dt><dd data-irrigation-saved-stage>Not recorded</dd></div>
+              <div><dt>Field coordinates</dt><dd data-irrigation-field-location>Not recorded</dd></div>
+            </dl>
+          </section>
+          <section class="portal-card portal-card--padded" aria-labelledby="irrigation-water-title">
+            <div class="portal-card-heading"><h2 id="irrigation-water-title">Water availability</h2><span class="portal-muted">Litres</span></div>
+            <label class="portal-form-field">Reservoir / water source
+              <select data-irrigation-reservoir required><option value="">Select a field first</option></select>
+            </label>
+            <dl class="portal-irrigation-details">
+              <div><dt>Total capacity</dt><dd data-irrigation-capacity>Not available</dd></div>
+              <div><dt>Water on hand</dt><dd data-irrigation-available>Not available</dd></div>
+              <div><dt>Reserved for confirmed schedules</dt><dd data-irrigation-reserved>Not available</dd></div>
+              <div><dt>Available after reservations</dt><dd data-irrigation-remaining>Not available</dd></div>
+              <div><dt>Last updated</dt><dd data-irrigation-water-updated>Not available</dd></div>
+            </dl>
+            <form class="portal-irrigation-inline-form" data-irrigation-water-form hidden>
+              <label class="portal-form-field">Current measured water (L)
+                <input name="available_liters" type="number" min="0" step="any" required />
+              </label>
+              <button class="portal-secondary-action" type="submit">Save water level</button>
+            </form>
+            <button class="portal-secondary-action" type="button" data-irrigation-water-edit hidden>Update Water Availability</button>
+            <details class="portal-irrigation-configure">
+              <summary data-irrigation-configure-label>Configure a water source</summary>
+              <form class="portal-form-grid" data-irrigation-reservoir-form>
+                <label class="portal-form-field">Reservoir name<input name="name" maxlength="100" required /></label>
+                <label class="portal-form-field">Total capacity (L)<input name="capacity_liters" type="number" min="0.01" step="any" required /></label>
+                <label class="portal-form-field">Current water (L)<input name="available_liters" type="number" min="0" step="any" required /></label>
+                <label class="portal-form-field">Applies to
+                  <select name="field_id" data-irrigation-reservoir-field><option value="">All my fields</option></select>
+                </label>
+                <button class="portal-action" type="submit">Save water source</button>
+              </form>
+            </details>
+          </section>
+        </div>
+        <section class="portal-card portal-card--padded portal-section-gap" aria-labelledby="irrigation-plan-title">
+          <div class="portal-card-heading"><h2 id="irrigation-plan-title">Generate irrigation recommendation</h2><span class="portal-muted">Requires a measured reading</span></div>
+          <form class="portal-form-grid" data-irrigation-plan-form>
+            <label class="portal-form-field">Current soil moisture (%)
+              <input name="soil_moisture_pct" type="number" min="0" max="100" step="any" required />
+              <span class="portal-form-help">Enter a current field measurement; historical dataset records are not live readings.</span>
+            </label>
+            <label class="portal-form-field">Crop growth stage
+              <select name="growth_stage_code" required>
+                <option value="">Select a stage</option><option value="1">Seedling</option><option value="2">Vegetative</option><option value="3">Flowering / fruiting</option>
+              </select>
+            </label>
+            <label class="portal-form-field">Soil type
+              <select name="soil_type_code" required>
+                <option value="">Select a soil type</option><option value="1">Sandy</option><option value="2">Loamy</option><option value="3">Clay</option>
+              </select>
+            </label>
+            <label class="portal-form-field">Irrigation method
+              <select name="irrigation_method" required>
+                <option value="">Select a method</option><option value="drip">Drip</option><option value="sprinkler">Sprinkler</option><option value="surface">Surface / furrow</option>
+              </select>
+            </label>
+            <label class="portal-form-field">Pump flow (L/min)
+              <input name="pump_flow_lpm" type="number" min="0.01" step="any" required />
+            </label>
+            <div class="portal-form-field portal-form-field--wide">
+              <button class="portal-action" type="submit" data-irrigation-plan-submit>Generate Irrigation Plan</button>
+              <span class="portal-form-help">The server verifies field ownership, fetches the configured field forecast, and checks unreserved water before saving a recommendation.</span>
+            </div>
+          </form>
+          <p class="portal-form-error" data-irrigation-plan-error role="alert" hidden></p>
+          <div class="portal-irrigation-result" data-irrigation-plan-result hidden></div>
+        </section>
+        <section class="portal-card portal-table-card portal-section-gap" aria-labelledby="irrigation-schedules-title">
+          <div class="portal-card-heading"><h2 id="irrigation-schedules-title">Irrigation schedules</h2><span class="portal-muted">Server records only</span></div>
+          <div class="portal-grid portal-grid--3 portal-irrigation-summary">
+            <article><span>Total confirmed irrigation</span><strong data-irrigation-summary-scheduled>—</strong></article>
+            <article><span>Water currently reserved</span><strong data-irrigation-summary-reserved>—</strong></article>
+            <article><span>Water remaining after reservations</span><strong data-irrigation-summary-remaining>—</strong></article>
+            <article><span>Upcoming events</span><strong data-irrigation-summary-upcoming>—</strong></article>
+            <article><span>Completed events</span><strong data-irrigation-summary-completed>—</strong></article>
+          </div>
+          <p class="portal-empty-note" data-irrigation-schedules-empty hidden>No irrigation schedules have been generated for this field.</p>
+          <div class="portal-table-wrap" data-irrigation-schedules-wrap hidden>
+            <table class="portal-table"><thead><tr><th>Field</th><th>Crop</th><th>Date</th><th>Time</th><th>Water</th><th>Duration</th><th>Method</th><th>Status</th><th>Actions</th></tr></thead><tbody data-irrigation-schedules></tbody></table>
+          </div>
+        </section>
       `,
     },
     reports: {
@@ -271,6 +366,54 @@
         <p class="portal-empty-note" data-experimental-model-loading role="status" aria-live="polite">Loading the Experimental Model Lab…</p>
       `,
     },
+    predictions: {
+      title: "Field Predictions",
+      subtitle: "Run Model 3 and Model 4 with explicit field observations.",
+      render: `
+        <div class="portal-page-heading">
+          <div><h1>Field Predictions</h1><p>Enter observed values from the selected field. No sensor values are invented when data is missing.</p></div>
+          <span class="portal-demo-tag">Input required</span>
+        </div>
+        <div class="portal-grid portal-grid--2">
+          <section class="portal-card portal-card--padded">
+            <div class="portal-card-heading"><h2>Future soil moisture</h2><span class="portal-muted">Model 3 · 24 hours</span></div>
+            <form data-model3-form class="portal-form-grid">
+              <label class="portal-form-field">Field<select name="field_id" data-model-field required><option value="">Loading fields…</option></select></label>
+              <label class="portal-form-field">Zone<select name="zone" required><option value="1">Zone 1</option><option value="2">Zone 2</option><option value="3">Zone 3</option><option value="4">Zone 4</option><option value="5">Zone 5</option></select></label>
+              <label class="portal-form-field">Current soil moisture (%)<input name="current_moisture_percent" type="number" min="1" max="100" step="any" required /></label>
+              <div class="portal-form-field portal-form-field--wide"><strong>Zone 4 inputs</strong><p class="portal-muted">Required only for Zone 4; leave blank for persistence zones.</p></div>
+              ${[
+                ["weather_temp","Weather temperature"],["weather_humidity","Weather humidity"],["weather_rain","Weather rain"],["weather_pressure","Weather pressure"],["weather_wind_speed","Weather wind speed"],["weather_radiation","Weather radiation"],["soil_temperature_0_7cm","Soil temperature 0–7 cm"],["soil_temperature_7_18cm","Soil temperature 7–18 cm"],["month","Month"],["day","Day"],["hour","Hour"],["day_period","Day period"],["quarter","Quarter"]
+              ].map(([name,label]) => `<label class="portal-form-field"><span>${label}</span><input name="${name}" type="number" step="any" /></label>`).join("")}
+              <p class="portal-form-error portal-form-field--wide" data-model3-error role="alert" hidden></p>
+              <button class="portal-action" type="submit">Run soil moisture prediction</button>
+            </form>
+            <div class="portal-card portal-card--padded portal-section-gap" data-model3-result hidden></div>
+          </section>
+          <section class="portal-card portal-card--padded">
+            <div class="portal-card-heading"><h2>Crop stress risk</h2><span class="portal-muted">Model 4 · label semantics unverified</span></div>
+            <form data-model4-form class="portal-form-grid">
+              <label class="portal-form-field">Field<select name="field_id" data-model-field required><option value="">Loading fields…</option></select></label>
+              <label class="portal-form-field">Crop type<input name="crop_type" maxlength="80" required /></label>
+              <label class="portal-form-field">Zone<input name="zone" type="number" min="1" max="5" step="1" required /></label>
+              ${[
+                ["soil_type","Soil type","text"],["bulk_density","Bulk density","number"],["organic_matter_pct","Organic matter (%)","number"],["cation_exchange_capacity","Cation exchange capacity","number"],["salinity_ec","Salinity EC","number"],["buffering_capacity","Buffering capacity","number"],["soil_moisture_pct","Soil moisture (%)","number"],["moisture_limit_dry","Dry moisture limit","number"],["moisture_limit_wet","Wet moisture limit","number"],["moisture_regime","Moisture regime","text"],["thermal_regime","Thermal regime","text"],["nutrient_balance","Nutrient balance","text"],["plant_category","Plant category","text"],["soil_temp_c","Soil temperature (°C)","number"],["air_temp_c","Air temperature (°C)","number"],["light_intensity_par","Light intensity PAR","number"],["soil_ph","Soil pH","number"],["nitrogen_ppm","Nitrogen (ppm)","number"],["phosphorus_ppm","Phosphorus (ppm)","number"],["potassium_ppm","Potassium (ppm)","number"]
+              ].map(([name,label,type]) => `<label class="portal-form-field"><span>${label}</span><input name="${name}" type="${type}" step="${type === "number" ? "any" : undefined}" required /></label>`).join("")}
+              <p class="portal-form-error portal-form-field--wide" data-model4-error role="alert" hidden></p>
+              <button class="portal-action" type="submit">Run crop stress prediction</button>
+            </form>
+            <div class="portal-card portal-card--padded portal-section-gap" data-model4-result hidden></div>
+          </section>
+        </div>
+      `,
+    },
+    "ai-model-predictions": {
+      title: "AI Model Predictions",
+      subtitle: "Real-time AI predictions to help you make better irrigation and crop management decisions.",
+      render: `
+        <p class="portal-empty-note" data-ai-dashboard-loading role="status" aria-live="polite">Loading your fields and model status…</p>
+      `,
+    },
   };
 
   const params = new URLSearchParams(window.location.search);
@@ -307,10 +450,13 @@
   if (view === "fields") initializeFieldsView(content);
   if (view === "fields") initializeSensorHistory(content);
   if (view === "crops") initializeCropsView(content);
+  if (view === "schedule") void initializeIrrigationSchedule(content);
   if (view === "reports") initializeReportsView(content);
   if (view === "weather") initializeWeatherView(content);
   if (view === "profile") initializeProfileView(content);
   if (view === "experimental-model") void initializeExperimentalModelView(content);
+  if (view === "predictions") void window.JalSaathiModelPredictions?.initialize(content);
+  if (view === "ai-model-predictions") void window.JalSaathiAIDashboard?.initialize(content);
 
   const renderGreeting = () => {
     const userName = window.JalSaathiProfile.getDisplayName();
@@ -669,6 +815,500 @@
     } catch (error) {
       renderFields();
       showFeedback(error instanceof Error ? error.message : "Your fields could not be loaded.");
+    }
+  }
+
+  async function initializeIrrigationSchedule(root) {
+    const feedback = root.querySelector("[data-irrigation-feedback]");
+    const fieldSelect = root.querySelector("[data-irrigation-field]");
+    const reservoirSelect = root.querySelector("[data-irrigation-reservoir]");
+    const reservoirForm = root.querySelector("[data-irrigation-reservoir-form]");
+    const waterForm = root.querySelector("[data-irrigation-water-form]");
+    const waterEdit = root.querySelector("[data-irrigation-water-edit]");
+    const planForm = root.querySelector("[data-irrigation-plan-form]");
+    const planError = root.querySelector("[data-irrigation-plan-error]");
+    const planResult = root.querySelector("[data-irrigation-plan-result]");
+    const scheduleRows = root.querySelector("[data-irrigation-schedules]");
+    const schedulesWrap = root.querySelector("[data-irrigation-schedules-wrap]");
+    const schedulesEmpty = root.querySelector("[data-irrigation-schedules-empty]");
+    if (!(feedback instanceof HTMLElement) || !(fieldSelect instanceof HTMLSelectElement) ||
+        !(reservoirSelect instanceof HTMLSelectElement) || !(reservoirForm instanceof HTMLFormElement) ||
+        !(waterForm instanceof HTMLFormElement) || !(waterEdit instanceof HTMLButtonElement) ||
+        !(planForm instanceof HTMLFormElement) || !(planError instanceof HTMLElement) ||
+        !(planResult instanceof HTMLElement) || !(scheduleRows instanceof HTMLElement) ||
+        !(schedulesWrap instanceof HTMLElement) || !(schedulesEmpty instanceof HTMLElement)) return;
+
+    const fieldsForReservoir = root.querySelector("[data-irrigation-reservoir-field]");
+    const fieldValues = {
+      name: root.querySelector("[data-irrigation-field-name]"),
+      crop: root.querySelector("[data-irrigation-field-crop]"),
+      area: root.querySelector("[data-irrigation-field-area]"),
+      zone: root.querySelector("[data-irrigation-field-zone]"),
+      stage: root.querySelector("[data-irrigation-saved-stage]"),
+      location: root.querySelector("[data-irrigation-field-location]"),
+    };
+    const waterValues = {
+      capacity: root.querySelector("[data-irrigation-capacity]"),
+      available: root.querySelector("[data-irrigation-available]"),
+      reserved: root.querySelector("[data-irrigation-reserved]"),
+      remaining: root.querySelector("[data-irrigation-remaining]"),
+      updated: root.querySelector("[data-irrigation-water-updated]"),
+    };
+    const summaryValues = {
+      scheduled: root.querySelector("[data-irrigation-summary-scheduled]"),
+      reserved: root.querySelector("[data-irrigation-summary-reserved]"),
+      remaining: root.querySelector("[data-irrigation-summary-remaining]"),
+      upcoming: root.querySelector("[data-irrigation-summary-upcoming]"),
+      completed: root.querySelector("[data-irrigation-summary-completed]"),
+    };
+    if (Object.values(fieldValues).some((node) => !(node instanceof HTMLElement)) ||
+        Object.values(waterValues).some((node) => !(node instanceof HTMLElement)) ||
+        Object.values(summaryValues).some((node) => !(node instanceof HTMLElement)) ||
+        !(fieldsForReservoir instanceof HTMLSelectElement)) return;
+
+    const apiRequest = window.JalSaathiProfile.apiRequest;
+    const liters = (value) => `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value)} L`;
+    const showError = (error) => {
+      const status = Number(error?.status);
+      if (status === 401) return "Your session has expired. Sign in again to manage irrigation.";
+      if (status === 403) return "This action was blocked by the account security check. Refresh the page and retry.";
+      if (status === 404) return "That field, water source, or schedule is not available to this account.";
+      if (status === 409) return error.message || "The water balance or schedule changed. Refresh and retry.";
+      if (status === 422) return error.message || "Check the required field and measured values.";
+      if (status === 503) return error.message || "Weather or optimizer service is temporarily unavailable.";
+      if (status >= 500) return "The irrigation service is temporarily unavailable. Try again later.";
+      return error instanceof Error ? error.message : "The irrigation request could not be completed.";
+    };
+    const setFeedback = (message, isError = false) => {
+      feedback.textContent = message;
+      feedback.classList.toggle("is-error", isError);
+    };
+    let fields = [];
+    let crops = [];
+    let reservoirs = [];
+    let schedules = [];
+    let selectedField = null;
+    let selectedReservoir = null;
+    let latestRecommendation = null;
+
+    const linkedCrop = (fieldId) => crops
+      .filter((crop) => String(crop.field_id) === String(fieldId))
+      .sort((left, right) => String(right.updated_at).localeCompare(String(left.updated_at)))[0] || null;
+    const stageCode = (stage) => {
+      const value = String(stage || "").toLocaleLowerCase();
+      if (value.includes("seed") || value.includes("initial")) return "1";
+      if (value.includes("vegetative") || value.includes("development") || value.includes("growing")) return "2";
+      if (value.includes("flower") || value.includes("fruit") || value.includes("mid")) return "3";
+      return "";
+    };
+    const currentField = () => fields.find((field) => String(field.id) === fieldSelect.value) || null;
+
+    const renderField = () => {
+      selectedField = currentField();
+      fieldValues.name.textContent = selectedField?.name || "Not selected";
+      fieldValues.crop.textContent = (selectedField ? linkedCrop(selectedField.id)?.name : null)
+        || selectedField?.crop || "Not recorded";
+      fieldValues.area.textContent = selectedField
+        ? `${selectedField.area} ${selectedField.area_unit}`
+        : "Not recorded";
+      fieldValues.zone.textContent = "Not recorded in field profile";
+      const crop = selectedField ? linkedCrop(selectedField.id) : null;
+      fieldValues.stage.textContent = crop?.growth_stage || "Not recorded";
+      fieldValues.location.textContent = selectedField?.latitude !== null && selectedField?.latitude !== undefined
+        ? `${selectedField.latitude}, ${selectedField.longitude}`
+        : "Coordinates not recorded";
+      const stageInput = planForm.elements.namedItem("growth_stage_code");
+      if (stageInput instanceof HTMLSelectElement) stageInput.value = stageCode(crop?.growth_stage);
+
+      const option = reservoirSelect.value;
+      reservoirSelect.innerHTML = `<option value="">${selectedField ? "Select a water source" : "Select a field first"}</option>`;
+      reservoirs.forEach((reservoir) => {
+        const scope = reservoir.field_id === null ? " · shared" : "";
+        reservoirSelect.insertAdjacentHTML(
+          "beforeend",
+          `<option value="${escapeText(reservoir.id)}">${escapeText(reservoir.name)}${scope}</option>`,
+        );
+      });
+      if (reservoirs.some((reservoir) => String(reservoir.id) === option)) reservoirSelect.value = option;
+      if (fieldsForReservoir) {
+        const chosen = fieldsForReservoir.value;
+        fieldsForReservoir.innerHTML = `<option value="">All my fields</option>${fields.map((field) =>
+          `<option value="${escapeText(field.id)}">${escapeText(field.name)}</option>`).join("")}`;
+        if (fields.some((field) => String(field.id) === chosen)) fieldsForReservoir.value = chosen;
+        else if (selectedField) fieldsForReservoir.value = String(selectedField.id);
+      }
+      updateReservoirCard();
+      planResult.hidden = true;
+      latestRecommendation = null;
+    };
+
+    function updateReservoirCard() {
+      selectedReservoir = reservoirs.find(
+        (reservoir) => String(reservoir.id) === reservoirSelect.value,
+      ) || null;
+      waterValues.capacity.textContent = selectedReservoir ? liters(selectedReservoir.capacity_liters) : "Not available";
+      waterValues.available.textContent = selectedReservoir ? liters(selectedReservoir.available_liters) : "Not available";
+      waterValues.reserved.textContent = selectedReservoir ? liters(selectedReservoir.reserved_liters) : "Not available";
+      waterValues.remaining.textContent = selectedReservoir ? liters(selectedReservoir.remaining_liters) : "Not available";
+      waterValues.updated.textContent = selectedReservoir?.updated_at
+        ? new Date(selectedReservoir.updated_at).toLocaleString()
+        : "Not available";
+      waterEdit.hidden = !selectedReservoir;
+      waterForm.hidden = true;
+      waterEdit.textContent = "Update Water Availability";
+      const configureLabel = root.querySelector("[data-irrigation-configure-label]");
+      if (configureLabel) {
+        configureLabel.textContent = reservoirs.length
+          ? "Configure another water source"
+          : "No water source configured — add one";
+      }
+    }
+
+    async function loadReservoirs(preserveSelection = true) {
+      reservoirs = selectedField
+        ? await apiRequest(`/api/irrigation/reservoirs?field_id=${encodeURIComponent(selectedField.id)}`)
+        : [];
+      const previous = preserveSelection ? reservoirSelect.value : "";
+      reservoirSelect.innerHTML = `<option value="">${selectedField ? "Select a water source" : "Select a field first"}</option>`;
+      reservoirs.forEach((reservoir) => {
+        const scope = reservoir.field_id === null ? " · shared" : "";
+        reservoirSelect.insertAdjacentHTML(
+          "beforeend",
+          `<option value="${escapeText(reservoir.id)}">${escapeText(reservoir.name)}${scope}</option>`,
+        );
+      });
+      if (reservoirs.some((item) => String(item.id) === previous)) reservoirSelect.value = previous;
+      else if (reservoirs.length === 1) reservoirSelect.value = String(reservoirs[0].id);
+      updateReservoirCard();
+      return reservoirs;
+    }
+
+    async function loadSchedules() {
+      if (!selectedField) {
+        schedules = [];
+        renderSchedules({ schedules: [], summary: {} });
+        return;
+      }
+      const result = await apiRequest(
+        `/api/irrigation/schedules?field_id=${encodeURIComponent(selectedField.id)}`,
+      );
+      if (!result || !Array.isArray(result.schedules) || !result.summary) {
+        throw new Error("The irrigation schedule response has an invalid format.");
+      }
+      schedules = result.schedules;
+      renderSchedules(result);
+    }
+
+    function renderSchedules(result) {
+      const summary = result.summary || {};
+      summaryValues.scheduled.textContent = liters(summary.total_scheduled_liters || 0);
+      summaryValues.reserved.textContent = liters(summary.total_reserved_liters || 0);
+      summaryValues.remaining.textContent = liters(summary.remaining_available_liters || 0);
+      summaryValues.upcoming.textContent = String(summary.upcoming_events || 0);
+      summaryValues.completed.textContent = String(summary.completed_events || 0);
+      schedules = result.schedules || [];
+      schedulesEmpty.hidden = schedules.length > 0;
+      schedulesWrap.hidden = schedules.length === 0;
+      scheduleRows.innerHTML = schedules.map((schedule) => {
+        const time = schedule.start_time
+          ? `${escapeText(schedule.start_time)}–${escapeText(schedule.end_time || "")}`
+          : "Not scheduled";
+        const duration = schedule.duration_minutes
+          ? `${escapeText(schedule.duration_minutes)} min`
+          : "Not scheduled";
+        const actions = [
+          `<button class="portal-secondary-action" type="button" data-irrigation-view="${escapeText(schedule.id)}">View details</button>`,
+          schedule.status === "recommended"
+            ? `<button class="portal-action" type="button" data-irrigation-confirm="${escapeText(schedule.id)}">Confirm</button>`
+            : "",
+          ["recommended", "insufficient_water", "confirmed"].includes(schedule.status)
+            ? `<button class="portal-secondary-action" type="button" data-irrigation-cancel="${escapeText(schedule.id)}">Cancel</button>`
+            : "",
+          schedule.status === "confirmed"
+            ? `<button class="portal-action" type="button" data-irrigation-complete="${escapeText(schedule.id)}">Mark completed</button>`
+            : "",
+        ].filter(Boolean).join(" ");
+        return `<tr data-irrigation-schedule-row="${escapeText(schedule.id)}">
+          <td>${escapeText(schedule.field_name)}</td><td>${escapeText(schedule.crop_name)}</td>
+          <td>${escapeText(schedule.scheduled_date)}</td><td>${time}</td>
+          <td>${liters(schedule.water_liters)}</td><td>${duration}</td>
+          <td>${escapeText(schedule.irrigation_method)}</td><td>${escapeText(schedule.status)}</td>
+          <td><div class="portal-irrigation-actions">${actions}</div></td>
+        </tr>`;
+      }).join("");
+    }
+
+    const refreshBalances = async () => {
+      await Promise.all([loadReservoirs(), loadSchedules()]);
+    };
+
+    reservoirSelect.addEventListener("change", updateReservoirCard);
+    fieldSelect.addEventListener("change", async () => {
+      renderField();
+      setFeedback("Loading water availability and schedules…");
+      try {
+        await loadReservoirs(false);
+        await loadSchedules();
+        setFeedback("");
+      } catch (error) {
+        setFeedback(showError(error), true);
+      }
+    });
+    waterEdit.addEventListener("click", () => {
+      if (!selectedReservoir) return;
+      const input = waterForm.elements.namedItem("available_liters");
+      if (input instanceof HTMLInputElement) input.value = String(selectedReservoir.available_liters);
+      waterForm.hidden = !waterForm.hidden;
+      waterEdit.textContent = waterForm.hidden ? "Update Water Availability" : "Close water update";
+    });
+    waterForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!selectedReservoir || !waterForm.reportValidity()) return;
+      const submit = waterForm.querySelector("button[type=submit]");
+      if (submit instanceof HTMLButtonElement) submit.disabled = true;
+      try {
+        await apiRequest(`/api/irrigation/reservoirs/${encodeURIComponent(selectedReservoir.id)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            available_liters: Number(new FormData(waterForm).get("available_liters")),
+          }),
+        });
+        await refreshBalances();
+        setFeedback("The measured reservoir level was updated.");
+      } catch (error) {
+        setFeedback(showError(error), true);
+      } finally {
+        if (submit instanceof HTMLButtonElement) submit.disabled = false;
+      }
+    });
+    reservoirForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!reservoirForm.reportValidity()) return;
+      const submit = reservoirForm.querySelector("button[type=submit]");
+      if (submit instanceof HTMLButtonElement) submit.disabled = true;
+      const values = new FormData(reservoirForm);
+      const fieldId = String(values.get("field_id") || "");
+      try {
+        await apiRequest("/api/irrigation/reservoirs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: String(values.get("name")).trim(),
+            capacity_liters: Number(values.get("capacity_liters")),
+            available_liters: Number(values.get("available_liters")),
+            field_id: fieldId ? Number(fieldId) : null,
+          }),
+        });
+        reservoirForm.reset();
+        if (fieldsForReservoir && selectedField) fieldsForReservoir.value = String(selectedField.id);
+        await refreshBalances();
+        setFeedback("The water source was saved.");
+      } catch (error) {
+        setFeedback(showError(error), true);
+      } finally {
+        if (submit instanceof HTMLButtonElement) submit.disabled = false;
+      }
+    });
+    planForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      planError.hidden = true;
+      if (!planForm.reportValidity()) return;
+      if (!selectedField) {
+        planError.textContent = "Select one of your saved fields.";
+        planError.hidden = false;
+        return;
+      }
+      if (!selectedReservoir) {
+        planError.textContent = "Configure or select a water source before requesting a plan.";
+        planError.hidden = false;
+        return;
+      }
+      const submit = root.querySelector("[data-irrigation-plan-submit]");
+      if (submit instanceof HTMLButtonElement) {
+        submit.disabled = true;
+        submit.textContent = "Generating plan…";
+      }
+      setFeedback("Checking field ownership, weather, and unreserved water…");
+      const values = new FormData(planForm);
+      const body = {
+        field_id: Number(selectedField.id),
+        reservoir_id: Number(selectedReservoir.id),
+        soil_moisture_pct: Number(values.get("soil_moisture_pct")),
+        growth_stage_code: Number(values.get("growth_stage_code")),
+        soil_type_code: Number(values.get("soil_type_code")),
+        irrigation_method: String(values.get("irrigation_method")),
+        pump_flow_lpm: Number(values.get("pump_flow_lpm")),
+      };
+      try {
+        latestRecommendation = await apiRequest("/api/irrigation/plan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        renderRecommendation(latestRecommendation, body);
+        await refreshBalances();
+        setFeedback("Recommendation loaded. Water is not reserved until you confirm.");
+      } catch (error) {
+        planError.textContent = showError(error);
+        planError.hidden = false;
+        setFeedback(showError(error), true);
+      } finally {
+        if (submit instanceof HTMLButtonElement) {
+          submit.disabled = false;
+          submit.textContent = "Generate Irrigation Plan";
+        }
+      }
+    });
+    function renderRecommendation(result, inputs) {
+      const plan = result.plan;
+      const notes = Array.isArray(plan.notes) && plan.notes.length
+        ? `<ul>${plan.notes.map((note) => `<li>${escapeText(note)}</li>`).join("")}</ul>`
+        : "<p>No additional optimizer notes.</p>";
+      const statusText = {
+        irrigate: "Irrigation recommended",
+        skip_no_need: "Irrigation not currently required",
+        skip_rain: "Rainfall covers the modeled requirement",
+        deferred_rain: "Irrigation deferred because of forecast rain",
+        insufficient_water: "Insufficient water for the required event",
+      }[plan.action] || escapeText(plan.action);
+      const amount = plan.action === "insufficient_water"
+        ? `<p><strong>Required event:</strong> ${liters(plan.required_liters)} · <strong>Shortage:</strong> ${liters(plan.water_shortage_liters)}</p>`
+        : `<p><strong>Scheduled pump volume:</strong> ${liters(plan.litres)} · <strong>Duration:</strong> ${plan.sessions?.reduce((sum, session) => sum + session.minutes, 0) || 0} min</p>`;
+      const scheduleAction = result.schedule?.status === "recommended"
+        ? `<button class="portal-action" type="button" data-irrigation-confirm="${escapeText(result.schedule.id)}">Confirm schedule and reserve water</button>`
+        : "";
+      const weather = result.weather;
+      const weatherInfo = weather
+        ? `<p><strong>Forecast temperatures:</strong> ${escapeText(weather.temperature_min_c)}–${escapeText(weather.temperature_max_c)} °C · <strong>Rain probability:</strong> ${escapeText(Math.round(weather.rain_probability * 100))}%</p>`
+        : "";
+      const forecastWarning = result.warnings?.length
+        ? `<p class="portal-form-help">${result.warnings.map(escapeText).join(" ")}</p>`
+        : "";
+      planResult.innerHTML = `
+        <h3>${escapeText(statusText)}</h3>
+        <p><strong>Date:</strong> ${escapeText(plan.date)} · <strong>Method:</strong> ${escapeText(inputs.irrigation_method)}</p>
+        ${amount}
+        <p><strong>Soil moisture provided:</strong> ${escapeText(inputs.soil_moisture_pct)}% · <strong>ETc:</strong> ${escapeText(plan.etc_mm)} mm</p>
+        <p><strong>Forecast rainfall:</strong> ${escapeText(plan.rain_mm)} mm · <strong>Effective rainfall:</strong> ${escapeText(plan.effective_rain_mm)} mm</p>
+        ${weatherInfo}
+        <p><strong>Water remaining before confirmation:</strong> ${liters(result.reservoir.remaining_liters)}</p>
+        ${forecastWarning}${notes}${scheduleAction}
+      `;
+      planResult.hidden = false;
+    }
+
+    scheduleRows.addEventListener("click", async (event) => {
+      if (!(event.target instanceof Element)) return;
+      const button = event.target.closest("button");
+      if (!(button instanceof HTMLButtonElement)) return;
+      const scheduleId = button.dataset.irrigationConfirm
+        || button.dataset.irrigationCancel
+        || button.dataset.irrigationComplete
+        || button.dataset.irrigationView;
+      if (!scheduleId) return;
+      button.disabled = true;
+      try {
+        if (button.dataset.irrigationView) {
+          const details = await apiRequest(`/api/irrigation/schedules/${encodeURIComponent(scheduleId)}`);
+          const row = button.closest("tr");
+          if (row) {
+            const existing = row.nextElementSibling;
+            if (existing?.matches("[data-irrigation-schedule-details]")) {
+              existing.remove();
+            } else {
+              const detailsRow = document.createElement("tr");
+              detailsRow.dataset.irrigationScheduleDetails = "";
+              const cell = document.createElement("td");
+              cell.colSpan = 9;
+              cell.textContent = JSON.stringify(details.plan, null, 2);
+              detailsRow.append(cell);
+              row.after(detailsRow);
+            }
+          }
+        } else {
+          const action = button.dataset.irrigationConfirm
+            ? "confirm"
+            : button.dataset.irrigationCancel
+              ? "cancel"
+              : "complete";
+          await apiRequest(
+            `/api/irrigation/schedules/${encodeURIComponent(scheduleId)}/${action}`,
+            { method: "POST" },
+          );
+          await refreshBalances();
+          if (latestRecommendation?.schedule?.id === Number(scheduleId)) {
+            latestRecommendation.schedule.status = action === "confirm"
+              ? "confirmed"
+              : action === "cancel"
+                ? "cancelled"
+                : "completed";
+            if (action === "confirm") {
+              latestRecommendation.reservoir = selectedReservoir;
+              const confirmButton = planResult.querySelector("[data-irrigation-confirm]");
+              confirmButton?.remove();
+            }
+          }
+          setFeedback(action === "confirm"
+            ? "Schedule confirmed and water reserved."
+            : action === "cancel"
+              ? "Schedule cancelled; any reservation was released."
+              : "Schedule marked completed; reserved water was recorded as used.");
+        }
+      } catch (error) {
+        setFeedback(showError(error), true);
+      } finally {
+        button.disabled = false;
+      }
+    });
+    planResult.addEventListener("click", async (event) => {
+      if (!(event.target instanceof Element)) return;
+      const button = event.target.closest("[data-irrigation-confirm]");
+      if (!(button instanceof HTMLButtonElement) || !latestRecommendation?.schedule) return;
+      button.disabled = true;
+      try {
+        const result = await apiRequest(
+          `/api/irrigation/schedules/${encodeURIComponent(button.dataset.irrigationConfirm)}/confirm`,
+          { method: "POST" },
+        );
+        await refreshBalances();
+        latestRecommendation.schedule = result.schedule;
+        latestRecommendation.reservoir = result.reservoir;
+        button.remove();
+        setFeedback("Schedule confirmed and water reserved.");
+      } catch (error) {
+        setFeedback(showError(error), true);
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    try {
+      const [loadedFields, loadedCrops] = await Promise.all([
+        apiRequest("/api/fields"),
+        apiRequest("/api/crops"),
+      ]);
+      if (!Array.isArray(loadedFields) || !Array.isArray(loadedCrops)) {
+        throw new Error("Field or crop records have an invalid format.");
+      }
+      fields = loadedFields;
+      crops = loadedCrops;
+      fieldSelect.innerHTML = `<option value="">Select a saved field</option>${fields.map((field) =>
+        `<option value="${escapeText(field.id)}">${escapeText(field.name)}</option>`).join("")}`;
+      if (fields.length === 0) {
+        fieldSelect.disabled = true;
+        setFeedback("No saved fields are available. Add a field before planning irrigation.", true);
+      } else {
+        fieldSelect.value = String(fields[0].id);
+        renderField();
+        await loadReservoirs(false);
+        await loadSchedules();
+        setFeedback("");
+      }
+    } catch (error) {
+      setFeedback(showError(error), true);
+      fieldSelect.innerHTML = '<option value="">Your saved fields could not be loaded</option>';
+      reservoirSelect.innerHTML = '<option value="">Water availability unavailable</option>';
     }
   }
 

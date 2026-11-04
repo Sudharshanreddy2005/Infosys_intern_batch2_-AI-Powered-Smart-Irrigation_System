@@ -1,0 +1,42 @@
+{
+  "model_name": "Model 3 - 24-Hour Soil Moisture Prediction",
+  "target": "target_moisture_24h",
+  "zones": {
+    "1": {
+      "strategy": "persistence"
+    },
+    "2": {
+      "strategy": "persistence"
+    },
+    "3": {
+      "strategy": "persistence",
+      "warning": "Limited reliable data; predictions require caution"
+    },
+    "4": {
+      "strategy": "ridge_change",
+      "artifact": "zone4_ridge.joblib",
+      "features": [
+        "weather_temp",
+        "weather_humidity",
+        "weather_rain",
+        "weather_pressure",
+        "weather_wind_speed",
+        "weather_radiation",
+        "soil_temperature_0-7cm",
+        "soil_temperature_7-18cm",
+        "month",
+        "day",
+        "hour",
+        "day_period",
+        "quarter"
+      ]
+    },
+    "5": {
+      "strategy": "persistence"
+    }
+  },
+  "valid_moisture_range": [
+    1,
+    100
+  ]
+}

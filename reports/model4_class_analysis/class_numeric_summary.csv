@@ -1,0 +1,6 @@
+,soil_moisture_pct,soil_moisture_pct,soil_moisture_pct,soil_temp_c,soil_temp_c,soil_temp_c,air_temp_c,air_temp_c,air_temp_c,soil_ph,soil_ph,soil_ph,salinity_ec,salinity_ec,salinity_ec,organic_matter_pct,organic_matter_pct,organic_matter_pct,suitability_score,suitability_score,suitability_score,failure_flag,failure_flag,failure_flag,ph_stress_flag,ph_stress_flag,ph_stress_flag
+,mean,std,median,mean,std,median,mean,std,median,mean,std,median,mean,std,median,mean,std,median,mean,std,median,mean,std,median,mean,std,median
+stress_level,,,,,,,,,,,,,,,,,,,,,,,,,,,
+0,32.354656,9.29702,32.44,24.443844,3.889018,24.6,27.450207,4.374542,27.5,6.561969,0.59377,6.55,0.534282,0.719677,0.4,4.332401,4.230882,3.5,0.882585,0.093849,0.878,0.000725,0.026909,0.0,0.022377,0.147908,0.0
+1,34.782472,12.263691,34.83,24.962156,4.927691,25.0,27.963428,5.318864,28.0,6.50942,0.879445,6.51,0.635106,0.924597,0.4,4.111302,4.487099,3.5,0.595437,0.098379,0.577,0.022982,0.149846,0.0,0.189492,0.3919,0.0
+2,38.903427,13.352413,40.95,25.841619,6.184555,26.2,28.84506,6.505339,29.2,6.394743,1.193828,6.3,0.935388,1.307576,0.4,3.343077,3.853158,2.0,0.280531,0.125443,0.279,0.639572,0.480127,1.0,0.487978,0.499857,0.0

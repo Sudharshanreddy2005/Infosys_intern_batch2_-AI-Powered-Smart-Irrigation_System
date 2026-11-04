@@ -106,3 +106,39 @@ node --test tests_js/*.test.cjs tests/test_weather_frontend.cjs
 - No irrigation time or duration should be treated as a recommendation from this application.
 
 See [reports/APPLICATION_HEALTH_REPORT.md](reports/APPLICATION_HEALTH_REPORT.md) for the audit evidence and deployment status.
+## Model 4 - Crop Stress Prediction
+
+The trained Model 4 artifact is hosted on Google Drive because of its large file size.
+
+### Download Model 4 Artifacts
+
+Google Drive Link:
+https://drive.google.com/file/d/1JSoEdI4IDeT8u30In2NT1WVHce19R4hI/view
+
+The ZIP file contains:
+- model4_crop_stress.joblib
+- evaluation_metrics.json
+- feature_importance.csv
+- model_comparison.csv
+
+### Setup Instructions
+
+1. Download the ZIP file from Google Drive.
+2. Extract the ZIP file.
+3. Copy model4_crop_stress.joblib into the project root directory (same folder as main.py).
+4. Install the project dependencies.
+5. Start the FastAPI backend.
+
+### Model 4 API Endpoint
+
+POST /api/models/model4/predict
+
+Note: The trained model artifact is optional at startup. The endpoint returns HTTP 503
+until `model4_crop_stress.joblib` is restored to the project root.
+
+## Irrigation optimizer
+
+The milestone irrigation planner is available at `POST /api/irrigation/plan`.
+Set `IRRIGATION_API_KEY` and send it as the `X-Irrigation-Key` header. The
+planner uses the project-local weather adapter and returns an explicit error
+when weather configuration or provider data is unavailable.

@@ -8,3 +8,19 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 cache/
+# Large trained model artifacts
+*.joblib
+*.pkl
+
+# Python generated files
+*.pyc
+# Include Model 1 artifacts
+!model1/artifacts/*.joblib
+
+.env
+
+# Large Model 4 artifact stored in Google Drive
+model4/model4_crop_stress.joblib
+
+# Model 4 artifact stored in Google Drive
+/model4/model4_crop_stress.joblib

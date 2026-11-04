@@ -1,0 +1,9 @@
+{
+    "model": "Random Forest",
+    "test_accuracy": 0.8234108355884464,
+    "test_balanced_accuracy": 0.8317921346609015,
+    "test_macro_f1": 0.8289380023246217,
+    "test_weighted_f1": 0.8229799495060809,
+    "target_column": "stress_level",
+    "target_label_meanings_verified": false
+}

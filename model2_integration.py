@@ -22,7 +22,12 @@ def load_production_model2_bundle() -> dict:
     package_path = str(MODEL2_PACKAGE_PATH.resolve())
     if package_path not in sys.path:
         sys.path.insert(0, package_path)
-    from regression.predict_water_requirement import load_model_bundle
+    try:
+        from regression.predict_water_requirement import load_model_bundle
+    except ImportError as error:
+        raise ValueError(
+            "Model 2 integration package could not be loaded."
+        ) from error
 
     return load_model_bundle(
         MODEL2_ARTIFACT_PATH,

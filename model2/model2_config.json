@@ -1,0 +1,53 @@
+{
+  "model_name": "Model 2 - Water Requirement Prediction",
+  "target": "required_water_liters",
+  "input_features": [
+    "crop_type",
+    "growth_stage",
+    "soil_type",
+    "soil_moisture_percent",
+    "temperature_c",
+    "humidity_percent",
+    "rainfall_mm",
+    "forecast_rainfall_mm",
+    "field_area_acres",
+    "irrigation_method",
+    "wind_speed",
+    "et0_mm_day",
+    "crop_coefficient_kc",
+    "previous_irrigation_mm"
+  ],
+  "categorical_features": [
+    "crop_type",
+    "growth_stage",
+    "soil_type",
+    "irrigation_method"
+  ],
+  "numerical_features": [
+    "soil_moisture_percent",
+    "temperature_c",
+    "humidity_percent",
+    "rainfall_mm",
+    "forecast_rainfall_mm",
+    "field_area_acres",
+    "wind_speed",
+    "et0_mm_day",
+    "crop_coefficient_kc",
+    "previous_irrigation_mm"
+  ],
+  "model_type": "HistGradientBoostingRegressor",
+  "best_parameters": {
+    "learning_rate": 0.06,
+    "max_iter": 250,
+    "max_leaf_nodes": 15,
+    "l2_regularization": 1.0
+  },
+  "non_negative_predictions": true,
+  "test_metrics": {
+    "MAE_liters": 5994.12,
+    "RMSE_liters": 8588.09,
+    "R2": 0.9492
+  },
+  "data_note": "Trained and evaluated on synthetic data",
+  "scikit_learn_version": "1.6.1"
+}

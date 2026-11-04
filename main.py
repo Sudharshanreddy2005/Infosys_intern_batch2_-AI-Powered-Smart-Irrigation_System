@@ -15,16 +15,27 @@ from urllib.parse import urlsplit
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, select, text
+from pydantic import BaseModel, Field
+import joblib
+import pandas as pd
+from sqlalchemy import create_engine, select, text, update
 from sqlalchemy.engine import URL
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from models import AuthSession, Base, Farmer, FarmerCrop, FarmerField
+from models import (
+    AuthSession,
+    Base,
+    Farmer,
+    FarmerCrop,
+    FarmerField,
+    IrrigationReservoir,
+    IrrigationSchedule,
+)
 from schemas import (
     CropCreate,
     CropPatch,
@@ -68,7 +79,32 @@ from farmer_assistant import (
     explain_model2_prediction,
 )
 from model2_integration import load_production_model2_bundle
-from backend.models.model1.inference import load_artifact_bundle, predict_records
+from irrigation_optimizer import config as irrigation_config
+from irrigation_optimizer import water_calc as irrigation_water_calc
+from irrigation_optimizer import weather_adapter as irrigation_weather_adapter
+from irrigation_optimizer.data_adapter import make_field as make_optimizer_field
+from irrigation_optimizer.optimizer import optimize_schedule, plans_to_dicts
+from irrigation_optimizer.schemas import (
+    IrrigationPlanRequest,
+    ReservoirCreate,
+    ReservoirWaterUpdate,
+)
+from irrigation_optimizer.workflow import (
+    InsufficientWater,
+    ScheduleConflict,
+    cancel_schedule as cancel_irrigation_schedule,
+    complete_schedule as complete_irrigation_schedule,
+    confirm_schedule as confirm_irrigation_schedule,
+    reservoir_response,
+    schedule_response,
+)
+from model1.inference import load_artifact_bundle, predict_records
+from model4.inference import (
+    ARTIFACT_FILENAME,
+    ARTIFACT_SHA256,
+    artifact_path,
+    predict as predict_model4,
+)
 
 logger = logging.getLogger(__name__)
 password_hasher = PasswordHasher()
@@ -102,8 +138,6 @@ load_dotenv(PROJECT_ROOT / ".env")
 async def lifespan(_app):
     Base.metadata.create_all(bind=engine)
     yield
-
-
 app = FastAPI(
     title="Smart Irrigation System API",
     description="Backend for predictive water management and crop optimization",
@@ -112,6 +146,11 @@ app = FastAPI(
 )
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
+
+# --------------------------------------------------
+# DATABASE CONFIGURATION
+# --------------------------------------------------
+load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 if DATABASE_URL:
     engine = create_engine(DATABASE_URL, pool_pre_ping=True)
@@ -130,6 +169,146 @@ else:
         ),
         pool_pre_ping=True,
     )
+
+
+BASE_DIR = PROJECT_ROOT
+
+
+class Model2Request(BaseModel):
+    crop_type: str
+    growth_stage: int = Field(ge=1, le=3)
+    soil_type: int = Field(ge=1, le=3)
+    soil_moisture_percent: float = Field(ge=0, le=100)
+    temperature_c: float
+    humidity_percent: float = Field(ge=0, le=100)
+    rainfall_mm: float = Field(ge=0)
+    forecast_rainfall_mm: float = Field(ge=0)
+    field_area_acres: float = Field(gt=0)
+    irrigation_method: str
+    wind_speed: float = Field(ge=0)
+    et0_mm_day: float = Field(ge=0)
+    crop_coefficient_kc: float = Field(gt=0)
+    previous_irrigation_mm: float = Field(ge=0)
+
+
+class Model3Request(BaseModel):
+    zone: int = Field(ge=1, le=5)
+    current_moisture_percent: float = Field(ge=1, le=100)
+    weather_temp: float | None = None
+    weather_humidity: float | None = None
+    weather_rain: float | None = None
+    weather_pressure: float | None = None
+    weather_wind_speed: float | None = None
+    weather_radiation: float | None = None
+    soil_temperature_0_7cm: float | None = None
+    soil_temperature_7_18cm: float | None = None
+    month: int | None = Field(default=None, ge=1, le=12)
+    day: int | None = Field(default=None, ge=1, le=31)
+    hour: int | None = Field(default=None, ge=0, le=23)
+    day_period: int | None = None
+    quarter: int | None = Field(default=None, ge=1, le=4)
+
+
+class SoilMoisturePredictionRequest(Model3Request):
+    field_id: int = Field(gt=0)
+
+
+class Model1FullRequest(BaseModel):
+    temperature_c: float
+    humidity_percent: float = Field(ge=0, le=100)
+    rain_probability_percent: float = Field(ge=0, le=100)
+    N: float
+    P: float
+    K: float
+    ph: float
+    organic_matter: float
+    crop_density: float
+    sunlight_exposure: float
+    wind_speed: float
+    frost_risk: float
+    crop_name: str
+    soil_type: int = Field(ge=1, le=3)
+    growth_stage: int = Field(ge=1, le=3)
+
+
+class Model1WeatherRequest(BaseModel):
+    temperature_c: float
+    humidity_percent: float = Field(ge=0, le=100)
+
+
+class Model4Request(BaseModel):
+    soil_type: str
+    bulk_density: float
+    organic_matter_pct: float
+    cation_exchange_capacity: float
+    salinity_ec: float
+    buffering_capacity: float
+    soil_moisture_pct: float
+    moisture_limit_dry: float
+    moisture_limit_wet: float
+    moisture_regime: str
+    thermal_regime: str
+    nutrient_balance: str
+    plant_category: str
+    soil_temp_c: float
+    air_temp_c: float
+    light_intensity_par: float
+    soil_ph: float
+    nitrogen_ppm: float
+    phosphorus_ppm: float
+    potassium_ppm: float
+
+
+class CropStressPredictionRequest(Model4Request):
+    field_id: int = Field(gt=0)
+    crop_type: str = Field(min_length=1, max_length=80)
+    zone: int = Field(ge=1, le=5)
+
+
+@lru_cache(maxsize=1)
+def _load_legacy_model2():
+    return joblib.load(BASE_DIR / "model2" / "model2_water_requirement.joblib")
+
+
+@lru_cache(maxsize=1)
+def _load_model3():
+    return joblib.load(BASE_DIR / "model3" / "zone4_ridge.joblib")
+
+
+@lru_cache(maxsize=1)
+def _load_model1_full():
+    return load_artifact_bundle(
+        BASE_DIR / "model1" / "artifacts"
+        / "random_forest_without_soil_moisture_tuned_candidate_v3.joblib"
+    )
+
+
+@lru_cache(maxsize=1)
+def _load_model1_weather():
+    return load_artifact_bundle(
+        BASE_DIR / "model1" / "artifacts" / "reduced_weather_proxy_v1.joblib"
+    )
+
+
+@lru_cache(maxsize=1)
+def _load_model4():
+    artifact = artifact_path(BASE_DIR)
+    if not artifact.is_file():
+        raise FileNotFoundError(f"Model 4 artifact not found: {artifact}")
+    return joblib.load(artifact)
+
+
+IRRIGATION_API_KEY = os.getenv("IRRIGATION_API_KEY", "").strip()
+
+
+def irrigation_guard(x_irrigation_key: str = Header(default="")):
+    if not IRRIGATION_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="Irrigation API authentication is not configured.",
+        )
+    if not hmac.compare_digest(x_irrigation_key, IRRIGATION_API_KEY):
+        raise HTTPException(status_code=401, detail="Invalid irrigation API key.")
 
 
 def _digest(value: str) -> str:
@@ -340,8 +519,6 @@ def require_csrf(
 def _load_experimental_predictor():
     artifact_path = (
         PROJECT_ROOT
-        / "backend"
-        / "models"
         / "model1"
         / "artifacts"
         / "random_forest_without_soil_moisture_tuned_candidate_v3.joblib"
@@ -389,8 +566,6 @@ def _load_experimental_predictor():
 def _load_reduced_weather_predictor():
     artifact_path = (
         PROJECT_ROOT
-        / "backend"
-        / "models"
         / "model1"
         / "artifacts"
         / "reduced_weather_proxy_v1.joblib"
@@ -510,6 +685,544 @@ def _owned_crop(db: Session, farmer_id: int, crop_id: int) -> FarmerCrop:
 def _validate_crop_field(db: Session, farmer_id: int, field_id: int | None) -> None:
     if field_id is not None:
         _owned_field(db, farmer_id, field_id)
+
+
+def _owned_irrigation_reservoir(
+    db: Session,
+    farmer_id: int,
+    reservoir_id: int,
+    field_id: int | None = None,
+    *,
+    lock: bool = False,
+) -> IrrigationReservoir:
+    statement = select(IrrigationReservoir).where(
+        IrrigationReservoir.id == reservoir_id,
+        IrrigationReservoir.farmer_id == farmer_id,
+    )
+    if lock:
+        statement = statement.with_for_update()
+    reservoir = db.scalar(statement)
+    if reservoir is None or (
+        field_id is not None and reservoir.field_id not in (None, field_id)
+    ):
+        raise HTTPException(status_code=404, detail="Reservoir not found.")
+    return reservoir
+
+
+def _irrigation_stage_code(stage: str | None) -> int | None:
+    normalized = (stage or "").strip().casefold()
+    if any(token in normalized for token in ("seed", "initial")):
+        return 1
+    if any(token in normalized for token in ("vegetative", "development", "growing")):
+        return 2
+    if any(token in normalized for token in ("flower", "fruit", "mid")):
+        return 3
+    return None
+
+
+def _irrigation_crop_key(crop: str) -> str:
+    normalized = "".join(character for character in crop.casefold() if character.isalnum())
+    aliases = {"paddy": "rice", "corn": "maize", "blackgram": "blackgram"}
+    return aliases.get(normalized, normalized)
+
+
+def _field_area_m2(field: FarmerField) -> float:
+    unit = field.area_unit.casefold()
+    if unit == "acres":
+        return field.area * 4046.8564224
+    if unit == "hectares":
+        return field.area * 10_000
+    raise HTTPException(status_code=422, detail="The field uses an unsupported area unit.")
+
+
+def _reservoir_list_for_field(
+    db: Session,
+    farmer_id: int,
+    field_id: int | None,
+) -> list[IrrigationReservoir]:
+    statement = select(IrrigationReservoir).where(
+        IrrigationReservoir.farmer_id == farmer_id
+    )
+    if field_id is not None:
+        statement = statement.where(
+            (IrrigationReservoir.field_id.is_(None))
+            | (IrrigationReservoir.field_id == field_id)
+        )
+    return list(db.scalars(statement.order_by(IrrigationReservoir.id)).all())
+
+
+@app.get("/api/irrigation/reservoirs")
+def list_irrigation_reservoirs(
+    field_id: int | None = Query(default=None, gt=0),
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(get_auth_context),
+):
+    farmer_id = context[0].id
+    if field_id is not None:
+        _owned_field(db, farmer_id, field_id)
+    reservoirs = _reservoir_list_for_field(db, farmer_id, field_id)
+    return [reservoir_response(reservoir) for reservoir in reservoirs]
+
+
+@app.post("/api/irrigation/reservoirs", status_code=201)
+def create_irrigation_reservoir(
+    payload: ReservoirCreate,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    farmer_id = context[0].id
+    if payload.field_id is not None:
+        _owned_field(db, farmer_id, payload.field_id)
+    reservoir = IrrigationReservoir(
+        farmer_id=farmer_id,
+        **payload.model_dump(),
+    )
+    db.add(reservoir)
+    db.commit()
+    db.refresh(reservoir)
+    return reservoir_response(reservoir)
+
+
+@app.get("/api/irrigation/reservoirs/{reservoir_id}")
+def get_irrigation_reservoir(
+    reservoir_id: int,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(get_auth_context),
+):
+    reservoir = _owned_irrigation_reservoir(db, context[0].id, reservoir_id)
+    return reservoir_response(reservoir)
+
+
+@app.patch("/api/irrigation/reservoirs/{reservoir_id}")
+def update_irrigation_reservoir_water(
+    reservoir_id: int,
+    payload: ReservoirWaterUpdate,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    result = db.execute(
+        update(IrrigationReservoir)
+        .where(
+            IrrigationReservoir.id == reservoir_id,
+            IrrigationReservoir.farmer_id == context[0].id,
+            IrrigationReservoir.capacity_liters >= payload.available_liters,
+            IrrigationReservoir.reserved_liters <= payload.available_liters,
+        )
+        .values(
+            available_liters=payload.available_liters,
+            updated_at=datetime.now(timezone.utc),
+        )
+    )
+    if result.rowcount != 1:
+        reservoir = db.scalar(
+            select(IrrigationReservoir).where(
+                IrrigationReservoir.id == reservoir_id,
+                IrrigationReservoir.farmer_id == context[0].id,
+            )
+        )
+        if reservoir is None:
+            raise HTTPException(status_code=404, detail="Reservoir not found.")
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Available water must not exceed capacity or be less than water reserved "
+                "for confirmed schedules."
+            ),
+        )
+    db.commit()
+    reservoir = db.get(IrrigationReservoir, reservoir_id)
+    if reservoir is None:
+        raise HTTPException(status_code=404, detail="Reservoir not found.")
+    db.refresh(reservoir)
+    return reservoir_response(reservoir)
+
+
+@app.post("/api/irrigation/plan")
+def generate_irrigation_plan(
+    payload: IrrigationPlanRequest,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    farmer_id = context[0].id
+    field = _owned_field(db, farmer_id, payload.field_id)
+    matching_reservoirs = _reservoir_list_for_field(db, farmer_id, field.id)
+    if not matching_reservoirs:
+        raise HTTPException(
+            status_code=409,
+            detail="Configure a water source for this account or field before generating a plan.",
+        )
+    if payload.reservoir_id is None:
+        if len(matching_reservoirs) != 1:
+            raise HTTPException(
+                status_code=422,
+                detail="Select which reservoir will supply this field.",
+            )
+        reservoir = matching_reservoirs[0]
+    else:
+        reservoir = _owned_irrigation_reservoir(
+            db, farmer_id, payload.reservoir_id, field.id, lock=True
+        )
+    available_liters = max(
+        0.0, reservoir.available_liters - reservoir.reserved_liters
+    )
+    crop_record = db.scalar(
+        select(FarmerCrop)
+        .where(
+            FarmerCrop.farmer_id == farmer_id,
+            FarmerCrop.field_id == field.id,
+        )
+        .order_by(FarmerCrop.updated_at.desc(), FarmerCrop.id.desc())
+        .limit(1)
+    )
+    crop_name = (crop_record.name if crop_record else field.crop) or ""
+    if not crop_name.strip():
+        raise HTTPException(status_code=422, detail="Add a crop to this field before planning irrigation.")
+    crop_key = _irrigation_crop_key(crop_name)
+    stage_code = payload.growth_stage_code or _irrigation_stage_code(
+        crop_record.growth_stage if crop_record else None
+    )
+    if stage_code is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Select a crop growth stage; no supported stage is saved for this field.",
+        )
+    if field.latitude is None or field.longitude is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Add this field's latitude and longitude before generating a weather-based plan.",
+        )
+
+    try:
+        optimizer_field = make_optimizer_field(
+            str(field.id),
+            crop_key,
+            stage_code,
+            payload.soil_type_code,
+            payload.soil_moisture_pct,
+            _field_area_m2(field),
+            payload.pump_flow_lpm,
+            payload.irrigation_method,
+            field.latitude,
+            f"field-{field.id}",
+        )
+        irrigation_water_calc.get_kc(optimizer_field)
+        irrigation_water_calc.soil_water_limits(optimizer_field)
+    except (KeyError, ValueError) as error:
+        raise HTTPException(status_code=422, detail=f"Invalid field planning data: {error}") from error
+
+    location = f"{field.latitude:.6f},{field.longitude:.6f}"
+    try:
+        forecast, warnings = irrigation_weather_adapter.fetch_daily_forecast(
+            location, payload.days
+        )
+    except (RuntimeError, ValueError) as error:
+        logger.warning("Weather data unavailable for irrigation planning: %s", error)
+        raise HTTPException(
+            status_code=503,
+            detail="Weather data is unavailable for this field. Check the provider configuration and try again.",
+        ) from error
+    if not forecast:
+        raise HTTPException(
+            status_code=503,
+            detail="No complete daily weather forecast is available; no irrigation plan was generated.",
+        )
+
+    field_id_text = str(field.id)
+    daily_plans = optimize_schedule(
+        [optimizer_field],
+        forecast,
+        now=datetime.now(irrigation_weather_adapter.IST),
+    )[field_id_text]
+    irrigation_plan = next(
+        (item for item in daily_plans if item.action == "irrigate"),
+        daily_plans[0],
+    )
+    selected_forecast = next(
+        (item for item in forecast if item.date == irrigation_plan.date),
+        None,
+    )
+    projected_need_mm = max(
+        0.0,
+        irrigation_plan.depletion_start_mm
+        + irrigation_plan.etc_mm
+        - irrigation_plan.effective_rain_mm,
+    )
+    target_mm = min(
+        projected_need_mm,
+        irrigation_config.MAX_IRRIGATION_MM_PER_EVENT,
+    )
+    required_liters = irrigation_water_calc.gross_litres(
+        target_mm, optimizer_field
+    ) if irrigation_plan.action == "irrigate" else 0.0
+    shortage_liters = max(0.0, required_liters - available_liters)
+
+    status = None
+    if required_liters and shortage_liters > 0.01:
+        irrigation_plan.action = "insufficient_water"
+        irrigation_plan.litres = 0.0
+        irrigation_plan.net_mm = 0.0
+        irrigation_plan.sessions = []
+        irrigation_plan.depletion_end_mm = round(projected_need_mm, 2)
+        irrigation_plan.notes.append(
+            f"Insufficient unreserved reservoir water: {shortage_liters:.1f} L short of the "
+            f"{required_liters:.1f} L event requirement. No irrigation was scheduled."
+        )
+        status = "insufficient_water"
+    elif required_liters and irrigation_plan.litres > available_liters + 0.01:
+        shortage_liters = irrigation_plan.litres - available_liters
+        irrigation_plan.action = "insufficient_water"
+        irrigation_plan.net_mm = 0.0
+        irrigation_plan.litres = 0.0
+        irrigation_plan.sessions = []
+        irrigation_plan.depletion_end_mm = round(projected_need_mm, 2)
+        irrigation_plan.notes.append(
+            f"Insufficient unreserved reservoir water: {shortage_liters:.1f} L short. "
+            "No irrigation was scheduled."
+        )
+        status = "insufficient_water"
+    elif (
+        irrigation_plan.action == "irrigate"
+        and irrigation_plan.litres > 0
+        and irrigation_plan.sessions
+    ):
+        status = "recommended"
+
+    serialized_plan = plans_to_dicts(
+        {field_id_text: [irrigation_plan]}
+    )[field_id_text][0]
+    serialized_plan.update(
+        {
+            "required_liters": round(required_liters, 1),
+            "water_shortage_liters": round(shortage_liters, 1),
+            "available_water_liters": round(available_liters, 1),
+            "reservoir_id": reservoir.id,
+        }
+    )
+    schedule = None
+    if status is not None:
+        sessions = irrigation_plan.sessions
+        schedule = IrrigationSchedule(
+            farmer_id=farmer_id,
+            field_id=field.id,
+            reservoir_id=reservoir.id,
+            field_name=field.name,
+            crop_name=crop_name,
+            scheduled_date=irrigation_plan.date,
+            start_time=sessions[0].start if sessions else None,
+            end_time=sessions[-1].end if sessions else None,
+            water_liters=required_liters if status == "insufficient_water" else irrigation_plan.litres,
+            duration_minutes=sum(session.minutes for session in sessions),
+            irrigation_method=payload.irrigation_method,
+            status=status,
+            plan_snapshot=serialized_plan,
+        )
+        db.add(schedule)
+        db.commit()
+        db.refresh(schedule)
+
+    reservoir = _owned_irrigation_reservoir(
+        db, farmer_id, reservoir.id, field.id
+    )
+    return {
+        "field": {
+            "id": field.id,
+            "name": field.name,
+            "crop": crop_name,
+            "area": field.area,
+            "area_unit": field.area_unit,
+            "area_m2": round(_field_area_m2(field), 2),
+            "growth_stage": crop_record.growth_stage if crop_record else None,
+            "zone": None,
+        },
+        "warnings": warnings,
+        "weather": {
+            "date": selected_forecast.date,
+            "temperature_min_c": selected_forecast.temp_min,
+            "temperature_max_c": selected_forecast.temp_max,
+            "rain_mm": selected_forecast.rain_mm,
+            "rain_probability": selected_forecast.rain_prob,
+        } if selected_forecast else None,
+        "plan": serialized_plan,
+        "schedule": schedule_response(schedule) if schedule else None,
+        "reservoir": reservoir_response(reservoir),
+        "status": status or irrigation_plan.action,
+    }
+
+
+@app.get("/api/irrigation/schedules")
+def list_irrigation_schedules(
+    field_id: int | None = Query(default=None, gt=0),
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(get_auth_context),
+):
+    farmer_id = context[0].id
+    if field_id is not None:
+        _owned_field(db, farmer_id, field_id)
+    statement = select(IrrigationSchedule).where(
+        IrrigationSchedule.farmer_id == farmer_id
+    )
+    if field_id is not None:
+        statement = statement.where(IrrigationSchedule.field_id == field_id)
+    schedules = list(
+        db.scalars(
+            statement.order_by(
+                IrrigationSchedule.scheduled_date,
+                IrrigationSchedule.start_time,
+                IrrigationSchedule.id,
+            )
+        ).all()
+    )
+    for schedule in schedules:
+        _owned_field(db, farmer_id, schedule.field_id)
+        _owned_irrigation_reservoir(
+            db, farmer_id, schedule.reservoir_id, schedule.field_id
+        )
+    reservoirs = _reservoir_list_for_field(db, farmer_id, field_id)
+    today = datetime.now(timezone.utc).date()
+    confirmed = [item for item in schedules if item.status == "confirmed"]
+    return {
+        "schedules": [schedule_response(item) for item in schedules],
+        "summary": {
+            "total_scheduled_liters": round(
+                sum(item.water_liters for item in confirmed), 1
+            ),
+            "total_reserved_liters": round(
+                sum(item.reserved_liters for item in reservoirs), 1
+            ),
+            "remaining_available_liters": round(
+                sum(
+                    max(0.0, item.available_liters - item.reserved_liters)
+                    for item in reservoirs
+                ),
+                1,
+            ),
+            "upcoming_events": sum(
+                item.scheduled_date >= today for item in confirmed
+            ),
+            "completed_events": sum(
+                item.status == "completed" for item in schedules
+            ),
+        },
+    }
+
+
+@app.get("/api/irrigation/schedules/{schedule_id}")
+def get_irrigation_schedule(
+    schedule_id: int,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(get_auth_context),
+):
+    schedule = db.scalar(
+        select(IrrigationSchedule).where(
+            IrrigationSchedule.id == schedule_id,
+            IrrigationSchedule.farmer_id == context[0].id,
+        )
+    )
+    if schedule is None:
+        raise HTTPException(status_code=404, detail="Irrigation schedule not found.")
+    _owned_field(db, context[0].id, schedule.field_id)
+    _owned_irrigation_reservoir(
+        db, context[0].id, schedule.reservoir_id, schedule.field_id
+    )
+    return schedule_response(schedule)
+
+
+@app.post("/api/irrigation/schedules/{schedule_id}/confirm")
+def confirm_irrigation_schedule_route(
+    schedule_id: int,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    schedule = db.scalar(
+        select(IrrigationSchedule).where(
+            IrrigationSchedule.id == schedule_id,
+            IrrigationSchedule.farmer_id == context[0].id,
+        )
+    )
+    if schedule is None:
+        raise HTTPException(status_code=404, detail="Irrigation schedule not found.")
+    _owned_field(db, context[0].id, schedule.field_id)
+    _owned_irrigation_reservoir(
+        db, context[0].id, schedule.reservoir_id, schedule.field_id
+    )
+    try:
+        schedule = confirm_irrigation_schedule(db, context[0].id, schedule_id)
+    except InsufficientWater as error:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Available reservoir water changed; {error.shortage_liters:.1f} L is now short.",
+        ) from error
+    except ScheduleConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    reservoir = _owned_irrigation_reservoir(
+        db, context[0].id, schedule.reservoir_id, schedule.field_id
+    )
+    return {
+        "schedule": schedule_response(schedule),
+        "reservoir": reservoir_response(reservoir),
+    }
+
+
+@app.post("/api/irrigation/schedules/{schedule_id}/cancel")
+def cancel_irrigation_schedule_route(
+    schedule_id: int,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    schedule = db.scalar(
+        select(IrrigationSchedule).where(
+            IrrigationSchedule.id == schedule_id,
+            IrrigationSchedule.farmer_id == context[0].id,
+        )
+    )
+    if schedule is None:
+        raise HTTPException(status_code=404, detail="Irrigation schedule not found.")
+    _owned_field(db, context[0].id, schedule.field_id)
+    _owned_irrigation_reservoir(
+        db, context[0].id, schedule.reservoir_id, schedule.field_id
+    )
+    try:
+        schedule = cancel_irrigation_schedule(db, context[0].id, schedule_id)
+    except ScheduleConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    reservoir = _owned_irrigation_reservoir(
+        db, context[0].id, schedule.reservoir_id, schedule.field_id
+    )
+    return {
+        "schedule": schedule_response(schedule),
+        "reservoir": reservoir_response(reservoir),
+    }
+
+
+@app.post("/api/irrigation/schedules/{schedule_id}/complete")
+def complete_irrigation_schedule_route(
+    schedule_id: int,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    schedule = db.scalar(
+        select(IrrigationSchedule).where(
+            IrrigationSchedule.id == schedule_id,
+            IrrigationSchedule.farmer_id == context[0].id,
+        )
+    )
+    if schedule is None:
+        raise HTTPException(status_code=404, detail="Irrigation schedule not found.")
+    _owned_field(db, context[0].id, schedule.field_id)
+    _owned_irrigation_reservoir(
+        db, context[0].id, schedule.reservoir_id, schedule.field_id
+    )
+    try:
+        schedule = complete_irrigation_schedule(db, context[0].id, schedule_id)
+    except ScheduleConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    reservoir = _owned_irrigation_reservoir(
+        db, context[0].id, schedule.reservoir_id, schedule.field_id
+    )
+    return {
+        "schedule": schedule_response(schedule),
+        "reservoir": reservoir_response(reservoir),
+    }
 
 
 @app.post("/api/auth/register", status_code=201, response_model=FarmerProfile)
@@ -955,6 +1668,20 @@ def delete_farmer_field(
     context: tuple[Farmer, AuthSession] = Depends(require_csrf),
 ):
     field = _owned_field(db, context[0].id, field_id)
+    active_schedule_id = db.scalar(
+        select(IrrigationSchedule.id)
+        .where(
+            IrrigationSchedule.farmer_id == context[0].id,
+            IrrigationSchedule.field_id == field_id,
+            IrrigationSchedule.status == "confirmed",
+        )
+        .limit(1)
+    )
+    if active_schedule_id is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Cancel or complete confirmed irrigation schedules before deleting this field.",
+        )
     db.delete(field)
     db.commit()
     return Response(status_code=204)
@@ -1113,7 +1840,6 @@ def readiness_check():
         raise HTTPException(status_code=503, detail="Database is unavailable.")
     return {"status": "ready"}
 
-
 @app.get("/db-test")
 def test_database():
     try:
@@ -1123,7 +1849,15 @@ def test_database():
     except SQLAlchemyError:
         logger.warning("Database connection test failed.", exc_info=True)
         raise HTTPException(status_code=503, detail="Database connection failed.")
+        return {"database": "connected successfully"}
+    except SQLAlchemyError as error:
+        logger.warning("Database connection test failed.", exc_info=True)
+        raise HTTPException(status_code=503, detail="Database connection failed.") from error
 
+
+# --------------------------------------------------
+# GET SENSOR READINGS
+# --------------------------------------------------
 
 @app.get("/sensor-readings")
 def get_sensor_readings(limit: int = Query(default=10, ge=1, le=100)):
@@ -1304,3 +2038,313 @@ def weather_forecast_for_coordinates(
         }
     except (ValueError, WeatherUnavailableError, WeatherAuthError) as error:
         raise _weather_error(error) from error
+
+# --------------------------------------------------
+# MODEL 2: WATER REQUIREMENT PREDICTION
+# --------------------------------------------------
+
+@app.post("/api/models/model2/predict")
+def predict_water_requirement(request: Model2Request):
+
+    try:
+        model2 = _load_legacy_model2()
+        input_data = pd.DataFrame([
+            request.model_dump()
+        ])
+
+        input_data["crop_type"] = (
+            input_data["crop_type"].str.lower()
+        )
+
+        input_data["irrigation_method"] = (
+            input_data["irrigation_method"].str.lower()
+        )
+
+        prediction = float(
+            model2.predict(input_data)[0]
+        )
+
+        return {
+            "model": "Model 2 - Water Requirement Prediction",
+            "predicted_water_liters": max(0, prediction),
+            "unit": "liters",
+            "note": "Model trained and evaluated on synthetic data."
+        }
+
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Water requirement prediction failed"
+        )
+
+
+# --------------------------------------------------
+# MODEL 3: 24-HOUR SOIL MOISTURE PREDICTION
+# --------------------------------------------------
+
+@app.post("/api/models/model3/predict")
+def predict_soil_moisture(request: Model3Request):
+
+    try:
+        model3 = _load_model3()
+        current_moisture = request.current_moisture_percent
+
+        # Zones 1, 2, 3 and 5 use persistence strategy
+        if request.zone in [1, 2, 3, 5]:
+
+            response = {
+                "model": "Model 3 - 24-Hour Soil Moisture Prediction",
+                "zone": request.zone,
+                "strategy": "persistence",
+                "current_moisture_percent": current_moisture,
+                "predicted_moisture_24h_percent": current_moisture,
+                "unit": "percent",
+                "note": "Persistence estimate: current moisture is carried forward."
+            }
+
+            if request.zone == 3:
+                response["warning"] = (
+                    "Limited reliable data; predictions require caution."
+                )
+
+            return response
+
+        # Zone 4 requires all 13 model features
+        required_features = [
+            "weather_temp",
+            "weather_humidity",
+            "weather_rain",
+            "weather_pressure",
+            "weather_wind_speed",
+            "weather_radiation",
+            "soil_temperature_0-7cm",
+            "soil_temperature_7-18cm",
+            "month",
+            "day",
+            "hour",
+            "day_period",
+            "quarter"
+        ]
+
+        input_values = {
+            "weather_temp": request.weather_temp,
+            "weather_humidity": request.weather_humidity,
+            "weather_rain": request.weather_rain,
+            "weather_pressure": request.weather_pressure,
+            "weather_wind_speed": request.weather_wind_speed,
+            "weather_radiation": request.weather_radiation,
+            "soil_temperature_0-7cm": request.soil_temperature_0_7cm,
+            "soil_temperature_7-18cm": request.soil_temperature_7_18cm,
+            "month": request.month,
+            "day": request.day,
+            "hour": request.hour,
+            "day_period": request.day_period,
+            "quarter": request.quarter
+        }
+
+        missing_features = [
+            name for name, value in input_values.items()
+            if value is None
+        ]
+
+        if missing_features:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": "Zone 4 requires all model input features.",
+                    "missing_features": missing_features
+                }
+            )
+
+        input_data = pd.DataFrame(
+            [input_values],
+            columns=required_features
+        )
+
+        predicted_change = float(
+            model3.predict(input_data)[0]
+        )
+        predicted_moisture = min(
+            100.0,
+            max(1.0, current_moisture + predicted_change),
+        )
+
+        return {
+            "model": "Model 3 - 24-Hour Soil Moisture Prediction",
+            "zone": 4,
+            "strategy": "ridge_change",
+            "current_moisture_percent": current_moisture,
+            "predicted_change": predicted_change,
+            "predicted_moisture_24h_percent": predicted_moisture,
+            "prediction_horizon_hours": 24,
+            "unit": "percentage points",
+            "note": (
+                "Raw Ridge model output. Final 24-hour moisture "
+                "calculation requires confirmation of the training target."
+            )
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Soil moisture prediction failed"
+        )
+
+
+@app.post("/api/ml/soil-moisture-prediction")
+def soil_moisture_prediction(
+    request: SoilMoisturePredictionRequest,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    _owned_field(db, context[0].id, request.field_id)
+    result = predict_soil_moisture(request)
+    return {
+        "field_id": request.field_id,
+        "zone": request.zone,
+        "prediction_status": "available",
+        "prediction_timestamp": datetime.now(timezone.utc).isoformat(),
+        **result,
+    }
+    # --------------------------------------------------
+# MODEL 1: FULL 15-FEATURE PREDICTION
+# --------------------------------------------------
+
+@app.post("/api/models/model1/full/predict")
+def predict_model1_full(request: Model1FullRequest):
+    try:
+        model1_full = _load_model1_full()
+        result = predict_records(
+            model1_full,
+            [request.model_dump()]
+        )
+
+        return {
+            "model": "Model 1 - Full 15-feature proxy classifier",
+            **result[0]
+        }
+
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Model 1 full prediction failed"
+        )
+
+
+# --------------------------------------------------
+# MODEL 1: REDUCED WEATHER PREDICTION
+# --------------------------------------------------
+
+@app.post("/api/models/model1/weather/predict")
+def predict_model1_weather(
+    request: Model1WeatherRequest,
+    _: None = Depends(irrigation_guard)
+):
+    try:
+        model1_weather = _load_model1_weather()
+        metadata = model1_weather["metadata"]
+        ranges = metadata["feature_training_ranges"]
+
+        if not (
+            ranges["temperature_c"]["minimum"]
+            <= request.temperature_c
+            <= ranges["temperature_c"]["maximum"]
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="Temperature is outside the model's training range."
+            )
+
+        if not (
+            ranges["humidity_percent"]["minimum"]
+            <= request.humidity_percent
+            <= ranges["humidity_percent"]["maximum"]
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="Humidity is outside the model's training range."
+            )
+
+        result = predict_records(
+            model1_weather,
+            [request.model_dump()]
+        )
+
+        return {
+            "model": "Model 1 - Reduced Weather Proxy",
+            **result[0]
+        }
+
+    except HTTPException:
+        raise
+
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Model 1 weather prediction failed"
+        )
+    # --------------------------------------------------
+# MODEL 4: CROP STRESS PREDICTION
+# --------------------------------------------------
+
+@app.post("/api/models/model4/predict")
+def predict_crop_stress(request: Model4Request):
+
+    try:
+        model4 = _load_model4()
+        result = predict_model4(model4, request.model_dump())
+
+        return {
+            "model": "Model 4 - Crop Stress Prediction",
+            **result,
+            "stress_level": None,
+            "model_version": ARTIFACT_FILENAME,
+            "artifact_sha256": ARTIFACT_SHA256,
+            "note": (
+                "The artifact class-to-stress-label meanings are not verified; "
+                "the numeric class is returned without a guessed label. "
+                "Probabilities are model estimates, not calibration evidence."
+            ),
+        }
+
+    except FileNotFoundError as error:
+        logger.warning("Model 4 artifact is unavailable: %s", error)
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Crop stress prediction is unavailable. Restore "
+                "model4/model4_crop_stress.joblib from the original artifact source."
+            ),
+        ) from error
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Crop stress prediction failed"
+        )
+
+
+@app.post("/api/ml/crop-stress-prediction")
+def crop_stress_prediction(
+    request: CropStressPredictionRequest,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    _owned_field(db, context[0].id, request.field_id)
+    result = predict_crop_stress(request)
+    return {
+        "field_id": request.field_id,
+        "crop_type": request.crop_type,
+        "zone": request.zone,
+        "prediction_status": "available",
+        "prediction_timestamp": datetime.now(timezone.utc).isoformat(),
+        **result,
+    }
