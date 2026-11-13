@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta id="theme-color" name="theme-color" content="#f5f7f3">
+    <title>JalSaathi | Offline</title>
+    <meta name="translation-review" content="Non-English offline translations need native-speaker review.">
+    <script>
+      (() => {
+        const messages = {
+          en: ["You are offline", "You are offline. This page has not been saved yet. Open the dashboard to see your last saved data.", "Open dashboard"],
+          hi: ["आप ऑफ़लाइन हैं", "आप ऑफ़लाइन हैं। यह पेज अभी तक सहेजा नहीं गया है। अपना पिछला सहेजा हुआ डेटा देखने के लिए डैशबोर्ड खोलें।", "डैशबोर्ड खोलें"],
+          te: ["మీరు ఆఫ్‌లైన్‌లో ఉన్నారు", "మీరు ఆఫ్‌లైన్‌లో ఉన్నారు. ఈ పేజీ ఇంకా సేవ్ చేయబడలేదు. మీరు చివరిగా సేవ్ చేసిన డేటాను చూడటానికి డ్యాష్‌బోర్డ్‌ను తెరవండి.", "డ్యాష్‌బోర్డ్‌ను తెరవండి"],
+          kn: ["ನೀವು ಆಫ್‌ಲೈನ್‌ನಲ್ಲಿದ್ದೀರಿ", "ನೀವು ಆಫ್‌ಲೈನ್‌ನಲ್ಲಿದ್ದೀರಿ. ಈ ಪುಟವನ್ನು ಇನ್ನೂ ಉಳಿಸಲಾಗಿಲ್ಲ. ನೀವು ಕೊನೆಯದಾಗಿ ಉಳಿಸಿದ ಡೇಟಾವನ್ನು ನೋಡಲು ಡ್ಯಾಶ್‌ಬೋರ್ಡ್ ತೆರೆಯಿರಿ.", "ಡ್ಯಾಶ್‌ಬೋರ್ಡ್ ತೆರೆಯಿರಿ"],
+          ta: ["நீங்கள் ஆஃப்லைனில் உள்ளீர்கள்", "நீங்கள் ஆஃப்லைனில் உள்ளீர்கள். இந்தப் பக்கம் இன்னும் சேமிக்கப்படவில்லை. நீங்கள் கடைசியாகச் சேமித்த தரவைப் பார்க்க டாஷ்போர்டைத் திறக்கவும்.", "டாஷ்போர்டைத் திறக்கவும்"],
+          ml: ["നിങ്ങൾ ഓഫ്‌ലൈനിലാണ്", "നിങ്ങൾ ഓഫ്‌ലൈനിലാണ്. ഈ പേജ് ഇതുവരെ സേവ് ചെയ്തിട്ടില്ല. നിങ്ങൾ അവസാനമായി സേവ് ചെയ്ത ഡാറ്റ കാണാൻ ഡാഷ്ബോർഡ് തുറക്കുക.", "ഡാഷ്ബോർഡ് തുറക്കുക"],
+        };
+        let theme = "system";
+        let language = "en";
+        try {
+          theme = localStorage.getItem("jalsaathi-theme") || "system";
+          language = localStorage.getItem("jalsaathi-language") || navigator.language.split("-")[0];
+        } catch (error) {
+          console.warn("Offline page preferences could not be restored.", error);
+        }
+        const dark = theme === "dark" || (theme === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+        document.getElementById("theme-color").content = dark ? "#121a16" : "#f5f7f3";
+        if (!(language in messages)) language = "en";
+        document.documentElement.lang = language;
+        document.addEventListener("DOMContentLoaded", () => {
+          const [title, description, link] = messages[language];
+          document.querySelector("[data-offline-title]").textContent = title;
+          document.querySelector("[data-offline-message]").textContent = description;
+          document.querySelector("[data-offline-link]").textContent = link;
+          document.title = `JalSaathi | ${title}`;
+        });
+      })();
+    </script>
+    <style>
+      :root { color-scheme: light; --page: #f5f7f3; --surface: #fff; --text: #173c2c; --muted: #506258; --line: #dce6da; --link: #176345; }
+      :root[data-theme="dark"] { color-scheme: dark; --page: #121a16; --surface: #1d2922; --text: #edf4ee; --muted: #bdc9bf; --line: #3a4b40; --link: #9bd2a9; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 1.5rem; box-sizing: border-box; background: var(--page); color: var(--text); font: 16px/1.6 system-ui, sans-serif; }
+      main { max-width: 28rem; padding: 2rem; border: 1px solid var(--line); border-radius: 1.25rem; background: var(--surface); }
+      h1 { margin-top: 0; }
+      p { color: var(--muted); }
+      a { color: var(--link); font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1 data-offline-title>You’re offline</h1>
+      <p data-offline-message>You are offline. This page has not been saved yet. Open the dashboard to see your last saved data.</p>
+      <a data-offline-link href="/dashboard">Open dashboard</a>
+    </main>
+  </body>
+</html>
