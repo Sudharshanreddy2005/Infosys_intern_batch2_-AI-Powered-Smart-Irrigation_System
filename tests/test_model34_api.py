@@ -49,19 +49,35 @@ MODEL4 = {
 }
 
 
-def test_model3_api_returns_bounded_future_moisture():
-    response = client.post("/api/models/model3/predict", json=MODEL3_ZONE4)
+def test_model3_api_returns_persistence_prediction_for_zone4():
+    response = client.post(
+        "/api/models/model3/predict",
+        json={"zone": 4, "current_moisture_percent": 30},
+    )
+
     assert response.status_code == 200
+
     body = response.json()
+
+    assert body["strategy"] == "persistence"
     assert body["prediction_horizon_hours"] == 24
-    assert 1 <= body["predicted_moisture_24h_percent"] <= 100
+    assert body["current_moisture_percent"] == 30
+    assert body["predicted_moisture_24h_percent"] == 30
 
 
-def test_model3_api_rejects_missing_zone4_feature():
-    payload = {key: value for key, value in MODEL3_ZONE4.items() if key != "quarter"}
-    response = client.post("/api/models/model3/predict", json=payload)
-    assert response.status_code == 422
-    assert "quarter" in response.json()["detail"]["missing_features"]
+def test_model3_api_uses_persistence_for_all_zones():
+    for zone in (1, 2, 3, 4, 5):
+        response = client.post(
+            "/api/models/model3/predict",
+            json={"zone": zone, "current_moisture_percent": 42},
+        )
+
+        assert response.status_code == 200
+
+        body = response.json()
+
+        assert body["strategy"] == "persistence"
+        assert body["predicted_moisture_24h_percent"] == 42
 
 
 def test_model4_api_returns_numeric_class_without_unverified_label():

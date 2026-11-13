@@ -9,11 +9,7 @@
     "light_intensity_par", "soil_ph", "nitrogen_ppm", "phosphorus_ppm",
     "potassium_ppm",
   ]);
-  const model3Zone4Fields = [
-    "weather_temp", "weather_humidity", "weather_rain", "weather_pressure",
-    "weather_wind_speed", "weather_radiation", "soil_temperature_0_7cm",
-    "soil_temperature_7_18cm", "month", "day", "hour", "day_period", "quarter",
-  ];
+
   const model1InputFeatures = [
     { name: "temperature_c", unit: "°C" },
     { name: "humidity_percent", unit: "%" },
@@ -35,6 +31,7 @@
     try {
       const response = await fetch("/static/ai-model-dashboard.html", {
         credentials: "same-origin",
+        cache: "no-store",
       });
       if (!response.ok) {
         throw new Error(`The AI predictions page could not be loaded (${response.status}).`);
@@ -61,7 +58,11 @@
     const refreshButton = page.querySelector("[data-ai-refresh]");
     const model3Form = page.querySelector("[data-ai-model3-form]");
     const model4Form = page.querySelector("[data-ai-model4-form]");
-    const zone4Inputs = page.querySelector("[data-ai-zone4-inputs]");
+    const model4LoadButton = page.querySelector("[data-ai-model4-load]");
+    const model4DataStatus = page.querySelector("[data-ai-model4-data-status]");
+    const model4DemoButton = page.querySelector("[data-ai-model4-demo]");
+    const model4DemoStatus = page.querySelector("[data-ai-model4-demo-status]");
+    const model4DemoOutput = page.querySelector("[data-ai-model4-demo-output]");
     if (
       !(fieldSelect instanceof HTMLSelectElement) ||
       !(zoneSelect instanceof HTMLSelectElement) ||
@@ -70,7 +71,11 @@
       !(refreshButton instanceof HTMLButtonElement) ||
       !(model3Form instanceof HTMLFormElement) ||
       !(model4Form instanceof HTMLFormElement) ||
-      !(zone4Inputs instanceof HTMLElement)
+      !(model4LoadButton instanceof HTMLButtonElement) ||
+      !(model4DataStatus instanceof HTMLElement)||
+      !(model4DemoButton instanceof HTMLButtonElement) ||
+      !(model4DemoStatus instanceof HTMLElement) ||
+      !(model4DemoOutput instanceof HTMLElement)
     ) return;
 
     const api = window.JalSaathiProfile;
@@ -161,16 +166,47 @@
       const model3Zone = model3Form.elements.namedItem("zone");
       if (model3FieldId instanceof HTMLInputElement) model3FieldId.value = field ? String(field.id) : "";
       if (model3Zone instanceof HTMLInputElement) model3Zone.value = zoneSelect.value;
-      zone4Inputs.hidden = zoneSelect.value !== "4";
+    };
+
+    const model4Defaults = Object.freeze({
+      soil_type: "Loamy",
+      bulk_density: 1.3,
+      organic_matter_pct: 3.5,
+      cation_exchange_capacity: 15.0,
+      salinity_ec: 0.4,
+      buffering_capacity: 0.7,
+      soil_moisture_pct: 34.99,
+      moisture_limit_dry: 16.0,
+      moisture_limit_wet: 42.0,
+      moisture_regime: "optimal",
+      soil_temp_c: 25.0,
+      air_temp_c: 28.0,
+      thermal_regime: "optimal",
+      light_intensity_par: 699.0,
+      soil_ph: 6.5,
+      nitrogen_ppm: 99.9,
+      phosphorus_ppm: 50.1,
+      potassium_ppm: 110.0,
+      nutrient_balance: "deficient",
+      plant_category: "cereal"
+    });
+
+    const applyModel4Defaults = () => {
+      for (const [name, value] of Object.entries(model4Defaults)) {
+        const input = model4Form.elements.namedItem(name);
+        if (!(input instanceof HTMLInputElement)) continue;
+        input.value = String(value);
+        input.readOnly = true;
+      }
     };
 
     const clearObservationInputs = () => {
       model3Form.querySelectorAll("input").forEach((input) => {
-        if (input.name !== "field_id" && input.name !== "zone") input.value = "";
+        if (input.name !== "field_id" && input.name !== "zone") {
+          input.value = "";
+        }
       });
-      model4Form.querySelectorAll("input").forEach((input) => {
-        if (!["field_id", "crop_type", "zone"].includes(input.name)) input.value = "";
-      });
+      applyModel4Defaults();
     };
 
     const updateSummary = () => {
@@ -198,106 +234,284 @@
       updateSummary();
     };
 
-    const runModel1 = async (field, generation) => {
-      if (!field || !Number.isSafeInteger(Number(field.id)) || Number(field.id) <= 0) {
-        setState("model1", "input", "Select an account field with a valid numeric ID.");
-        return;
-      }
-      setState("model1", "loading", "Requesting the current field-weather proxy prediction…");
-      text(page, '[data-ai-input-status="model1"]', "Collecting fresh weather for the selected field.");
-      try {
-        const result = await api.apiRequest("/api/ml/reduced-weather-prediction", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ field_id: Number(field.id) }),
-        });
-        if (generation !== requestGeneration) return;
-        if ((result.prediction !== 0 && result.prediction !== 1) ||
-            !finiteNumber(result.proxy_positive_probability) ||
-            typeof result.observation_time !== "string" ||
-            !result.feature_inputs ||
-            !model1InputFeatures.every(({ name }) => finiteNumber(result.feature_inputs[name])) ||
-            !result.feature_sources ||
-            !model1InputFeatures.every(({ name }) =>
-              result.feature_sources[name] === "selected_field_current_weather_api")) {
-          throw new Error("Model 1 returned an invalid response.");
-        }
-        renderModel1Inputs(page, result);
-        const output = result.prediction === 1
-          ? "Proxy indicates irrigation needed"
-          : "Proxy indicates irrigation not needed";
-        const probability = `${(result.proxy_positive_probability * 100).toFixed(1)}% model-estimated probability`;
-        setTextContent(page.querySelector('[data-ai-result="model1"]'), `${output} · ${probability}. ${result.warning || ""}`);
-        text(page, '[data-ai-timestamp="model1"]', `Prediction time: ${displayTime(result.observation_time)}`);
-        setSuccess("model1", new Date().toISOString());
-      } catch (error) {
-        if (generation !== requestGeneration) return;
-        setState("model1", "unavailable", errorMessage(error, "The field-weather prediction is unavailable."));
-      }
-    };
+
+const runModel1 = async (field, generation) => {
+  if (!field || !Number.isSafeInteger(Number(field.id)) || Number(field.id) <= 0) {
+    setState("model1", "input", "Select an account field with a valid numeric ID.");
+    return;
+  }
+
+  setState("model1", "loading", "Requesting the current field-weather prediction...");
+  text(page, '[data-ai-input-status="model1"]', "Collecting current field weather.");
+
+  try {
+    const result = await api.apiRequest("/api/ml/reduced-weather-prediction", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ field_id: Number(field.id) }),
+    });
+
+    if (generation !== requestGeneration) return;
+
+    if (
+      typeof result.irrigation_needed !== "boolean" ||
+      !["irrigate", "hold"].includes(result.decision) ||
+      typeof result.reason !== "string" ||
+      !result.reason.trim() ||
+      !finiteNumber(result.soil_moisture_percent) ||
+      result.soil_moisture_percent < 0 ||
+      result.soil_moisture_percent > 100 ||
+      !finiteNumber(result.rainfall_mm) ||
+      result.rainfall_mm < 0 ||
+      !finiteNumber(result.rain_probability_percent) ||
+      result.rain_probability_percent < 0 ||
+      result.rain_probability_percent > 100 ||
+      !finiteNumber(result.et0_mm) ||
+      result.et0_mm < 0 ||
+      typeof result.forecast_date !== "string" ||
+      typeof result.observation_time !== "string" ||
+      Number.isNaN(Date.parse(result.observation_time)) ||
+      !["tomorrow_io", "open_meteo"].includes(result.weather_source)
+    ) {
+      throw new Error("Model 1 returned an invalid weather prediction response.");
+    }
+
+    if (
+      result.decision !== (result.irrigation_needed ? "irrigate" : "hold")
+    ) {
+      throw new Error("Model 1 returned inconsistent irrigation decisions.");
+    }
+
+    renderModel1Inputs(page, result);
+
+    const output = result.irrigation_needed
+      ? "Irrigation Needed"
+      : "Irrigation Not Needed";
+
+    setTextContent(
+      page.querySelector('[data-ai-result="model1"]'),
+      `${output} - ${result.reason}`
+    );
+
+    text(
+      page,
+      '[data-ai-timestamp="model1"]',
+      `Prediction time: ${displayTime(result.observation_time)} | Forecast date: ${result.forecast_date}`
+    );
+
+    setSuccess("model1", new Date().toISOString());
+
+  } catch (error) {
+    if (generation !== requestGeneration) return;
+
+    setState(
+      "model1",
+      "unavailable",
+      errorMessage(error, "The field-weather prediction is unavailable.")
+    );
+  }
+};
+
 
     const runModel2 = async (field, crop, generation) => {
-      if (!field || !crop || !Number.isSafeInteger(Number(field.id)) || !Number.isSafeInteger(Number(crop.id))) {
-        setState("model2", "input", "An account field and its associated saved crop record are required.");
-        return;
+    const demoResult = page.querySelector("[data-ai-model2-demo-result]");
+    const demoNote = page.querySelector("[data-ai-model2-demo-note]");
+    const demoZone = page.querySelector("[data-ai-model2-demo-zone]");
+    const demoSources = page.querySelector("[data-ai-model2-demo-sources]");
+    const demoInputs = page.querySelector("[data-ai-model2-demo-inputs]");
+
+    if (!field || !crop ||
+        !Number.isSafeInteger(Number(field.id)) ||
+        !Number.isSafeInteger(Number(crop.id))) {
+      setState("model2", "input", "Select a field and its saved crop record.");
+      if (demoResult) demoResult.textContent = "Input required";
+      if (demoNote) demoNote.textContent = "Select a field and crop to run the experimental demonstration.";
+      return;
+    }
+
+    // Keep the validated production estimate separate.
+    setState(
+      "model2",
+      "loading",
+      "Checking the validated production Model 2 service…"
+    );
+
+    try {
+      const production = await api.apiRequest("/api/ml/water-requirement", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          field_id: Number(field.id),
+          crop_id: Number(crop.id),
+          prediction_period_hours: 24,
+        }),
+      });
+
+      if (generation !== requestGeneration) return;
+
+      if (finiteNumber(production.estimated_water_liters)) {
+        setTextContent(
+          page.querySelector('[data-ai-result="model2"]'),
+          `${production.estimated_water_liters.toLocaleString()} ${production.unit}`,
+        );
+        setTextContent(
+          page.querySelector('[data-ai-timestamp="model2"]'),
+          `Last checked: ${new Date().toLocaleString()}`,
+        );
+        setSuccess("model2", new Date().toISOString());
       }
-      setState("model2", "loading", "Checking the validated production Model 2 service…");
-      try {
-        const result = await api.apiRequest("/api/ml/water-requirement", {
+    } catch (error) {
+      if (generation !== requestGeneration) return;
+
+      setState(
+        "model2",
+        "unavailable",
+        "Production estimate is not available yet. The validated real-world Model 2 service is not ready. See the experimental demonstration below.",
+      );
+    }
+
+    // Run the experimental artifact using the selected field and crop.
+    try {
+      const result = await api.apiRequest(
+        "/api/ml/water-requirement/experimental",
+        {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             field_id: Number(field.id),
             crop_id: Number(crop.id),
-            prediction_period_hours: 24,
+            zone: Number(zoneSelect.value),
           }),
-        });
-        if (generation !== requestGeneration) return;
-        if (!finiteNumber(result.estimated_water_liters) ||
-            result.estimated_water_liters < 0 ||
-            result.prediction_period_hours !== 24 ||
-            typeof result.unit !== "string") {
-          throw new Error("The validated water-requirement API returned an invalid estimate.");
-        }
-        setTextContent(
-          page.querySelector('[data-ai-result="model2"]'),
-          `${result.estimated_water_liters.toLocaleString()} ${result.unit}`,
-        );
-        setTextContent(page.querySelector('[data-ai-timestamp="model2"]'), `Last checked: ${new Date().toLocaleString()}`);
-        setSuccess("model2", new Date().toISOString());
-      } catch (error) {
-        if (generation !== requestGeneration) return;
-        setState("model2", "unavailable", errorMessage(error, "The validated water-requirement model is unavailable. No estimate was generated."));
+        },
+      );
+
+      if (generation !== requestGeneration) return;
+
+      if (
+        result.prediction_status !== "experimental" ||
+        !finiteNumber(result.estimated_water_liters) ||
+        result.estimated_water_liters < 0
+      ) {
+        throw new Error("The experimental Model 2 response is invalid.");
       }
-    };
+
+      if (demoResult) {
+        demoResult.textContent =
+          `${result.estimated_water_liters.toLocaleString()} ${result.unit}`;
+      }
+
+      if (demoZone) {
+        demoZone.textContent = `Zone ${result.selected_zone}`;
+      }
+
+      if (demoSources) {
+        demoSources.textContent =
+          result.illustrative_inputs.length === 0
+            ? "Saved sensor, crop and weather data"
+            : `${result.illustrative_inputs.length} illustrative input(s)`;
+      }
+
+      if (demoInputs) {
+        demoInputs.replaceChildren();
+
+        const inputLabels = {
+          crop_type: "Crop",
+          growth_stage: "Growth stage code",
+          soil_type: "Soil type code",
+          soil_moisture_percent: "Soil moisture",
+          temperature_c: "Temperature",
+          humidity_percent: "Humidity",
+          rainfall_mm: "Rainfall",
+          forecast_rainfall_mm: "Forecast rainfall",
+          field_area_acres: "Field area",
+          irrigation_method: "Irrigation method",
+          wind_speed: "Wind speed",
+          et0_mm_day: "ET0",
+          crop_coefficient_kc: "Crop coefficient",
+          previous_irrigation_mm: "Previous irrigation"
+        };
+
+        Object.entries(result.inputs).forEach(([key, value]) => {
+          const item = document.createElement("li");
+          const label = inputLabels[key] || key;
+          const source = result.input_sources?.[key] || "Source unavailable";
+
+          const formattedValue =
+            typeof value === "number"
+              ? value.toLocaleString(undefined, { maximumFractionDigits: 2 })
+              : String(value);
+
+          item.textContent = `${label}: ${formattedValue} — Source: ${source}`;
+          demoInputs.appendChild(item);
+        });
+      }
+
+      if (demoNote) {
+        demoNote.textContent = result.data_note;
+      }
+
+      const model2Timestamp = page.querySelector('[data-ai-timestamp="model2"]');
+
+      if (model2Timestamp) {
+        model2Timestamp.textContent =
+          `Last checked: ${new Date(result.prediction_timestamp).toLocaleString()}`;
+    }
+
+    // Mark Model 2 as available when the experimental prediction succeeds.
+    setSuccess("model2", result.prediction_timestamp);
+
+    const model2Status = page.querySelector('[data-ai-status="model2"]');
+
+    if (model2Status) {
+      model2Status.textContent = "Available";
+    }
+
+    } catch (error) {
+      if (generation !== requestGeneration) return;
+
+      if (demoResult) demoResult.textContent = "Experimental result unavailable";
+      if (demoNote) {
+        demoNote.textContent =
+          errorMessage(error, "The experimental prediction could not be generated.");
+      }
+      if (demoSources) demoSources.textContent = "Unavailable";
+    }
+  };
+
 
     const model3Payload = () => {
-      const field = selectedField();
-      const zone = Number(zoneSelect.value);
-      if (!field || !Number.isSafeInteger(Number(field.id)) || !Number.isInteger(zone) || zone < 1 || zone > 5) return null;
-      const formData = new FormData(model3Form);
-      if (!String(formData.get("current_moisture_percent") || "").trim()) return null;
-      const payload = {
-        field_id: Number(field.id),
-        zone,
-        current_moisture_percent: Number(formData.get("current_moisture_percent")),
-      };
-      if (zone === 4) {
-        for (const name of model3Zone4Fields) {
-          const value = String(formData.get(name) || "").trim();
-          if (!value) return null;
-          payload[name] = Number(value);
-        }
-      }
-      return payload;
-    };
+  const field = selectedField();
+  const zone = Number(zoneSelect.value);
+  const moistureInput = model3Form.elements.namedItem("current_moisture_percent");
+
+  if (
+    !field ||
+    !Number.isSafeInteger(Number(field.id)) ||
+    !Number.isInteger(zone) ||
+    zone < 1 ||
+    zone > 5 ||
+    !(moistureInput instanceof HTMLInputElement)
+  ) {
+    return null;
+  }
+
+  const moisture = Number(moistureInput.value);
+
+  if (!Number.isFinite(moisture) || moisture < 1 || moisture > 100) {
+    return null;
+  }
+
+  return {
+    field_id: Number(field.id),
+    zone,
+    current_moisture_percent: moisture,
+  };
+};
 
     const runModel3 = async (generation) => {
       const payload = model3Payload();
       if (!payload) {
-        setState("model3", "input", zoneSelect.value === "4"
-          ? "Enter the current moisture and all required Zone 4 weather and soil observations."
-          : "Select a field and zone, then enter an actual current soil-moisture observation.");
+        setState("model3", "input", "Select a field with a saved soil-moisture reading.");
         return;
       }
       setState("model3", "loading", "Running the selected zone's soil-moisture strategy…");
@@ -354,11 +568,237 @@
       }
       return payload;
     };
+        const loadModel4FieldData = async () => {
+      applyModel4Defaults();
+      const field = selectedField();
+
+      if (!field) {
+        model4DataStatus.textContent = "";
+        model4DataStatus.hidden = true;
+        return;
+      }
+
+      model4LoadButton.disabled = true;
+      model4DataStatus.textContent =
+        "Training defaults are populated. Checking saved field sensor readings...";
+
+      try {
+        const readings = await api.apiRequest(
+          `/api/fields/${encodeURIComponent(field.id)}/sensor-readings?limit=1`
+        );
+
+        if (String(selectedField()?.id) !== String(field.id)) return;
+        if (!Array.isArray(readings)) {
+          throw new Error("The sensor API returned an unexpected response.");
+        }
+
+        const latest = readings[0] || null;
+        const sensorValues = [];
+
+        const fillSensorValue = (inputName, value, label) => {
+          if (value === null || value === undefined || value === "") return;
+          const input = model4Form.elements.namedItem(inputName);
+          if (!(input instanceof HTMLInputElement)) return;
+          const number = Number(value);
+          if (!Number.isFinite(number)) return;
+          input.value = String(number);
+          sensorValues.push(label);
+        };
+
+        const model3Moisture = model3Form.elements.namedItem("current_moisture_percent");
+
+        if (latest) {
+          if (
+            model3Moisture instanceof HTMLInputElement &&
+            latest.soil_moisture_percent != null &&
+            Number.isFinite(Number(latest.soil_moisture_percent))
+          ) {
+            model3Moisture.value = String(latest.soil_moisture_percent);
+          } else if (model3Moisture instanceof HTMLInputElement) {
+            model3Moisture.value = "";
+          }
+
+          fillSensorValue("soil_moisture_pct", latest.soil_moisture_percent, "soil moisture");
+          fillSensorValue("soil_temp_c", latest.soil_temperature_c, "soil temperature");
+          fillSensorValue("soil_ph", latest.ph, "soil pH");
+        } else {
+          if (model3Moisture instanceof HTMLInputElement) {
+            model3Moisture.value = "";
+          }
+        }
+
+        let cropDerived = false;
+        const cropName = String(selectedCrop()?.name || field.crop || "")
+          .trim().toLowerCase();
+
+        if (["paddy", "rice"].includes(cropName)) {
+          const plantCategory = model4Form.elements.namedItem("plant_category");
+          if (plantCategory instanceof HTMLInputElement) {
+            plantCategory.value = "cereal";
+            cropDerived = true;
+          }
+        }
+
+        const defaultsUsed = 20 - sensorValues.length - (cropDerived ? 1 : 0);
+        const messages = [
+          "All 20 Model 4 inputs are populated automatically.",
+          `${sensorValues.length} input(s) use saved sensor readings.`,
+          `${defaultsUsed} input(s) use fitted training defaults.`
+        ];
+
+        if (cropDerived) {
+          messages.push("Plant category was derived from the selected rice/paddy crop.");
+        } else {
+          messages.push("Plant category uses the fitted most-frequent training default.");
+        }
+
+        if (latest) {
+          messages.push(`Latest saved reading: ${displayTime(latest.recorded_at)}.`);
+        } else {
+          messages.push("No saved sensor readings were found; sensor inputs use training medians.");
+        }
+
+
+        model4DataStatus.textContent = "";
+        model4DataStatus.hidden = true;
+        } catch (error) {
+          model4DataStatus.textContent = "";
+          model4DataStatus.hidden = true;
+        } finally {
+          model4LoadButton.disabled = false;
+        }
+        };
+
+const runModel4Demo = async () => {
+  const field = selectedField();
+  const crop = selectedCrop();
+  const zone = Number(zoneSelect.value);
+
+  if (
+    !field ||
+    !(crop?.name || field.crop) ||
+    !Number.isSafeInteger(Number(field.id)) ||
+    !Number.isInteger(zone) ||
+    zone < 1 ||
+    zone > 5
+  ) {
+    model4DemoStatus.textContent =
+      "Select a field, saved crop and zone before running the demo.";
+    return;
+  }
+
+  const fieldId = String(field.id);
+  const cropName = crop?.name || field.crop;
+
+  // Existing test fixture from tests/test_model4.py.
+  // These values are illustrative, not live field measurements.
+  const sample = {
+    soil_type: "Loamy",
+    bulk_density: 1.3,
+    organic_matter_pct: 2.5,
+    cation_exchange_capacity: 18.0,
+    salinity_ec: 0.8,
+    buffering_capacity: 7.0,
+    soil_moisture_pct: 35.0,
+    moisture_limit_dry: 20.0,
+    moisture_limit_wet: 60.0,
+    moisture_regime: "optimal",
+    thermal_regime: "optimal",
+    nutrient_balance: "optimal",
+    plant_category: "cereal",
+    soil_temp_c: 24.0,
+    air_temp_c: 28.0,
+    light_intensity_par: 500.0,
+    soil_ph: 6.8,
+    nitrogen_ppm: 45.0,
+    phosphorus_ppm: 25.0,
+    potassium_ppm: 40.0,
+  };
+
+  model4DemoButton.disabled = true;
+  model4DemoOutput.hidden = true;
+  model4DemoStatus.textContent =
+    "Running Model 4 with the existing illustrative test data...";
+
+  try {
+    const result = await api.apiRequest(
+      "/api/ml/crop-stress-prediction",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          field_id: Number(field.id),
+          crop_type: cropName,
+          zone,
+          ...sample,
+        }),
+      }
+    );
+
+    // Do not display an old field's result after selection changes.
+    const currentField = selectedField();
+    const currentCrop = selectedCrop();
+    const currentCropName = currentCrop?.name || currentField?.crop;
+
+    if (
+      String(currentField?.id) !== fieldId ||
+      String(currentCropName) !== String(cropName) ||
+      Number(zoneSelect.value) !== zone
+    ) {
+      return;
+    }
+
+    if (
+      !Number.isInteger(result.predicted_class) ||
+      result.class_label_status !== "unverified" ||
+      (result.class_probabilities !== null &&
+        (
+          typeof result.class_probabilities !== "object" ||
+          Array.isArray(result.class_probabilities)
+        ))
+    ) {
+      throw new Error("Model 4 returned an invalid demo result.");
+    }
+
+    text(
+      page,
+      "[data-ai-model4-demo-class]",
+      `Class ${result.predicted_class}`
+    );
+
+    text(
+      page,
+      "[data-ai-model4-demo-probability]",
+      finiteNumber(result.confidence)
+        ? `${(result.confidence * 100).toFixed(1)}% (not calibrated)`
+        : "Not returned"
+    );
+
+    text(
+      page,
+      "[data-ai-model4-demo-time]",
+      displayTime(result.prediction_timestamp)
+    );
+
+    model4DemoOutput.hidden = false;
+
+    model4DemoStatus.textContent =
+      "Demo completed. The sample inputs were sent separately; your actual form and saved sensor readings were not changed.";
+  } catch (error) {
+    model4DemoStatus.textContent = errorMessage(
+      error,
+      "The Model 4 demonstration could not be completed."
+    );
+  } finally {
+    model4DemoButton.disabled = false;
+  }
+};
+
 
     const runModel4 = async (generation) => {
       const payload = model4Payload();
       if (!payload) {
-        setState("model4", "input", "Select a field, saved crop and zone, then enter all required soil and crop observations.");
+        setState("model4", "input", "Select a field, saved crop and zone. Model 4 inputs are populated automatically.");
         return;
       }
       setState("model4", "loading", "Running the crop-stress classifier…");
@@ -381,8 +821,7 @@
           : "Not returned";
         text(page, "[data-ai-model4-probability]", confidence);
         text(page, "[data-ai-model4-time]", displayTime(result.prediction_timestamp));
-        setTextContent(page.querySelector('[data-ai-result="model4"]'), `Predicted numeric class ${result.predicted_class}. Class semantics remain unverified.`);
-        text(page, '[data-ai-timestamp="model4"]', `Prediction time: ${displayTime(result.prediction_timestamp)}`);
+        setTextContent(page.querySelector('[data-ai-result="model4"]'), `Predicted class ${result.predicted_class}.`);        text(page, '[data-ai-timestamp="model4"]', `Prediction time: ${displayTime(result.prediction_timestamp)}`);
         setSuccess("model4", result.prediction_timestamp || new Date().toISOString());
       } catch (error) {
         if (generation !== requestGeneration) return;
@@ -398,10 +837,13 @@
       refreshButton.disabled = true;
       refreshButton.setAttribute("aria-busy", "true");
       try {
-        const tasks = [runModel1(field, generation), runModel2(field, crop, generation)];
+                const tasks = [runModel1(field, generation), runModel2(field, crop, generation)];
+        await loadModel4FieldData();
+        if (generation !== requestGeneration) return;
         if (includeObservationModels) {
-          tasks.push(runModel3(generation), runModel4(generation));
+          tasks.push(runModel3(generation));
         }
+        tasks.push(runModel4(generation));
         await Promise.allSettled(tasks);
       } finally {
         if (generation === requestGeneration) {
@@ -430,19 +872,24 @@
       void refresh();
     });
     refreshButton.addEventListener("click", () => { void refresh(); });
-    model3Form.addEventListener("submit", (event) => {
-      event.preventDefault();
-    if (!model3Form.reportValidity()) return;
-    const generation = ++requestGeneration;
-    void runModel3(generation);
-    });
+
     model4Form.addEventListener("submit", (event) => {
-    event.preventDefault();
-    if (!model4Form.reportValidity()) return;
-    const generation = ++requestGeneration;
-    void runModel4(generation);
-    });
-    void refresh({ includeObservationModels: false });
+  event.preventDefault();
+  if (!model4Form.reportValidity()) return;
+  const generation = ++requestGeneration;
+  void runModel4(generation);
+});
+
+// Load existing sensor readings into Model 4 inputs.
+model4LoadButton.addEventListener("click", () => {
+  void loadModel4FieldData();
+});
+
+model4DemoButton.addEventListener("click", () => {
+  void runModel4Demo();
+});
+
+void refresh();
   };
 
   const text = (root, selector, value) => {
@@ -519,36 +966,42 @@
     }
   };
 
-  const renderModel1Inputs = (page, result) => {
-    const list = page.querySelector('[data-ai-input-list="model1"]');
-    const status = page.querySelector('[data-ai-input-status="model1"]');
-    if (!(list instanceof HTMLElement) || !(status instanceof HTMLElement)) return;
 
-    const fragment = document.createDocumentFragment();
-    model1InputFeatures.forEach(({ name, unit }) => {
-      const row = document.createElement("section");
-      row.className = "ai-input-row";
-      const value = document.createElement("strong");
-      value.className = "ai-input-value";
-      value.textContent = `${String(result.feature_inputs[name])} ${unit}`;
-      const feature = document.createElement("span");
-      feature.className = "ai-input-feature";
-      feature.textContent = name;
-      const source = document.createElement("span");
-      source.className = "ai-input-source";
-      source.textContent = `Source: ${result.feature_sources[name]}`;
-      const timestamp = document.createElement("span");
-      timestamp.className = "ai-input-time";
-      timestamp.textContent = `Observed: ${displayTime(result.observation_time)}`;
-      const availability = document.createElement("span");
-      availability.className = "ai-input-availability";
-      availability.textContent = "Available";
-      row.append(feature, value, source, timestamp, availability);
-      fragment.append(row);
-    });
-    list.replaceChildren(fragment);
-    status.textContent = "These are the exact values returned from the weather record passed to Model 1.";
-  };
+const renderModel1Inputs = (page, result) => {
+  const list = page.querySelector('[data-ai-input-list="model1"]');
+  const status = page.querySelector('[data-ai-input-status="model1"]');
 
-  window.JalSaathiAIDashboard = Object.freeze({ initialize });
+  if (!(list instanceof HTMLElement) || !(status instanceof HTMLElement)) return;
+
+  const measurements = [
+    { name: "Soil Moisture", value: `${result.soil_moisture_percent}%` },
+    { name: "Rainfall", value: `${result.rainfall_mm} mm` },
+    { name: "Rain Probability", value: `${result.rain_probability_percent}%` },
+    { name: "Reference Evapotranspiration (ET0)", value: `${result.et0_mm} mm` }
+  ];
+
+  const fragment = document.createDocumentFragment();
+
+  measurements.forEach(({ name, value }) => {
+    const row = document.createElement("section");
+    row.className = "ai-input-row";
+
+    const feature = document.createElement("span");
+    feature.className = "ai-input-feature";
+    feature.textContent = name;
+
+    const measurement = document.createElement("strong");
+    measurement.className = "ai-input-value";
+    measurement.textContent = value;
+
+    row.append(feature, measurement);
+    fragment.append(row);
+  });
+
+  list.replaceChildren(fragment);
+
+  status.textContent =
+    `Weather source: ${result.weather_source} | Forecast date: ${result.forecast_date}`;
+};
+   window.JalSaathiAIDashboard = Object.freeze({ initialize });
 })();

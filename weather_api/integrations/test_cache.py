@@ -1,3 +1,4 @@
+
 import json
 import threading
 import time
@@ -20,15 +21,45 @@ def clear_weather_cache():
         weather_api._provider_cooldown_until = 0
 
 
+def setup_location(monkeypatch):
+    monkeypatch.setattr(
+        config, "get_location",
+        lambda location=None: location or "10,20"
+    )
+
+
+def current_response(temperature=20):
+    return {
+        "current": {
+            "time": "2026-11-13T10:00",
+            "temperature_2m": temperature,
+            "relative_humidity_2m": 70,
+            "apparent_temperature": temperature + 1,
+            "precipitation": 2.4,
+            "rain": 2.4,
+            "weather_code": 61,
+            "wind_speed_10m": 4.2,
+        },
+        "hourly": {
+            "time": ["2026-11-13T10:00"],
+            "precipitation_probability": [35],
+        },
+    }
+
+
 def test_forecast_cache_serves_different_requested_lengths(monkeypatch):
-    monkeypatch.setattr(config, "get_location", lambda location=None: location or "10,20")
-    monkeypatch.setattr(config, "get_api_key", lambda: "test-key")
+    setup_location(monkeypatch)
+
     response = {
-        "timelines": {
-            "hourly": [
-                {"time": f"2026-01-01T{hour:02d}:00:00Z", "values": {"temperature": hour}}
-                for hour in range(24)
-            ]
+        "hourly": {
+            "time": [f"2026-11-13T{hour:02d}:00" for hour in range(24)],
+            "temperature_2m": list(range(24)),
+            "apparent_temperature": list(range(24)),
+            "relative_humidity_2m": [60] * 24,
+            "precipitation_probability": [20] * 24,
+            "rain": [0] * 24,
+            "weather_code": [1] * 24,
+            "wind_speed_10m": [2] * 24,
         }
     }
     calls = []
@@ -48,45 +79,44 @@ def test_forecast_cache_serves_different_requested_lengths(monkeypatch):
     assert all(item["is_stale"] is False for item in short)
 
 
-def test_daily_forecast_uses_provider_daily_values(monkeypatch):
-    monkeypatch.setattr(config, "get_location", lambda location=None: location or "10,20")
-    monkeypatch.setattr(config, "get_api_key", lambda: "test-key")
+def test_daily_forecast_uses_open_meteo_daily_values(monkeypatch):
+    setup_location(monkeypatch)
     calls = []
+
+    response = {
+        "daily": {
+            "time": ["2026-11-13"],
+            "temperature_2m_max": [28],
+            "temperature_2m_min": [19],
+            "weather_code": [61],
+            "precipitation_probability_max": [40],
+            "precipitation_sum": [5],
+            "wind_speed_10m_max": [8],
+        }
+    }
+
     monkeypatch.setattr(
         weather_api,
         "_make_request",
-        lambda endpoint, params: calls.append(params) or {
-            "timelines": {
-                "daily": [{
-                    "time": "2026-01-01T00:00:00Z",
-                    "values": {
-                        "temperatureMax": 28,
-                        "temperatureMin": 19,
-                        "weatherCodeMax": 1001,
-                        "precipitationProbabilityAvg": 40,
-                    },
-                }]
-            }
-        },
+        lambda endpoint, params: calls.append(params) or response,
     )
 
     forecast = weather_api.get_forecast(hours=5, timestep="1d")
 
-    assert calls[0]["timesteps"] == "1d"
+    assert calls[0]["daily"]
     assert forecast[0]["temperature_high_c"] == 28
     assert forecast[0]["temperature_low_c"] == 19
-    assert forecast[0]["weather_code"] == 1001
     assert forecast[0]["rain_probability_percent"] == 40
+    assert forecast[0]["rainfall_mm"] == 5
 
 
 def test_weather_requests_are_package_safe_and_cache_by_location(monkeypatch):
-    monkeypatch.setattr(config, "get_location", lambda location=None: location or "10,20")
-    monkeypatch.setattr(config, "get_api_key", lambda: "test-key")
+    setup_location(monkeypatch)
     calls = []
 
     def fake_request(endpoint, params):
-        calls.append(params["location"])
-        return {"data": {"time": "2026-01-01T00:00:00Z", "values": {"temperature": 20}}}
+        calls.append((params["latitude"], params["longitude"]))
+        return current_response()
 
     monkeypatch.setattr(weather_api, "_make_request", fake_request)
 
@@ -97,39 +127,29 @@ def test_weather_requests_are_package_safe_and_cache_by_location(monkeypatch):
     assert first["temperature_c"] == 20
     assert cached["is_stale"] is False
     assert other_location["temperature_c"] == 20
-    assert calls == ["10,20", "30,40"]
+    assert calls == [(10.0, 20.0), (30.0, 40.0)]
 
 
 def test_current_weather_exposes_metric_probability_and_wind_fields(monkeypatch):
-    monkeypatch.setattr(config, "get_location", lambda location=None: location or "10,20")
-    monkeypatch.setattr(config, "get_api_key", lambda: "test-key")
+    setup_location(monkeypatch)
     calls = []
 
     def fake_request(endpoint, params):
         calls.append((endpoint, params))
-        return {
-            "data": {
-                "time": "2026-10-26T10:00:00Z",
-                "values": {
-                    "temperature": 21.5,
-                    "humidity": 70,
-                    "precipitationProbability": 35,
-                    "rainIntensity": 2.4,
-                    "windSpeed": 4.2,
-                },
-            }
-        }
+        return current_response(21.5)
 
     monkeypatch.setattr(weather_api, "_make_request", fake_request)
+
     current = weather_api.get_current_weather()
 
-    assert calls[0][1]["units"] == "metric"
+    assert calls[0][1]["temperature_unit"] == "celsius"
+    assert calls[0][1]["wind_speed_unit"] == "ms"
     assert current["temperature_c"] == 21.5
     assert current["humidity_percent"] == 70
     assert current["precipitation_probability_percent"] == 35
     assert current["rainfall_mm_per_hr"] == 2.4
     assert current["wind_speed_mps"] == 4.2
-    assert current["observation_time"] == "2026-10-26T10:00:00Z"
+    assert current["observation_time"] == "2026-11-13T10:00"
     assert current["is_stale"] is False
     assert current["data_age_minutes"] == 0
 
@@ -152,21 +172,25 @@ def test_auth_errors_are_not_retried_or_hidden_by_stale_cache(monkeypatch):
 
 
 def test_weather_cache_coalesces_concurrent_requests(monkeypatch):
-    monkeypatch.setattr(config, "get_location", lambda location=None: location or "10,20")
-    monkeypatch.setattr(config, "get_api_key", lambda: "test-key")
+    setup_location(monkeypatch)
     calls = []
     calls_lock = threading.Lock()
 
     def fake_request(endpoint, params):
         with calls_lock:
-            calls.append(params["location"])
+            calls.append(True)
         time.sleep(0.03)
-        return {"data": {"time": "2026-01-01T00:00:00Z", "values": {"temperature": 20}}}
+        return current_response()
 
     monkeypatch.setattr(weather_api, "_make_request", fake_request)
 
     with ThreadPoolExecutor(max_workers=8) as executor:
-        results = list(executor.map(lambda _: weather_api.get_current_weather(), range(8)))
+        results = list(
+            executor.map(
+                lambda _: weather_api.get_current_weather(),
+                range(8)
+            )
+        )
 
     assert len(calls) == 1
     assert all(result["temperature_c"] == 20 for result in results)
@@ -195,17 +219,20 @@ def test_429_honors_retry_after_and_suppresses_requests_during_cooldown(monkeypa
 
 
 def test_429_uses_stale_weather_and_recovers_after_retry_after(monkeypatch):
-    monkeypatch.setattr(config, "get_location", lambda location=None: location or "10,20")
-    monkeypatch.setattr(config, "get_api_key", lambda: "test-key")
+    setup_location(monkeypatch)
     monkeypatch.setattr(config, "MAX_RETRIES", 3)
+
     clock = [100.0]
     monkeypatch.setattr(weather_api.time, "monotonic", lambda: clock[0])
-    cached_values = {"temperature_c": 19}
+
     weather_api._save_cache(
         ("realtime", "10,20"),
-        cached_values,
+        {"temperature_c": 19},
     )
-    weather_api._cache[("realtime", "10,20")]["time"] -= config.CACHE_MINUTES * 60 + 1
+    weather_api._cache[("realtime", "10,20")]["time"] -= (
+        config.CACHE_MINUTES * 60 + 1
+    )
+
     response = requests.Response()
     response.status_code = 429
     response.headers["Retry-After"] = "8"
@@ -213,25 +240,27 @@ def test_429_uses_stale_weather_and_recovers_after_retry_after(monkeypatch):
 
     def rate_limit_then_recover(*args, **kwargs):
         calls.append(True)
+
         if len(calls) == 1:
             return response
+
         recovered = requests.Response()
         recovered.status_code = 200
-        recovered._content = json.dumps({
-            "data": {
-                "time": "2026-01-01T00:00:00Z",
-                "values": {"temperature": 23},
-            },
-        }).encode()
+        recovered._content = json.dumps(current_response(23)).encode()
         return recovered
 
-    monkeypatch.setattr(weather_api.requests, "get", rate_limit_then_recover)
+    monkeypatch.setattr(
+        weather_api.requests,
+        "get",
+        rate_limit_then_recover,
+    )
 
     stale = weather_api.get_current_weather()
     assert stale["temperature_c"] == 19
     assert stale["is_stale"] is True
 
     clock[0] += 9
+
     fresh = weather_api.get_current_weather()
     assert fresh["temperature_c"] == 23
     assert fresh["is_stale"] is False
@@ -249,11 +278,18 @@ def test_transient_provider_errors_use_bounded_exponential_jitter(monkeypatch):
         responses.append(response)
         return response
 
-    monkeypatch.setattr(weather_api.requests, "get", temporary_server_error)
+    monkeypatch.setattr(
+        weather_api.requests,
+        "get",
+        temporary_server_error,
+    )
     monkeypatch.setattr(weather_api.time, "sleep", sleeps.append)
     monkeypatch.setattr(weather_api.random, "uniform", lambda lower, upper: upper)
     monkeypatch.setattr(config, "MAX_RETRIES", 3)
 
-    assert weather_api._make_request("https://example.invalid", {}) == {"ok": True}
+    assert weather_api._make_request(
+        "https://example.invalid", {}
+    ) == {"ok": True}
+
     assert len(responses) == 3
     assert sleeps == [1, 2]

@@ -11,6 +11,8 @@ from sqlalchemy import (
     Integer,
     String,
     func,
+    Boolean,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -70,6 +72,123 @@ class FarmerField(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+class FarmerSensorReading(Base):
+    __tablename__ = "farmer_sensor_readings"
+    __table_args__ = (
+        CheckConstraint(
+            "soil_moisture_percent >= 0 AND soil_moisture_percent <= 100",
+            name="ck_farmer_sensor_moisture_range",
+        ),
+        CheckConstraint(
+            "humidity_percent IS NULL OR "
+            "(humidity_percent >= 0 AND humidity_percent <= 100)",
+            name="ck_farmer_sensor_humidity_range",
+        ),
+        CheckConstraint(
+            "ph IS NULL OR (ph >= 0 AND ph <= 14)",
+            name="ck_farmer_sensor_ph_range",
+        ),
+        CheckConstraint(
+            "electrical_conductivity_us_cm IS NULL OR "
+            "electrical_conductivity_us_cm >= 0",
+            name="ck_farmer_sensor_ec_nonnegative",
+        ),
+        Index(
+            "ix_farmer_sensor_readings_owner_field_time",
+            "farmer_id",
+            "field_id",
+            "recorded_at",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    farmer_id: Mapped[int] = mapped_column(
+        ForeignKey("farmers.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    field_id: Mapped[int] = mapped_column(
+        ForeignKey("farmer_fields.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    soil_moisture_percent: Mapped[float] = mapped_column(
+        Float, nullable=False
+    )
+    soil_temperature_c: Mapped[float | None] = mapped_column(Float)
+    humidity_percent: Mapped[float | None] = mapped_column(Float)
+    ph: Mapped[float | None] = mapped_column(Float)
+
+    # Electrical conductivity is stored in microsiemens per centimetre.
+    electrical_conductivity_us_cm: Mapped[float | None] = mapped_column(Float)
+
+    # Time the measurement was taken, and time it was saved by the server.
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+class FarmerSensorDevice(Base):
+    __tablename__ = "farmer_sensor_devices"
+    __table_args__ = (
+        UniqueConstraint(
+            "field_id",
+            name="uq_farmer_sensor_device_field",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    farmer_id: Mapped[int] = mapped_column(
+        ForeignKey("farmers.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    field_id: Mapped[int] = mapped_column(
+        ForeignKey("farmer_fields.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+
+    device_id: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+
+    name: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+    )
+
+    token_hash: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        unique=True,
+    )
+
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    last_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
     )
 
 

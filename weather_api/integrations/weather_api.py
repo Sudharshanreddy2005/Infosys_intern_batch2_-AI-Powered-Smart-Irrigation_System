@@ -3,6 +3,7 @@ import email.utils
 import logging
 import math
 import random
+import re
 import threading
 import time
 from collections import OrderedDict
@@ -14,20 +15,54 @@ import requests
 from . import config
 
 logger = logging.getLogger(__name__)
+
 _cache = OrderedDict()
 _cache_lock = threading.Lock()
+
 _request_locks = {}
 _request_locks_lock = threading.Lock()
+
 _provider_cooldown_until = 0.0
 _provider_cooldown_lock = threading.Lock()
 
+WMO_TO_LEGACY = {
+    0: 1000,
+    1: 1100,
+    2: 1101,
+    3: 1001,
+    45: 2000,
+    48: 2100,
+    51: 4000,
+    53: 4000,
+    55: 4000,
+    56: 6000,
+    57: 6000,
+    61: 4200,
+    63: 4001,
+    65: 4201,
+    66: 6001,
+    67: 6001,
+    71: 5100,
+    73: 5000,
+    75: 5101,
+    77: 7000,
+    80: 4200,
+    81: 4001,
+    82: 4201,
+    85: 5001,
+    86: 5101,
+    95: 8000,
+    96: 8000,
+    99: 8000,
+}
+
 
 class WeatherAuthError(RuntimeError):
-    """The provider rejected the configured API key."""
+    """The provider rejected the request credentials."""
 
 
 class WeatherUnavailableError(RuntimeError):
-    """The provider could not return a usable weather response."""
+    """The provider could not return usable weather data."""
 
     def __init__(self, message, retry_after_seconds=None):
         super().__init__(message)
@@ -37,22 +72,32 @@ class WeatherUnavailableError(RuntimeError):
 def _get_cached(key, allow_stale=False):
     with _cache_lock:
         entry = _cache.get(key)
+
         if entry is None:
             return None, None
+
         age = time.time() - entry["time"]
+
         if age < config.CACHE_MINUTES * 60:
             _cache.move_to_end(key)
             return copy.deepcopy(entry["data"]), age
+
         if allow_stale and age < config.MAX_STALE_MINUTES * 60:
             _cache.move_to_end(key)
             return copy.deepcopy(entry["data"]), age
+
     return None, None
 
 
 def _save_cache(key, data):
     with _cache_lock:
-        _cache[key] = {"data": copy.deepcopy(data), "time": time.time()}
+        _cache[key] = {
+            "data": copy.deepcopy(data),
+            "time": time.time(),
+        }
+
         _cache.move_to_end(key)
+
         while len(_cache) > config.MAX_CACHE_ENTRIES:
             _cache.popitem(last=False)
 
@@ -61,54 +106,93 @@ def _save_cache(key, data):
 def _serialize_request(key):
     with _request_locks_lock:
         entry = _request_locks.get(key)
+
         if entry is None:
-            entry = {"lock": threading.Lock(), "users": 0}
+            entry = {
+                "lock": threading.Lock(),
+                "users": 0,
+            }
             _request_locks[key] = entry
+
         entry["users"] += 1
+
     entry["lock"].acquire()
+
     try:
         yield
     finally:
         entry["lock"].release()
+
         with _request_locks_lock:
             entry["users"] -= 1
-            if entry["users"] == 0 and _request_locks.get(key) is entry:
+
+            if (
+                entry["users"] == 0
+                and _request_locks.get(key) is entry
+            ):
                 del _request_locks[key]
 
 
 def _retry_after_seconds(response):
     value = response.headers.get("Retry-After")
+
     if not value:
         return None
+
     try:
         seconds = float(value)
         return max(0.0, seconds) if math.isfinite(seconds) else None
+
     except ValueError:
         try:
             retry_at = email.utils.parsedate_to_datetime(value)
+
             if retry_at.tzinfo is None:
                 retry_at = retry_at.replace(tzinfo=timezone.utc)
+
             return max(0.0, retry_at.timestamp() - time.time())
-        except (AttributeError, TypeError, ValueError, OverflowError):
+
+        except (
+            AttributeError,
+            TypeError,
+            ValueError,
+            OverflowError,
+        ):
             return None
 
 
 def _retry_delay(attempt):
     maximum = max(0.0, config.MAX_RETRY_DELAY)
-    exponential = min(config.RETRY_DELAY * (2 ** (attempt - 1)), maximum)
-    return random.uniform(exponential * 0.75, exponential)
+
+    exponential = min(
+        config.RETRY_DELAY * (2 ** (attempt - 1)),
+        maximum,
+    )
+
+    return random.uniform(
+        exponential * 0.75,
+        exponential,
+    )
 
 
 def _set_provider_cooldown(seconds):
     global _provider_cooldown_until
+
     deadline = time.monotonic() + max(0.0, seconds)
+
     with _provider_cooldown_lock:
-        _provider_cooldown_until = max(_provider_cooldown_until, deadline)
+        _provider_cooldown_until = max(
+            _provider_cooldown_until,
+            deadline,
+        )
 
 
 def _provider_cooldown_remaining():
     with _provider_cooldown_lock:
-        return max(0.0, _provider_cooldown_until - time.monotonic())
+        return max(
+            0.0,
+            _provider_cooldown_until - time.monotonic(),
+        )
 
 
 def _with_status(data, is_stale, age_seconds):
@@ -116,21 +200,34 @@ def _with_status(data, is_stale, age_seconds):
         "is_stale": is_stale,
         "data_age_minutes": round(age_seconds / 60, 1),
     }
+
     if isinstance(data, list):
-        return [{**item, **status} for item in data]
-    return {**data, **status}
+        return [
+            {**item, **status}
+            for item in data
+        ]
+
+    return {
+        **data,
+        **status,
+    }
 
 
 def _make_request(endpoint, params):
     for attempt in range(1, config.MAX_RETRIES + 1):
+
         cooldown = _provider_cooldown_remaining()
+
         if cooldown:
             retry_after = max(1, int(cooldown + 0.999))
+
             raise WeatherUnavailableError(
-                "Weather provider is rate limited; retry after the indicated delay.",
+                "Weather provider is rate limited.",
                 retry_after_seconds=retry_after,
             )
+
         cause = None
+
         try:
             response = requests.get(
                 endpoint,
@@ -138,48 +235,83 @@ def _make_request(endpoint, params):
                 timeout=config.REQUEST_TIMEOUT,
                 allow_redirects=False,
             )
+
             response.raise_for_status()
+
             try:
-                return response.json()
+                result = response.json()
             except ValueError as error:
                 raise WeatherUnavailableError(
                     "Weather provider returned invalid JSON."
                 ) from error
+
+            if not isinstance(result, dict):
+                raise WeatherUnavailableError(
+                    "Weather provider returned an unexpected response."
+                )
+
+            if result.get("error"):
+                raise WeatherUnavailableError(
+                    result.get(
+                        "reason",
+                        "Weather provider could not process the request.",
+                    )
+                )
+
+            return result
+
         except requests.exceptions.HTTPError as error:
+
             cause = error
+
             status_code = (
                 error.response.status_code
                 if error.response is not None
                 else None
             )
+
             if status_code in (401, 403):
                 raise WeatherAuthError(
-                    "Weather provider rejected the configured API key."
+                    "Weather provider rejected the request."
                 ) from error
+
             if status_code == 429:
+
                 retry_after = _retry_after_seconds(error.response)
-                delay = retry_after if retry_after is not None else _retry_delay(attempt)
-                _set_provider_cooldown(delay)
-                retry_after_header = max(1, int(delay + 0.999))
-                logger.warning(
-                    "Weather provider rate limited the request; retry after %s seconds.",
-                    retry_after_header,
+
+                delay = (
+                    retry_after
+                    if retry_after is not None
+                    else _retry_delay(attempt)
                 )
+
+                _set_provider_cooldown(delay)
+
                 raise WeatherUnavailableError(
                     "Weather provider rate limit reached.",
-                    retry_after_seconds=retry_after_header,
+                    retry_after_seconds=max(
+                        1,
+                        int(delay + 0.999),
+                    ),
                 ) from error
+
             if status_code is None or status_code < 500:
                 raise WeatherUnavailableError(
                     f"Weather provider rejected the request (HTTP {status_code})."
                 ) from error
-            message = f"Weather provider returned HTTP {status_code}."
+
+            message = (
+                f"Weather provider returned HTTP {status_code}."
+            )
+
         except requests.exceptions.Timeout as error:
             cause = error
             message = "Weather provider request timed out."
+
         except requests.exceptions.ConnectionError as error:
             cause = error
             message = "Could not connect to the weather provider."
+
         except requests.exceptions.RequestException as error:
             cause = error
             message = "Weather provider request failed."
@@ -188,130 +320,409 @@ def _make_request(endpoint, params):
             raise WeatherUnavailableError(
                 f"{message} Retries exhausted."
             ) from cause
+
         delay = _retry_delay(attempt)
+
         logger.warning(
-            "Weather provider request failed; retry %s/%s after %.1f seconds.",
+            "Weather request failed; retry %s/%s after %.1f seconds.",
             attempt,
             config.MAX_RETRIES,
             delay,
         )
+
         time.sleep(delay)
 
-    raise WeatherUnavailableError("Weather provider request failed.")
+    raise WeatherUnavailableError(
+        "Weather provider request failed."
+    )
 
 
 def _cached_or_raise(key, request):
     with _serialize_request(key):
+
         cached, age = _get_cached(key)
+
         if cached is not None:
             return cached, age
+
         try:
             return request()
+
         except WeatherAuthError:
             raise
+
         except WeatherUnavailableError:
-            stale, age = _get_cached(key, allow_stale=True)
+
+            stale, age = _get_cached(
+                key,
+                allow_stale=True,
+            )
+
             if stale is None:
                 raise
-            logger.warning("Using stale weather cache (%s minutes old).", round(age / 60, 1))
+
+            logger.warning(
+                "Using stale weather cache (%s minutes old).",
+                round(age / 60, 1),
+            )
+
             return stale, age
 
 
+def _resolve_location(location):
+    location = config.get_location(location)
+
+    coordinate_match = re.fullmatch(
+        r"\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*",
+        location,
+    )
+
+    if coordinate_match:
+
+        latitude = float(coordinate_match.group(1))
+        longitude = float(coordinate_match.group(2))
+
+        if not -90 <= latitude <= 90:
+            raise WeatherUnavailableError(
+                "Invalid latitude."
+            )
+
+        if not -180 <= longitude <= 180:
+            raise WeatherUnavailableError(
+                "Invalid longitude."
+            )
+
+        return latitude, longitude, location
+
+    response = _make_request(
+        config.GEOCODING_ENDPOINT,
+        {
+            "name": location,
+            "count": 5,
+            "language": "en",
+            "format": "json",
+        },
+    )
+
+    matches = response.get("results") or []
+
+    if not matches:
+        raise WeatherUnavailableError(
+            f"No matching location found for '{location}'."
+        )
+
+    place = matches[0]
+
+    latitude = place.get("latitude")
+    longitude = place.get("longitude")
+
+    if latitude is None or longitude is None:
+        raise WeatherUnavailableError(
+            "Location service returned incomplete coordinates."
+        )
+
+    parts = [
+        place.get("name"),
+        place.get("admin1"),
+        place.get("country"),
+    ]
+
+    location_name = ", ".join(
+        dict.fromkeys(
+            part for part in parts if part
+        )
+    )
+
+    return (
+        float(latitude),
+        float(longitude),
+        location_name or location,
+    )
+
+
+def _weather_data(latitude, longitude):
+    return _make_request(
+        config.FORECAST_ENDPOINT,
+        {
+            "latitude": latitude,
+            "longitude": longitude,
+
+            "current": (
+                "temperature_2m,"
+                "relative_humidity_2m,"
+                "apparent_temperature,"
+                "precipitation,"
+                "rain,"
+                "showers,"
+                "weather_code,"
+                "wind_speed_10m"
+            ),
+
+            "hourly": (
+                "temperature_2m,"
+                "relative_humidity_2m,"
+                "apparent_temperature,"
+                "precipitation_probability,"
+                "precipitation,"
+                "rain,"
+                "showers,"
+                "weather_code,"
+                "wind_speed_10m"
+            ),
+
+            "daily": (
+                "weather_code,"
+                "temperature_2m_max,"
+                "temperature_2m_min,"
+                "precipitation_probability_max,"
+                "precipitation_sum,"
+                "wind_speed_10m_max"
+            ),
+
+            "forecast_days": 5,
+            "timezone": "auto",
+            "temperature_unit": "celsius",
+            "wind_speed_unit": "ms",
+            "precipitation_unit": "mm",
+        },
+    )
+
+
+def _convert_weather_code(code):
+    if code is None:
+        return None
+
+    return WMO_TO_LEGACY.get(int(code), 1001)
+
+
 def get_current_weather(location=None, use_cache=True):
+
     resolved_location = config.get_location(location)
-    key = ("realtime", resolved_location)
+
+    key = (
+        "realtime",
+        resolved_location,
+    )
 
     def request():
-        response = _make_request(
-            config.REALTIME_ENDPOINT,
-            {
-                "location": resolved_location,
-                "units": config.UNITS,
-                "apikey": config.get_api_key(),
-            },
+
+        latitude, longitude, location_name = (
+            _resolve_location(resolved_location)
         )
-        try:
-            values = response["data"]["values"]
-            if not isinstance(values, dict):
-                raise TypeError
-        except (KeyError, TypeError, AttributeError) as error:
-            raise WeatherUnavailableError(
-                "Weather provider returned an unexpected current-weather response."
-            ) from error
+
+        response = _weather_data(
+            latitude,
+            longitude,
+        )
+
+        current = response.get("current") or {}
+        hourly = response.get("hourly") or {}
+
+        times = hourly.get("time") or []
+        probabilities = (
+            hourly.get("precipitation_probability") or []
+        )
+
+        probability = None
+
+        current_time = current.get("time")
+
+        if current_time in times:
+            index = times.index(current_time)
+
+            if index < len(probabilities):
+                probability = probabilities[index]
 
         result = {
-            "temperature_c": values.get("temperature"),
-            "feels_like_c": values.get("temperatureApparent"),
-            "weather_code": values.get("weatherCode"),
-            "humidity_percent": values.get("humidity"),
-            "rainfall_mm_per_hr": values.get("rainIntensity"),
-            "precipitation_probability_percent": values.get("precipitationProbability"),
-            "wind_speed_mps": values.get("windSpeed"),
-            "observation_time": response["data"].get("time"),
+            "location": location_name,
+            "location_name": location_name,
+
+            "temperature_c": current.get(
+                "temperature_2m"
+            ),
+
+            "feels_like_c": current.get(
+                "apparent_temperature"
+            ),
+
+            "weather_code": _convert_weather_code(
+                current.get("weather_code")
+            ),
+
+            "humidity_percent": current.get(
+                "relative_humidity_2m"
+            ),
+
+            "rainfall_mm_per_hr": current.get(
+                "rain",
+                current.get("precipitation"),
+            ),
+
+            "precipitation_probability_percent": probability,
+
+            "wind_speed_mps": current.get(
+                "wind_speed_10m"
+            ),
+
+            "observation_time": current.get("time"),
         }
+
         if use_cache:
             _save_cache(key, result)
+
         return result, 0
 
-    result, age = _cached_or_raise(key, request) if use_cache else request()
-    return _with_status(result, age >= config.CACHE_MINUTES * 60, age)
+    result, age = (
+        _cached_or_raise(key, request)
+        if use_cache
+        else request()
+    )
+
+    return _with_status(
+        result,
+        age >= config.CACHE_MINUTES * 60,
+        age,
+    )
 
 
-def get_forecast(location=None, hours=24, use_cache=True, timestep="1h"):
+def get_forecast(
+    location=None,
+    hours=24,
+    use_cache=True,
+    timestep="1h",
+):
+
     if not 1 <= hours <= 120:
-        raise ValueError("Forecast hours must be between 1 and 120.")
+        raise ValueError(
+            "Forecast hours must be between 1 and 120."
+        )
+
     if timestep not in ("1h", "1d"):
-        raise ValueError("Forecast timestep must be 1h or 1d.")
+        raise ValueError(
+            "Forecast timestep must be 1h or 1d."
+        )
 
     resolved_location = config.get_location(location)
-    key = ("forecast", resolved_location, timestep)
+
+    key = (
+        "forecast",
+        resolved_location,
+        timestep,
+    )
 
     def request():
-        response = _make_request(
-            config.FORECAST_ENDPOINT,
-            {
-                "location": resolved_location,
-                "units": config.UNITS,
-                "timesteps": timestep,
-                "apikey": config.get_api_key(),
-            },
+
+        latitude, longitude, location_name = (
+            _resolve_location(resolved_location)
         )
-        timeline_name = "daily" if timestep == "1d" else "hourly"
-        try:
-            timeline = response["timelines"][timeline_name]
-            if not isinstance(timeline, list):
-                raise TypeError
-        except (KeyError, TypeError, AttributeError) as error:
-            raise WeatherUnavailableError(
-                "Weather provider returned an unexpected forecast response."
-            ) from error
+
+        response = _weather_data(
+            latitude,
+            longitude,
+        )
+
+        if timestep == "1d":
+            timeline = response.get("daily") or {}
+        else:
+            timeline = response.get("hourly") or {}
+
+        times = timeline.get("time") or []
 
         forecast = []
-        for entry in timeline:
-            if not isinstance(entry, dict):
-                continue
-            values = entry.get("values", {})
-            if not isinstance(values, dict):
-                continue
-            forecast.append(
-                {
-                    "time": entry.get("time"),
-                    "temperature_c": values.get("temperature"),
-                    "feels_like_c": values.get("temperatureApparent"),
-                    "temperature_high_c": values.get("temperatureMax"),
-                    "temperature_low_c": values.get("temperatureMin"),
-                    "weather_code": values.get("weatherCode") or values.get("weatherCodeMax"),
-                    "humidity_percent": values.get("humidity"),
-                    "rainfall_mm_per_hr": values.get("rainIntensity"),
-                    "rain_probability_percent": values.get(
-                        "precipitationProbability",
-                        values.get("precipitationProbabilityAvg"),
+
+        for index, timestamp in enumerate(times):
+
+            def value(name):
+                values = timeline.get(name) or []
+
+                if index < len(values):
+                    return values[index]
+
+                return None
+
+            weather_code = value("weather_code")
+
+            if timestep == "1h":
+
+                entry = {
+                    "time": timestamp,
+
+                    "temperature_c": value(
+                        "temperature_2m"
                     ),
+
+                    "feels_like_c": value(
+                        "apparent_temperature"
+                    ),
+
+                    "weather_code": _convert_weather_code(
+                        weather_code
+                    ),
+
+                    "humidity_percent": value(
+                        "relative_humidity_2m"
+                    ),
+
+                    "rainfall_mm_per_hr": value("rain"),
+
+                    "rain_probability_percent": value(
+                        "precipitation_probability"
+                    ),
+
+                    "wind_speed_mps": value(
+                        "wind_speed_10m"
+                    ),
+
+                    "location_name": location_name,
                 }
-            )
+
+            else:
+
+                entry = {
+                    "time": timestamp,
+
+                    "weather_code": _convert_weather_code(
+                        weather_code
+                    ),
+
+                    "temperature_high_c": value(
+                        "temperature_2m_max"
+                    ),
+
+                    "temperature_low_c": value(
+                        "temperature_2m_min"
+                    ),
+
+                    "rain_probability_percent": value(
+                        "precipitation_probability_max"
+                    ),
+
+                    "rainfall_mm": value(
+                        "precipitation_sum"
+                    ),
+
+                    "wind_speed_mps": value(
+                        "wind_speed_10m_max"
+                    ),
+
+                    "location_name": location_name,
+                }
+
+            forecast.append(entry)
+
         if use_cache:
             _save_cache(key, forecast)
+
         return forecast, 0
 
-    result, age = _cached_or_raise(key, request) if use_cache else request()
-    return _with_status(result[:hours], age >= config.CACHE_MINUTES * 60, age)
+    result, age = (
+        _cached_or_raise(key, request)
+        if use_cache
+        else request()
+    )
+
+    return _with_status(
+        result[:hours],
+        age >= config.CACHE_MINUTES * 60,
+        age,
+    )

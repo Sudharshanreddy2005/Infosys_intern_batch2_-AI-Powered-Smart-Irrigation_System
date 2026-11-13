@@ -5,7 +5,7 @@
   const DISPLAY_CACHE_KEY = "jalsaathi.weather.display-cache.v1";
   const CACHE_MILLISECONDS = 10 * 60 * 1000;
   const DISPLAY_CACHE_MAX_AGE = 24 * 60 * 60 * 1000;
-  const MAX_TRANSIENT_WEATHER_RETRIES = 2;
+  const MAX_TRANSIENT_WEATHER_RETRIES = 0;
   const MAX_WEATHER_RETRY_DELAY_MS = 2_000;
   const inFlight = new Map();
   const currentInFlight = new Map();
@@ -70,8 +70,8 @@
       return {
         data: {
           current: saved.current,
-          hourly: [],
-          daily: Array.isArray(saved.daily) ? saved.daily : [],
+          hourly: Array.isArray(saved.hourly) ? saved.hourly : [],
+daily: Array.isArray(saved.daily) ? saved.daily : [],
           selection: {},
         },
         source: "cached",
@@ -104,6 +104,10 @@
       Object.fromEntries(["time", "weather_code", "temperature_high_c", "temperature_low_c", "rain_probability_percent"]
         .filter((field) => item?.[field] !== undefined)
         .map((field) => [field, item[field]])));
+    const hourly = (Array.isArray(data.hourly) ? data.hourly : []).slice(0, 24).map((item) =>
+  Object.fromEntries(["time", "temperature_c", "feels_like_c", "rainfall_mm_per_hr", "rain_probability_percent"]
+    .filter((field) => item?.[field] !== undefined)
+    .map((field) => [field, item[field]])));
     const savedAt = Date.now();
     try {
       localStorage.setItem(DISPLAY_CACHE_KEY, JSON.stringify({
@@ -112,7 +116,8 @@
         locationLabel,
         savedAt,
         current: safeCurrent,
-        daily,
+hourly,
+daily,
       }));
     } catch (error) {
       console.warn("JalSaathi could not save its weather display cache:", error);
@@ -210,22 +215,37 @@
     const normalized = selection.coordinates
       ? { coordinates: validateCoordinates(selection.coordinates) }
       : { location: selection.location?.trim() || "" };
+
     const key = selectionKey(normalized);
     const existing = cache.get(key);
+
     if (!refresh && existing && Date.now() - existing.time < CACHE_MILLISECONDS) {
       return Promise.resolve(existing.data);
     }
+
     if (inFlight.has(key)) return inFlight.get(key);
 
-    const request = Promise.allSettled([
-      requestJson("/weather/current", normalized),
-      forecast(normalized, "1h", 24),
-      forecast(normalized, "1d", 5),
-    ]).then(([currentResult, hourlyResult, dailyResult]) => {
-      if (currentResult.status === "rejected") throw currentResult.reason;
+    const request = Promise.resolve().then(async () => {
+      const currentResult = await requestJson("/weather/current", normalized)
+        .then(value => ({ status: "fulfilled", value }))
+        .catch(reason => ({ status: "rejected", reason }));
+
+      if (currentResult.status === "rejected") {
+        throw currentResult.reason;
+      }
+
       if (!hasDisplayableWeather(currentResult.value)) {
         throw new Error("Weather service returned no usable current conditions.");
       }
+
+      const hourlyResult = await forecast(normalized, "1h", 24)
+        .then(value => ({ status: "fulfilled", value }))
+        .catch(reason => ({ status: "rejected", reason }));
+
+      const dailyResult = await forecast(normalized, "1d", 5)
+        .then(value => ({ status: "fulfilled", value }))
+        .catch(reason => ({ status: "rejected", reason }));
+
       const data = {
         current: currentResult.value,
         hourly: hourlyResult.status === "fulfilled" && Array.isArray(hourlyResult.value.data)
@@ -238,12 +258,14 @@
         dailyError: dailyResult.status === "rejected" ? dailyResult.reason : null,
         selection: normalized,
       };
-      cache.set(key, { time: Date.now(), data });
-      return data;
-    }).finally(() => inFlight.delete(key));
-    inFlight.set(key, request);
-    return request;
-  };
+
+    cache.set(key, { time: Date.now(), data });
+    return data;
+  }).finally(() => inFlight.delete(key));
+
+  inFlight.set(key, request);
+  return request;
+};
 
   const loadCurrent = (selection = {}, { refresh = false } = {}) => {
     const normalized = selection.coordinates
@@ -698,21 +720,21 @@
               ? "Chosen location"
               : "Configured location");
 
-      if (result.source !== "cached" && hourlyRows instanceof HTMLElement) {
+      if (hourlyRows instanceof HTMLElement) {
         hourlyRows.innerHTML = (data?.hourly || []).map((item) => `<tr>
           <td>${escapeText(formatTime(item.time))}</td><td>${escapeText(formatNumber(item.temperature_c, "°C"))}</td>
           <td>${escapeText(formatNumber(item.feels_like_c, "°C"))}</td><td>${escapeText(formatNumber(item.rainfall_mm_per_hr, " mm/h"))}</td>
           <td>${escapeText(formatNumber(item.rain_probability_percent, "%"))}</td>
         </tr>`).join("");
       }
-      if (result.source !== "cached" && dailyRows instanceof HTMLElement) {
+      if (dailyRows instanceof HTMLElement) {
         dailyRows.innerHTML = (data?.daily || []).map((item) => `<tr>
           <td>${escapeText(formatTime(item.time))}</td><td>${escapeText(condition(item.weather_code))}</td>
           <td>${escapeText(formatNumber(item.temperature_high_c, "°C"))}</td><td>${escapeText(formatNumber(item.temperature_low_c, "°C"))}</td>
           <td>${escapeText(formatNumber(item.rain_probability_percent, "%"))}</td>
         </tr>`).join("");
       }
-      if (result.source !== "cached") {
+      {
         setValue(root, "[data-forecast-status]", data?.hourly?.length
           ? `${data.hourly.length} hourly periods${data.hourlyError ? " · daily data unavailable" : ""}`
           : data?.hourlyError?.message || "Hourly forecast unavailable");
@@ -767,13 +789,13 @@
           "[data-weather-rain-probability]",
         ]) setValue(currentRoot, selector, "Loading…");
       }
-      load({ location }, { refresh: true }).then((data) => {
+      load({ location }, { refresh: false }).then((data) => {
         applyResult({ data, source: "manual" }, generation);
       }).catch((error) => renderFailure(error, generation));
     });
     const generation = ++requestGeneration;
     if (!hasWeather) status.textContent = "Loading weather…";
-    loadAutomaticWithFallback({ refresh: true }).then((result) => {
+    loadAutomaticWithFallback({ refresh: false }).then((result) => {
       if (!applyResult(result, generation)) {
         renderFailure(result.weatherError || new Error("Weather data is unavailable."), generation);
       }

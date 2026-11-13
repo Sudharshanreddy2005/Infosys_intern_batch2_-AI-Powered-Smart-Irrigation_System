@@ -27,7 +27,9 @@ from sqlalchemy.engine import URL
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
+
 from models import (
+    FarmerSensorReading,
     AuthSession,
     Base,
     Farmer,
@@ -35,11 +37,14 @@ from models import (
     FarmerField,
     IrrigationReservoir,
     IrrigationSchedule,
+    FarmerSensorDevice,
 )
 from schemas import (
     CropCreate,
     CropPatch,
     CropResponse,
+    FarmerSensorReadingCreate,
+    FarmerSensorReadingResponse,
     ExperimentalPredictionRequest,
     ExperimentalPredictionResponse,
     EXPERIMENTAL_CROP_NAMES,
@@ -58,8 +63,12 @@ from schemas import (
     TranslationResponse,
     WeatherCoordinates,
     WaterRequirementRequest,
+    FarmerSensorDeviceCreate,
+    FarmerSensorDeviceRegistrationResponse,
+    FarmerSensorDeviceResponse,
 )
 from weather_api.integrations.config import get_location
+from irrigation_optimizer.weather_adapter import fetch_current_weather
 from weather_api.integrations.weather_api import (
     WeatherAuthError,
     WeatherUnavailableError,
@@ -86,6 +95,7 @@ from irrigation_optimizer.data_adapter import make_field as make_optimizer_field
 from irrigation_optimizer.optimizer import optimize_schedule, plans_to_dicts
 from irrigation_optimizer.schemas import (
     IrrigationPlanRequest,
+    ManualIrrigationScheduleRequest,
     ReservoirCreate,
     ReservoirWaterUpdate,
 )
@@ -189,6 +199,11 @@ class Model2Request(BaseModel):
     et0_mm_day: float = Field(ge=0)
     crop_coefficient_kc: float = Field(gt=0)
     previous_irrigation_mm: float = Field(ge=0)
+
+class Model2ExperimentalRequest(BaseModel):
+    field_id: int = Field(gt=0)
+    crop_id: int = Field(gt=0)
+    zone: int = Field(ge=1, le=5)
 
 
 class Model3Request(BaseModel):
@@ -962,6 +977,14 @@ def generate_irrigation_plan(
         irrigation_plan.litres = 0.0
         irrigation_plan.net_mm = 0.0
         irrigation_plan.sessions = []
+        irrigation_plan.notes = [
+            note for note in irrigation_plan.notes
+            if not (
+                "min of irrigation could not be scheduled today" in note
+                or "no free time slot found" in note
+                or note.startswith("Per-event cap of ")
+            )
+        ]
         irrigation_plan.depletion_end_mm = round(projected_need_mm, 2)
         irrigation_plan.notes.append(
             f"Insufficient unreserved reservoir water: {shortage_liters:.1f} L short of the "
@@ -974,6 +997,14 @@ def generate_irrigation_plan(
         irrigation_plan.net_mm = 0.0
         irrigation_plan.litres = 0.0
         irrigation_plan.sessions = []
+        irrigation_plan.notes = [
+            note for note in irrigation_plan.notes
+            if not (
+                "min of irrigation could not be scheduled today" in note
+                or "no free time slot found" in note
+                or note.startswith("Per-event cap of ")
+            )
+        ]
         irrigation_plan.depletion_end_mm = round(projected_need_mm, 2)
         irrigation_plan.notes.append(
             f"Insufficient unreserved reservoir water: {shortage_liters:.1f} L short. "
@@ -1047,7 +1078,108 @@ def generate_irrigation_plan(
         "reservoir": reservoir_response(reservoir),
         "status": status or irrigation_plan.action,
     }
+@app.post("/api/irrigation/schedules", status_code=201)
+def create_manual_irrigation_schedule(
+    payload: ManualIrrigationScheduleRequest,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    farmer_id = context[0].id
 
+    field = _owned_field(db, farmer_id, payload.field_id)
+    reservoir = _owned_irrigation_reservoir(
+        db,
+        farmer_id,
+        payload.reservoir_id,
+        field.id,
+        lock=True,
+    )
+
+    now = datetime.now(irrigation_weather_adapter.IST)
+    start_at = datetime.combine(
+        payload.scheduled_date,
+        payload.start_time,
+        tzinfo=irrigation_weather_adapter.IST,
+    )
+    end_at = start_at + timedelta(minutes=payload.duration_minutes)
+
+    if start_at <= now:
+        raise HTTPException(
+            status_code=422,
+            detail="Choose a future date and start time.",
+        )
+
+    if end_at.date() != payload.scheduled_date:
+        raise HTTPException(
+            status_code=422,
+            detail="The irrigation schedule must finish on the same date.",
+        )
+
+    available_liters = max(
+        0.0,
+        reservoir.available_liters - reservoir.reserved_liters,
+    )
+
+    if payload.water_liters > available_liters:
+        shortage = payload.water_liters - available_liters
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Not enough unreserved water. "
+                f"Available: {available_liters:.1f} L; "
+                f"requested: {payload.water_liters:.1f} L; "
+                f"shortage: {shortage:.1f} L."
+            ),
+        )
+
+    crop_record = db.scalar(
+        select(FarmerCrop)
+        .where(
+            FarmerCrop.farmer_id == farmer_id,
+            FarmerCrop.field_id == field.id,
+        )
+        .order_by(FarmerCrop.updated_at.desc(), FarmerCrop.id.desc())
+        .limit(1)
+    )
+    crop_name = (crop_record.name if crop_record else field.crop) or ""
+
+    schedule = IrrigationSchedule(
+        farmer_id=farmer_id,
+        field_id=field.id,
+        reservoir_id=reservoir.id,
+        field_name=field.name,
+        crop_name=crop_name,
+        scheduled_date=payload.scheduled_date,
+        start_time=payload.start_time.strftime("%H:%M"),
+        end_time=end_at.strftime("%H:%M"),
+        water_liters=payload.water_liters,
+        duration_minutes=payload.duration_minutes,
+        irrigation_method=payload.irrigation_method,
+        status="recommended",
+        plan_snapshot={
+            "action": "manual_schedule",
+            "source": "farmer_entered",
+            "available_water_liters": round(available_liters, 1),
+            "requested_water_liters": round(payload.water_liters, 1),
+            "notes": [
+                "Manually created by the farmer.",
+                "Water will be reserved only after confirmation.",
+            ],
+        },
+    )
+
+    try:
+        db.add(schedule)
+        db.commit()
+        db.refresh(schedule)
+    except Exception:
+        db.rollback()
+        raise
+
+    return {
+        "schedule": schedule_response(schedule),
+        "message": "Manual irrigation schedule created. Confirm it to reserve water.",
+    }
 
 @app.get("/api/irrigation/schedules")
 def list_irrigation_schedules(
@@ -1375,124 +1507,504 @@ def reduced_weather_prediction(
     context: tuple[Farmer, AuthSession] = Depends(require_csrf),
 ):
     response.headers["Cache-Control"] = "no-store"
-    field = _owned_field(db, context[0].id, payload.field_id)
+
+    farmer_id = context[0].id
+
+    # 1. Verify field ownership and coordinates.
+    field = _owned_field(db, farmer_id, payload.field_id)
+
     if field.latitude is None or field.longitude is None:
         raise HTTPException(
             status_code=422,
-            detail="This field has no saved coordinates for current-weather inference.",
+            detail="This field has no saved coordinates for weather-based irrigation assessment.",
         )
-    _limit_weather_requests(context[0].id)
-    location = f"{field.latitude:.6f},{field.longitude:.6f}"
-    try:
-        weather = get_current_weather(location)
-    except (ValueError, WeatherUnavailableError, WeatherAuthError) as error:
-        raise _weather_error(error) from error
 
-    if not isinstance(weather, dict):
-        raise HTTPException(
-            status_code=422,
-            detail="Field-specific weather is invalid; no prediction was generated.",
+    _limit_weather_requests(farmer_id)
+
+    location = f"{field.latitude:.6f},{field.longitude:.6f}"
+
+    # 2. Retrieve the latest saved sensor reading for this field.
+    reading = db.scalars(
+        select(FarmerSensorReading)
+        .where(
+            FarmerSensorReading.farmer_id == farmer_id,
+            FarmerSensorReading.field_id == field.id,
         )
-    observation_time = weather.get("observation_time")
-    if not isinstance(observation_time, str):
-        raise HTTPException(
-            status_code=422,
-            detail="Fresh field-specific weather is unavailable; no prediction was generated.",
+        .order_by(
+            FarmerSensorReading.recorded_at.desc(),
+            FarmerSensorReading.id.desc(),
         )
-    try:
-        observed_at = datetime.fromisoformat(observation_time.replace("Z", "+00:00"))
-    except ValueError as error:
+        .limit(1)
+    ).first()
+
+    if reading is None:
         raise HTTPException(
             status_code=422,
-            detail="The field weather observation timestamp is invalid; no prediction was generated.",
-        ) from error
-    data_age = weather.get("data_age_minutes")
+            detail="No saved soil-moisture reading is available for this field.",
+        )
+
+    if reading.recorded_at.tzinfo is None:
+        raise HTTPException(
+            status_code=422,
+            detail="The latest sensor reading has an invalid timestamp.",
+        )
+
+    reading_time = reading.recorded_at.astimezone(timezone.utc)
+    reading_age_seconds = (
+        datetime.now(timezone.utc) - reading_time
+    ).total_seconds()
+
+    if reading_age_seconds < -60:
+        raise HTTPException(
+            status_code=422,
+            detail="The latest sensor reading has a timestamp too far in the future.",
+        )
+
+    moisture = reading.soil_moisture_percent
+
     if (
-        weather.get("is_stale") is not False
-        or observed_at.tzinfo is None
-        or not isinstance(data_age, (int, float))
-        or isinstance(data_age, bool)
-        or not math.isfinite(data_age)
-        or data_age < 0
-        or data_age >= 15
+        isinstance(moisture, bool)
+        or not isinstance(moisture, (int, float))
+        or not math.isfinite(moisture)
+        or not 0 <= moisture <= 100
     ):
         raise HTTPException(
             status_code=422,
-            detail="Fresh field-specific weather is unavailable; no prediction was generated.",
-        )
-    now = datetime.now(timezone.utc)
-    observed_at = observed_at.astimezone(timezone.utc)
-    observation_age_seconds = (now - observed_at).total_seconds()
-    if observation_age_seconds < -60 or observation_age_seconds >= 15 * 60:
-        raise HTTPException(
-            status_code=422,
-            detail="Fresh field-specific weather is unavailable; no prediction was generated.",
+            detail="The saved soil-moisture reading is invalid.",
         )
 
-    record = {}
-    for name in ("temperature_c", "humidity_percent"):
-        value = weather.get(name)
-        if (
-            isinstance(value, bool)
-            or not isinstance(value, (int, float))
-            or not math.isfinite(value)
-        ):
-            raise HTTPException(
-                status_code=422,
-                detail=f"Field weather is missing a valid {name}; no prediction was generated.",
-            )
-        record[name] = float(value)
-    if not 0 <= record["humidity_percent"] <= 100:
+    # 3. Retrieve the latest crop information for this field.
+    crop_record = db.scalars(
+        select(FarmerCrop)
+        .where(
+            FarmerCrop.farmer_id == farmer_id,
+            FarmerCrop.field_id == field.id,
+        )
+        .order_by(FarmerCrop.updated_at.desc())
+        .limit(1)
+    ).first()
+
+    crop_name = (
+        crop_record.name
+        if crop_record and crop_record.name
+        else field.crop
+    )
+    if not crop_name:
         raise HTTPException(
             status_code=422,
-            detail="Field humidity is outside the percent scale; no prediction was generated.",
+            detail="Crop information is not available for this field.",
         )
 
+    crop_key = _irrigation_crop_key(crop_name)
+
+    growth_stage = (
+        crop_record.growth_stage
+        if crop_record
+        else None
+    )
+    growth_stage_code = _irrigation_stage_code(growth_stage)
+
+    if growth_stage_code is None:
+        raise HTTPException(
+            status_code=422,
+            detail="A supported crop growth stage is required for irrigation assessment.",
+        )
+
+    # 4. Retrieve the field-specific daily weather forecast.
     try:
-        bundle, predict_records = _load_reduced_weather_predictor()
-        for name, value in record.items():
-            training_range = bundle["metadata"]["feature_training_ranges"][name]
-            if not training_range["minimum"] <= value <= training_range["maximum"]:
-                raise HTTPException(
-                    status_code=422,
-                    detail=(
-                        f"Field weather {name} is outside the model's observed "
-                        "training range; extrapolation is blocked."
-                    ),
+        forecast_days, forecast_warnings = (
+            irrigation_weather_adapter.fetch_daily_forecast(
+                location=location,
+                days=2,
+            )
+        )
+    except Exception as error:
+        logger.exception(
+            "Field-specific daily forecast is unavailable."
+        )
+        raise _weather_error(error) from error
+
+    if not forecast_days:
+        raise HTTPException(
+            status_code=503,
+            detail="No daily weather forecast is available for this field.",
+        )
+
+    today_forecast = forecast_days[0]
+    tomorrow_forecast = (
+        forecast_days[1]
+        if len(forecast_days) > 1
+        else None
+    )
+
+    # 5. Identify the weather source.
+    warning_text = " ".join(
+        str(item) for item in (forecast_warnings or [])
+    ).lower()
+
+    weather_source = (
+        "open_meteo"
+        if "open-meteo" in warning_text
+        else "tomorrow_io"
+    )
+
+    # 6. Build a field configuration for the existing water-balance
+    # calculations.
+    #
+    # Soil type code 2 is the agreed loam fallback because the current
+    # field database does not store soil type.
+    #
+    # Drip and pump flow are configuration placeholders required by
+    # make_optimizer_field. This endpoint does not operate a pump or
+    # create an irrigation schedule.
+    try:
+        optimizer_field = make_optimizer_field(
+            field_id=str(field.id),
+            crop_label=crop_key,
+            growth_stage_code=growth_stage_code,
+            soil_type_code=2,
+            soil_moisture_pct=float(moisture),
+            area_m2=_field_area_m2(field),
+            pump_flow_lpm=1.0,
+            irrigation_method="drip",
+            latitude=float(field.latitude),
+        )
+
+        kc = irrigation_water_calc.get_kc(optimizer_field)
+
+        taw_mm, raw_mm = (
+            irrigation_water_calc.soil_water_limits(
+                optimizer_field
+            )
+        )
+
+        depletion_mm, _ = (
+            irrigation_water_calc.initial_depletion(
+                optimizer_field,
+                taw_mm,
+            )
+        )
+
+        # 7. Calculate today's crop water use.
+        et0_mm = today_forecast.et0_mm
+
+        if et0_mm is None:
+            et0_mm = irrigation_water_calc.hargreaves_et0(
+                today_forecast.temp_min,
+                today_forecast.temp_max,
+                float(field.latitude),
+                today_forecast.date,
+            )
+
+        etc_mm = irrigation_water_calc.crop_etc(
+            et0_mm,
+            kc,
+        )
+
+        effective_rain_mm = (
+            irrigation_water_calc.effective_rainfall(
+                today_forecast.rain_mm,
+                today_forecast.rain_prob,
+            )
+        )
+
+        projected_depletion_mm = max(
+            0.0,
+            depletion_mm + etc_mm - effective_rain_mm,
+        )
+
+        irrigation_needed = projected_depletion_mm >= raw_mm
+
+        decision = "hold"
+        reason = (
+            "Current soil-water depletion is below the "
+            "irrigation threshold."
+        )
+
+        if irrigation_needed:
+            decision = "irrigate"
+            reason = (
+                "Projected soil-water depletion reaches the "
+                "irrigation threshold after accounting for "
+                "crop water use and effective rainfall."
+            )
+
+            # 8. If today's threshold is crossed, check whether
+            # tomorrow's forecast rainfall is likely to reduce
+            # depletion below the threshold.
+            if tomorrow_forecast is not None:
+                tomorrow_et0 = tomorrow_forecast.et0_mm
+
+                if tomorrow_et0 is None:
+                    tomorrow_et0 = (
+                        irrigation_water_calc.hargreaves_et0(
+                            tomorrow_forecast.temp_min,
+                            tomorrow_forecast.temp_max,
+                            float(field.latitude),
+                            tomorrow_forecast.date,
+                        )
+                    )
+
+                tomorrow_etc = (
+                    irrigation_water_calc.crop_etc(
+                        tomorrow_et0,
+                        kc,
+                    )
                 )
-        prediction = predict_records(bundle, [record])[0]
-        if (
-            type(prediction.get("prediction")) is not int
-            or prediction["prediction"] not in (0, 1)
-            or isinstance(prediction.get("proxy_positive_probability"), bool)
-            or not isinstance(prediction.get("proxy_positive_probability"), (int, float))
-            or not math.isfinite(prediction["proxy_positive_probability"])
-            or not 0 <= prediction["proxy_positive_probability"] <= 1
-        ):
-            raise ValueError("The reduced-weather model returned an invalid binary result.")
+
+                tomorrow_effective_rain = (
+                    irrigation_water_calc.effective_rainfall(
+                        tomorrow_forecast.rain_mm,
+                        tomorrow_forecast.rain_prob,
+                    )
+                )
+
+                tomorrow_projected_depletion = max(
+                    0.0,
+                    projected_depletion_mm
+                    + tomorrow_etc
+                    - tomorrow_effective_rain,
+                )
+
+                if tomorrow_projected_depletion < raw_mm:
+                    decision = "hold"
+                    reason = (
+                        "Rainfall expected tomorrow is likely "
+                        "to bring projected soil-water depletion "
+                        "below the irrigation threshold. "
+                        "Reassess after the forecast rainfall."
+                    )
+
     except HTTPException:
         raise
     except Exception as error:
-        logger.exception("Reduced-weather proxy prediction is unavailable.")
+        logger.exception(
+            "Field-specific irrigation assessment failed."
+        )
         raise HTTPException(
             status_code=503,
-            detail="The experimental reduced-weather model is currently unavailable.",
+            detail="The irrigation assessment could not be completed with the available field and weather data.",
+        ) from error
+
+    # 9. Return the field-specific irrigation assessment.
+    return {
+        "irrigation_needed": decision == "irrigate",
+        "decision": decision,
+        "reason": reason,
+        "soil_moisture_percent": float(moisture),
+        "rainfall_mm": float(today_forecast.rain_mm),
+        "rain_probability_percent": (
+            float(today_forecast.rain_prob) * 100
+        ),
+        "et0_mm": float(et0_mm),
+        "forecast_date": today_forecast.date,
+        "observation_time": reading_time,
+        "weather_source": weather_source,
+    }
+
+@app.post("/api/ml/water-requirement/experimental")
+def experimental_water_requirement_prediction(
+    payload: Model2ExperimentalRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    response.headers["Cache-Control"] = "no-store"
+    farmer_id = context[0].id
+
+    field = _owned_field(db, farmer_id, payload.field_id)
+    crop = _owned_crop(db, farmer_id, payload.crop_id)
+
+    if crop.field_id != field.id:
+        raise HTTPException(status_code=404, detail="Crop not found for this field.")
+
+    if not crop.name and not field.crop:
+        raise HTTPException(status_code=422, detail="Crop information is unavailable.")
+
+    area_m2 = _field_area_m2(field)
+    area_acres = area_m2 / 4046.8564224
+
+    if not math.isfinite(area_acres) or area_acres <= 0:
+        raise HTTPException(status_code=422, detail="Field area is invalid.")
+
+    sources = {}
+    illustrative_inputs = []
+
+    # Crop information
+    crop_name = (crop.name or field.crop).strip().lower()
+    sources["crop_type"] = "saved crop record" if crop.name else "field crop"
+
+    stage_code = _irrigation_stage_code(crop.growth_stage)
+    if stage_code is None:
+        stage_code = 1
+        sources["growth_stage"] = "illustrative default: seedlings"
+        illustrative_inputs.append("growth_stage")
+    else:
+        sources["growth_stage"] = "saved crop growth stage"
+
+    # Latest field sensor reading
+    reading = db.scalars(
+        select(FarmerSensorReading)
+        .where(
+            FarmerSensorReading.farmer_id == farmer_id,
+            FarmerSensorReading.field_id == field.id,
+        )
+        .order_by(
+            FarmerSensorReading.recorded_at.desc(),
+            FarmerSensorReading.id.desc(),
+        )
+        .limit(1)
+    ).first()
+
+    if reading is not None:
+        moisture = float(reading.soil_moisture_percent)
+        sources["soil_moisture_percent"] = "latest saved sensor reading"
+    else:
+        moisture = 28.3
+        sources["soil_moisture_percent"] = "illustrative default"
+        illustrative_inputs.append("soil_moisture_percent")
+
+    if reading is not None and reading.humidity_percent is not None:
+        humidity = float(reading.humidity_percent)
+        sources["humidity_percent"] = "latest saved sensor reading"
+    else:
+        humidity = 55.0
+        sources["humidity_percent"] = "illustrative default"
+        illustrative_inputs.append("humidity_percent")
+
+    # Weather values: use field forecast when coordinates and service are available.
+    temperature = 28.0
+    rainfall = 1.0
+    forecast_rainfall = 2.0
+    et0 = 4.0
+
+    weather_available = False
+
+    if field.latitude is not None and field.longitude is not None:
+        try:
+            forecast_days, _warnings = (
+                irrigation_weather_adapter.fetch_daily_forecast(
+                    location=f"{field.latitude:.6f},{field.longitude:.6f}",
+                    days=2,
+                )
+            )
+
+            if forecast_days:
+                today = forecast_days[0]
+                temperature = (float(today.temp_min) + float(today.temp_max)) / 2
+                rainfall = max(0.0, float(today.rain_mm))
+
+                if today.et0_mm is not None:
+                    et0 = max(0.0, float(today.et0_mm))
+
+                if len(forecast_days) > 1:
+                    forecast_rainfall = max(
+                        0.0, float(forecast_days[1].rain_mm)
+                    )
+
+                weather_available = True
+        except Exception:
+            logger.warning(
+                "Experimental Model 2 weather data unavailable for field %s.",
+                field.id,
+            )
+
+    for key in ("temperature_c", "rainfall_mm", "forecast_rainfall_mm", "et0_mm_day"):
+        sources[key] = "field weather forecast" if weather_available else "illustrative default"
+        if not weather_available:
+            illustrative_inputs.append(key)
+
+    # The database does not currently store field soil type.
+    soil_type = 2
+    sources["soil_type"] = "illustrative loam default"
+    illustrative_inputs.append("soil_type")
+
+    # Use the most recent completed irrigation schedule when available.
+    previous_schedule = db.scalars(
+        select(IrrigationSchedule)
+        .where(
+            IrrigationSchedule.farmer_id == farmer_id,
+            IrrigationSchedule.field_id == field.id,
+            IrrigationSchedule.status == "completed",
+        )
+        .order_by(
+            IrrigationSchedule.scheduled_date.desc(),
+            IrrigationSchedule.created_at.desc(),
+        )
+        .limit(1)
+    ).first()
+
+    if previous_schedule is not None:
+        irrigation_method = previous_schedule.irrigation_method.lower()
+        previous_irrigation = max(
+            0.0, float(previous_schedule.water_liters) / area_m2
+        )
+        sources["irrigation_method"] = "latest completed irrigation schedule"
+        sources["previous_irrigation_mm"] = "latest completed irrigation schedule"
+    else:
+        irrigation_method = "drip"
+        previous_irrigation = 0.0
+        sources["irrigation_method"] = "illustrative default"
+        sources["previous_irrigation_mm"] = "illustrative default"
+        illustrative_inputs.extend(["irrigation_method", "previous_irrigation_mm"])
+
+    # These features are not currently stored in the field or sensor records.
+    wind_speed = 2.5
+    crop_coefficient = 1.0
+    sources["wind_speed"] = "illustrative default"
+    sources["crop_coefficient_kc"] = "illustrative default"
+    illustrative_inputs.extend(["wind_speed", "crop_coefficient_kc"])
+
+    features = {
+        "crop_type": crop_name,
+        "growth_stage": stage_code,
+        "soil_type": soil_type,
+        "soil_moisture_percent": moisture,
+        "temperature_c": temperature,
+        "humidity_percent": humidity,
+        "rainfall_mm": rainfall,
+        "forecast_rainfall_mm": forecast_rainfall,
+        "field_area_acres": area_acres,
+        "irrigation_method": irrigation_method,
+        "wind_speed": wind_speed,
+        "et0_mm_day": et0,
+        "crop_coefficient_kc": crop_coefficient,
+        "previous_irrigation_mm": previous_irrigation,
+    }
+
+    try:
+        model = _load_legacy_model2()
+        input_data = pd.DataFrame([features])
+        prediction = float(model.predict(input_data)[0])
+
+        if not math.isfinite(prediction):
+            raise ValueError("Model returned a non-finite prediction.")
+
+    except Exception as error:
+        logger.exception("Experimental Model 2 prediction failed.")
+        raise HTTPException(
+            status_code=503,
+            detail="The experimental Model 2 prediction could not be completed.",
         ) from error
 
     return {
-        **prediction,
-        "proxy_rule": bundle["metadata"]["proxy_rule"],
-        "model_status": "Experimental",
-        "dataset_provenance": bundle["metadata"]["dataset_provenance"],
-        "selected_model": bundle["metadata"]["model_name"],
-        "feature_inputs": record,
-        "feature_sources": {
-            "temperature_c": "selected_field_current_weather_api",
-            "humidity_percent": "selected_field_current_weather_api",
-        },
-        "observation_time": observed_at,
+        "prediction_status": "experimental",
+        "estimated_water_liters": round(max(0.0, prediction), 2),
+        "unit": "litres",
+        "prediction_period_hours": 24,
+        "model": "HistGradientBoostingRegressor",
+        "selected_field": field.name,
+        "selected_crop": crop_name,
+        "selected_zone": payload.zone,
+        "inputs": features,
+        "input_sources": sources,
+        "illustrative_inputs": sorted(set(illustrative_inputs)),
+        "prediction_timestamp": datetime.now(timezone.utc).isoformat(),
+        "data_note": (
+            "Experimental demonstration using a model trained and evaluated "
+            "on synthetic data. This is not a validated irrigation recommendation."
+        ),
     }
-
 
 @app.post("/api/ml/water-requirement")
 def water_requirement_prediction(
@@ -1860,6 +2372,289 @@ def test_database():
 # GET SENSOR READINGS
 # --------------------------------------------------
 
+@app.post(
+    "/api/fields/{field_id}/sensor-readings",
+    status_code=201,
+    response_model=FarmerSensorReadingResponse,
+)
+def create_field_sensor_reading(
+    field_id: int,
+    payload: FarmerSensorReadingCreate,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+
+):
+    _owned_field(db, context[0].id, field_id)
+
+    if (
+        payload.recorded_at.tzinfo is None
+        or payload.recorded_at.utcoffset() is None
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="recorded_at must include a timezone.",
+        )
+
+    reading = FarmerSensorReading(
+        farmer_id=context[0].id,
+        field_id=field_id,
+        **payload.model_dump(),
+    )
+    db.add(reading)
+    db.commit()
+    db.refresh(reading)
+
+    return reading
+
+
+@app.get(
+    "/api/fields/{field_id}/sensor-readings",
+    response_model=list[FarmerSensorReadingResponse],
+)
+def get_field_sensor_readings(
+    field_id: int,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+    limit: int = Query(default=5000, ge=1, le=5000),
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(get_auth_context),
+):
+    _owned_field(db, context[0].id, field_id)
+
+    for name, value in (("start_at", start_at), ("end_at", end_at)):
+        if value is not None and (
+            value.tzinfo is None or value.utcoffset() is None
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail=f"{name} must include a timezone.",
+            )
+
+    if start_at is not None and end_at is not None and start_at >= end_at:
+        raise HTTPException(
+            status_code=422,
+            detail="start_at must be earlier than end_at.",
+        )
+
+    statement = select(FarmerSensorReading).where(
+        FarmerSensorReading.farmer_id == context[0].id,
+        FarmerSensorReading.field_id == field_id,
+    )
+
+    if start_at is not None:
+        statement = statement.where(
+            FarmerSensorReading.recorded_at >= start_at
+        )
+
+    if end_at is not None:
+        statement = statement.where(
+            FarmerSensorReading.recorded_at <= end_at
+        )
+
+    statement = statement.order_by(
+        FarmerSensorReading.recorded_at.desc(),
+        FarmerSensorReading.id.desc(),
+    ).limit(limit)
+
+    return db.scalars(statement).all()
+
+
+@app.post(
+    "/api/fields/{field_id}/sensor-devices",
+    status_code=201,
+    response_model=FarmerSensorDeviceRegistrationResponse,
+)
+def register_field_sensor_device(
+    field_id: int,
+    payload: FarmerSensorDeviceCreate,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    _owned_field(db, context[0].id, field_id)
+
+    device_name = payload.name.strip()
+    if not device_name:
+        raise HTTPException(
+            status_code=422,
+            detail="Device name cannot be empty.",
+        )
+
+    device = db.scalar(
+        select(FarmerSensorDevice).where(
+            FarmerSensorDevice.field_id == field_id
+        )
+    )
+
+    if device is not None and device.is_active:
+        raise HTTPException(
+            status_code=409,
+            detail="An active sensor device is already registered for this field.",
+        )
+
+    token = secrets.token_urlsafe(32)
+    device_id = f"JAL-{secrets.token_hex(8).upper()}"
+
+    if device is None:
+        device = FarmerSensorDevice(
+            farmer_id=context[0].id,
+            field_id=field_id,
+            device_id=device_id,
+            name=device_name,
+            token_hash=_digest(token),
+            is_active=True,
+        )
+        db.add(device)
+    else:
+        # A revoked device can be replaced with a new identity and token.
+        device.farmer_id = context[0].id
+        device.device_id = device_id
+        device.name = device_name
+        device.token_hash = _digest(token)
+        device.is_active = True
+        device.last_seen_at = None
+
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="A sensor device is already registered for this field.",
+        )
+
+    db.refresh(device)
+
+    # The original secret is returned only at registration time.
+    return FarmerSensorDeviceRegistrationResponse(
+        id=device.id,
+        field_id=device.field_id,
+        device_id=device.device_id,
+        name=device.name,
+        token=token,
+        created_at=device.created_at,
+    )
+
+
+@app.get(
+    "/api/fields/{field_id}/sensor-devices",
+    response_model=list[FarmerSensorDeviceResponse],
+)
+def list_field_sensor_devices(
+    field_id: int,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(get_auth_context),
+):
+    _owned_field(db, context[0].id, field_id)
+
+    statement = (
+        select(FarmerSensorDevice)
+        .where(
+            FarmerSensorDevice.farmer_id == context[0].id,
+            FarmerSensorDevice.field_id == field_id,
+        )
+        .order_by(FarmerSensorDevice.id)
+    )
+
+    return db.scalars(statement).all()
+
+
+@app.post(
+    "/api/fields/{field_id}/sensor-devices/{device_id}/revoke",
+    response_model=FarmerSensorDeviceResponse,
+)
+def revoke_field_sensor_device(
+    field_id: int,
+    device_id: int,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    _owned_field(db, context[0].id, field_id)
+
+    device = db.scalar(
+        select(FarmerSensorDevice).where(
+            FarmerSensorDevice.id == device_id,
+            FarmerSensorDevice.farmer_id == context[0].id,
+            FarmerSensorDevice.field_id == field_id,
+        )
+    )
+
+    if device is None:
+        raise HTTPException(status_code=404, detail="Sensor device not found.")
+
+    device.is_active = False
+    db.commit()
+    db.refresh(device)
+
+    return device
+
+
+@app.post(
+    "/api/sensor-data",
+    status_code=201,
+    response_model=FarmerSensorReadingResponse,
+)
+def ingest_device_sensor_reading(
+    payload: FarmerSensorReadingCreate,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    # Devices authenticate with their registered bearer token.
+    if not authorization:
+        raise HTTPException(
+            status_code=401,
+            detail="Sensor device authentication required.",
+        )
+
+    scheme, separator, raw_token = authorization.partition(" ")
+
+    if (
+        not separator
+        or scheme.lower() != "bearer"
+        or not raw_token
+        or len(raw_token) > 128
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid sensor device credentials.",
+        )
+
+    device = db.scalar(
+        select(FarmerSensorDevice).where(
+            FarmerSensorDevice.token_hash == _digest(raw_token)
+        )
+    )
+
+    if device is None or not device.is_active:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or inactive sensor device.",
+        )
+
+    if (
+        payload.recorded_at.tzinfo is None
+        or payload.recorded_at.utcoffset() is None
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="recorded_at must include a timezone.",
+        )
+
+    # The server obtains ownership and field ID from the device record.
+    reading = FarmerSensorReading(
+        farmer_id=device.farmer_id,
+        field_id=device.field_id,
+        **payload.model_dump(),
+    )
+
+    device.last_seen_at = datetime.now(timezone.utc)
+
+    db.add(reading)
+    db.commit()
+    db.refresh(reading)
+
+    return reading
+
+
 @app.get("/sensor-readings")
 def get_sensor_readings(limit: int = Query(default=10, ge=1, le=100)):
     try:
@@ -2085,116 +2880,18 @@ def predict_water_requirement(request: Model2Request):
 
 @app.post("/api/models/model3/predict")
 def predict_soil_moisture(request: Model3Request):
+    current_moisture = request.current_moisture_percent
 
-    try:
-        model3 = _load_model3()
-        current_moisture = request.current_moisture_percent
-
-        # Zones 1, 2, 3 and 5 use persistence strategy
-        if request.zone in [1, 2, 3, 5]:
-
-            response = {
-                "model": "Model 3 - 24-Hour Soil Moisture Prediction",
-                "zone": request.zone,
-                "strategy": "persistence",
-                "current_moisture_percent": current_moisture,
-                "predicted_moisture_24h_percent": current_moisture,
-                "unit": "percent",
-                "note": "Persistence estimate: current moisture is carried forward."
-            }
-
-            if request.zone == 3:
-                response["warning"] = (
-                    "Limited reliable data; predictions require caution."
-                )
-
-            return response
-
-        # Zone 4 requires all 13 model features
-        required_features = [
-            "weather_temp",
-            "weather_humidity",
-            "weather_rain",
-            "weather_pressure",
-            "weather_wind_speed",
-            "weather_radiation",
-            "soil_temperature_0-7cm",
-            "soil_temperature_7-18cm",
-            "month",
-            "day",
-            "hour",
-            "day_period",
-            "quarter"
-        ]
-
-        input_values = {
-            "weather_temp": request.weather_temp,
-            "weather_humidity": request.weather_humidity,
-            "weather_rain": request.weather_rain,
-            "weather_pressure": request.weather_pressure,
-            "weather_wind_speed": request.weather_wind_speed,
-            "weather_radiation": request.weather_radiation,
-            "soil_temperature_0-7cm": request.soil_temperature_0_7cm,
-            "soil_temperature_7-18cm": request.soil_temperature_7_18cm,
-            "month": request.month,
-            "day": request.day,
-            "hour": request.hour,
-            "day_period": request.day_period,
-            "quarter": request.quarter
-        }
-
-        missing_features = [
-            name for name, value in input_values.items()
-            if value is None
-        ]
-
-        if missing_features:
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "message": "Zone 4 requires all model input features.",
-                    "missing_features": missing_features
-                }
-            )
-
-        input_data = pd.DataFrame(
-            [input_values],
-            columns=required_features
-        )
-
-        predicted_change = float(
-            model3.predict(input_data)[0]
-        )
-        predicted_moisture = min(
-            100.0,
-            max(1.0, current_moisture + predicted_change),
-        )
-
-        return {
-            "model": "Model 3 - 24-Hour Soil Moisture Prediction",
-            "zone": 4,
-            "strategy": "ridge_change",
-            "current_moisture_percent": current_moisture,
-            "predicted_change": predicted_change,
-            "predicted_moisture_24h_percent": predicted_moisture,
-            "prediction_horizon_hours": 24,
-            "unit": "percentage points",
-            "note": (
-                "Raw Ridge model output. Final 24-hour moisture "
-                "calculation requires confirmation of the training target."
-            )
-        }
-
-    except HTTPException:
-        raise
-
-    except Exception:
-        raise HTTPException(
-            status_code=500,
-            detail="Soil moisture prediction failed"
-        )
-
-
+    return {
+        "model": "Model 3 - 24-Hour Soil Moisture Prediction",
+        "zone": request.zone,
+        "strategy": "persistence",
+        "prediction_horizon_hours": 24,
+        "current_moisture_percent": current_moisture,
+        "predicted_moisture_24h_percent": current_moisture,
+        "unit": "percent",
+        "note": "Persistence estimate: current moisture is carried forward."
+    }
 @app.post("/api/ml/soil-moisture-prediction")
 def soil_moisture_prediction(
     request: SoilMoisturePredictionRequest,

@@ -334,8 +334,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       const heading = document.createElement("strong");
       heading.textContent = "Checking Model 1 availability";
       const explanation = document.createElement("p");
-      explanation.textContent = "Checking for recent, field-specific inputs from the Experimental Model Lab.";
-      message.append(heading, explanation);
+      explanation.textContent = "Checking whether recent, field-specific data is available for Model 1.";      message.append(heading, explanation);
       status.append(infoIcon, message);
     };
 

@@ -1,3 +1,4 @@
+﻿from datetime import date, time
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -35,3 +36,15 @@ class IrrigationPlanRequest(BaseModel):
     irrigation_method: Literal["drip", "sprinkler", "surface"]
     pump_flow_lpm: float = Field(gt=0, allow_inf_nan=False)
     days: int = Field(default=2, ge=1, le=5)
+
+
+class ManualIrrigationScheduleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    field_id: int = Field(gt=0)
+    reservoir_id: int = Field(gt=0)
+    scheduled_date: date
+    start_time: time
+    duration_minutes: int = Field(ge=1, le=1440)
+    water_liters: float = Field(gt=0, allow_inf_nan=False)
+    irrigation_method: Literal["drip", "sprinkler", "surface"]

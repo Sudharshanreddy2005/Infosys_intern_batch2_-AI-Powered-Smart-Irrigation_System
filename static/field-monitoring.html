@@ -1,0 +1,288 @@
+       <section class="monitoring-card" id="field-monitoring" aria-labelledby="monitoring-title">
+
+  <div class="monitoring-header">
+    <div>
+      <h2 id="monitoring-title">Field Monitoring</h2>
+      <p class="monitoring-subtitle">
+        Monitor irrigation activity, water quantities and reservoir availability.
+      </p>
+    </div>
+
+    <div class="monitoring-controls">
+      <label for="monitoring-field-select">Select field</label>
+
+      <select id="monitoring-field-select">
+        <option value="">Loading fields...</option>
+      </select>
+
+      <button
+        type="button"
+        id="monitoring-export-csv"
+        class="monitoring-export-button"
+      >
+        Download CSV Report
+      </button>
+
+      <button
+        type="button"
+        id="monitoring-export-pdf"
+        class="monitoring-export-button"
+      >
+        Download PDF Report
+      </button>
+    </div>
+  </div>
+
+  <section
+    id="monitoring-field-overview"
+    class="monitoring-field-overview"
+    aria-label="Selected field details"
+    aria-live="polite"
+  >
+    <p class="monitoring-muted">Loading field details...</p>
+  </section>
+
+  <div class="monitoring-summary-grid" aria-live="polite">
+    <div class="monitoring-stat">
+      <span class="monitoring-stat-label">Completed irrigations</span>
+      <strong class="monitoring-stat-value" id="monitoring-completed-count">—</strong>
+    </div>
+    <div class="monitoring-stat">
+      <span class="monitoring-stat-label">Recorded schedule quantity</span>
+      <strong class="monitoring-stat-value" id="monitoring-water-total">—</strong>
+    </div>
+    <div class="monitoring-stat">
+      <span class="monitoring-stat-label">Selected field</span>
+      <strong class="monitoring-stat-value" id="monitoring-field-name">—</strong>
+    </div>
+  </div>
+  <div
+    id="monitoring-print-details"
+    class="monitoring-print-details"
+    aria-live="polite"
+  ></div>
+  <div class="monitoring-panel-grid">
+
+    <article class="monitoring-panel">
+      <h3>Daily scheduled water quantity</h3>
+      <p class="monitoring-muted">
+        Recorded quantities from completed irrigation schedules
+      </p>
+
+      <div class="monitoring-filter-group" aria-label="Water usage time range">
+        <button type="button" data-irrigation-range="24h" aria-pressed="false">Today*</button>
+        <button type="button" data-irrigation-range="7d" aria-pressed="true">7 days</button>
+        <button type="button" data-irrigation-range="30d" aria-pressed="false">30 days</button>
+      </div>
+
+      <div id="monitoring-irrigation-chart" class="monitoring-chart" aria-live="polite">
+        <p class="monitoring-empty">Loading water usage...</p>
+      </div>
+
+      <p class="monitoring-footnote">
+        Quantities come from completed schedules, not independent water-meter measurements.
+        Dates represent scheduled dates, not exact completion timestamps.
+      </p>
+    </article>
+
+    <article class="monitoring-panel">
+      <h3>Irrigation schedule status</h3>
+      <p class="monitoring-muted">
+        Distribution of schedules for the selected field
+      </p>
+
+      <div id="monitoring-status-chart" class="monitoring-chart" aria-live="polite">
+        <p class="monitoring-empty">Loading schedule status...</p>
+      </div>
+    </article>
+
+    <article class="monitoring-panel">
+      <h3>Reservoir water availability</h3>
+      <p class="monitoring-muted">
+        Available, reserved and unused capacity
+      </p>
+
+      <div id="monitoring-reservoir-chart" class="monitoring-chart" aria-live="polite">
+        <p class="monitoring-empty">Loading reservoir information...</p>
+      </div>
+
+      <p class="monitoring-footnote">
+        Reserved water is included within available water. The chart separates it
+        from free, unreserved water to avoid double-counting.
+      </p>
+    </article>
+
+    <article class="monitoring-panel">
+      <h3>Weekly irrigation activity</h3>
+      <p class="monitoring-muted">
+        Number of completed schedules by scheduled date over the last 7 days
+      </p>
+
+      <div id="monitoring-weekly-chart" class="monitoring-chart" aria-live="polite">
+        <p class="monitoring-empty">Loading weekly activity...</p>
+      </div>
+    </article>
+
+    <article class="monitoring-panel monitoring-history-panel">
+      <h3>Weekly Irrigation History</h3>
+      <p class="monitoring-muted">
+        Irrigation schedules and scheduled water quantities over the last seven days.
+      </p>
+
+      <div
+        id="monitoring-weekly-history"
+        class="monitoring-weekly-history"
+        aria-live="polite"
+      >
+        <p class="monitoring-empty">Loading weekly irrigation history...</p>
+      </div>
+    </article>
+
+    <article class="monitoring-panel monitoring-sensor-panel">
+      <h3>Sensor timelines</h3>
+      <p class="monitoring-muted">
+        Soil moisture, temperature and humidity
+      </p>
+
+      <div class="monitoring-filter-group" aria-label="Sensor time range">
+        <button type="button" data-monitoring-range="24h" aria-pressed="false">24h</button>
+        <button type="button" data-monitoring-range="7d" aria-pressed="true">7d</button>
+        <button type="button" data-monitoring-range="30d" aria-pressed="false">30d</button>
+      </div>
+
+      <div
+        id="monitoring-sensor-device-status"
+        class="monitoring-sensor-device-status"
+        aria-live="polite"
+      >
+        Checking sensor device status...
+      </div>
+      <section class="monitoring-add-reading">
+        <h4>Add Sensor Reading</h4>
+        <p class="monitoring-muted">
+          Enter measurements from your sensor or an actual field measurement.
+          Submitted readings are saved to this field's history.
+        </p>
+
+        <form id="monitoring-sensor-reading-form">
+          <label>
+            Reading mode
+            <select id="monitoring-reading-mode">
+              <option value="manual">Manual Entry</option>
+              <option value="automatic">Automatic Demo Reading</option>
+            </select>
+          </label>
+
+          <p id="monitoring-demo-notice" hidden>
+            SIMULATED / DEMO DATA — These values are generated for demonstration.
+          </p>
+          <div
+            id="monitoring-manual-fields"
+            class="monitoring-reading-form-grid"
+          >
+            <label>
+              Soil moisture (%)
+              <input
+                type="number"
+                name="soil_moisture_percent"
+                min="0"
+                max="100"
+                step="any"
+                required
+              >
+            </label>
+
+            <label>
+              Soil temperature (°C)
+              <input
+                type="number"
+                name="soil_temperature_c"
+                step="any"
+              >
+            </label>
+
+            <label>
+              Humidity (%)
+              <input
+                type="number"
+                name="humidity_percent"
+                min="0"
+                max="100"
+                step="any"
+              >
+            </label>
+
+            <label>
+              Soil pH
+              <input
+                type="number"
+                name="ph"
+                min="0"
+                max="14"
+                step="any"
+              >
+            </label>
+
+            <label>
+              Electrical conductivity (µS/cm)
+              <input
+                type="number"
+                name="electrical_conductivity_us_cm"
+                min="0"
+                step="any"
+              >
+            </label>
+
+            <label>
+              Measurement date and time
+              <input
+                id="monitoring-sensor-recorded-at"
+                type="datetime-local"
+                name="recorded_at"
+                required
+              >
+            </label>
+          </div>
+
+          <button
+            id="monitoring-sensor-reading-submit"
+            type="submit"
+            disabled
+          >
+            Save Sensor Reading
+          </button>
+
+          <p
+            id="monitoring-sensor-reading-status"
+            class="monitoring-reading-status"
+            role="status"
+            aria-live="polite"
+          ></p>
+        </form>
+      </section>
+      <div
+  id="monitoring-sensor-summary"
+  class="monitoring-sensor-summary"
+  aria-live="polite"
+>
+  <p class="monitoring-empty">Loading field sensor readings...</p>
+</div>
+
+<div
+  id="monitoring-sensor-charts"
+  class="monitoring-sensor-charts"
+  aria-live="polite"
+></div>
+
+<p class="monitoring-sensor-footnote">
+  Readings are retrieved only from the selected registered field.
+  Missing measurements are not estimated. Device connectivity is
+  not confirmed by this reading-history API.
+</p>
+  </article>
+  </div>
+
+  <p id="monitoring-message" class="monitoring-footnote" role="status">
+    Loading your field monitoring information...
+  </p>
+</section>

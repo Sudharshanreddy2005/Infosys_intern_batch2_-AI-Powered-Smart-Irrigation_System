@@ -1,0 +1,21 @@
+
+services:
+  db:
+    container_name: jalsaathi_m3_test_db
+    ports: !override
+      - "5434:5432"
+
+  backend:
+    container_name: jalsaathi_m3_test_backend
+    image: jalsaathi-m3-test-backend:local
+    build:
+      context: .
+      dockerfile: Dockerfile.m3-test
+    ports: !override
+      - "8001:8000"
+    environment:
+      OPEN_METEO_FALLBACK_ENABLED: "true"
+
+volumes:
+  postgres_data:
+    name: jalsaathi_m3_test_postgres_data

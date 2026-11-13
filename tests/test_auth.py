@@ -64,9 +64,52 @@ def experimental_features():
         "soil_type": 1,
         "growth_stage": 2,
     }
+def add_prediction_context(field_id):
+    from datetime import datetime, timezone
+
+    with main.Session(main.engine) as db:
+        field = db.get(main.FarmerField, field_id)
+        assert field is not None
+
+        db.execute(
+            main.text("""
+                INSERT INTO farmer_sensor_readings (
+                    farmer_id,
+                    field_id,
+                    soil_moisture_percent,
+                    recorded_at
+                )
+                VALUES (
+                    :farmer_id,
+                    :field_id,
+                    :moisture,
+                    :recorded_at
+                )
+            """),
+            {
+                "farmer_id": field.farmer_id,
+                "field_id": field_id,
+                "moisture": 35.0,
+                "recorded_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+
+        db.add(
+            main.FarmerCrop(
+                farmer_id=field.farmer_id,
+                field_id=field_id,
+                name=field.crop or "Rice",
+                growth_stage="vegetative",
+            )
+        )
+        db.commit()
 
 
-def create_prediction_field(client, coordinates=True):
+def create_prediction_field(
+    client,
+    coordinates=True,
+    include_prediction_context=False,
+):
     payload = {
         "name": "North plot",
         "crop": "Rice",
@@ -75,13 +118,21 @@ def create_prediction_field(client, coordinates=True):
     }
     if coordinates:
         payload.update({"latitude": 12.5, "longitude": 77.6})
+
     response = client.post(
         "/api/fields",
         json=payload,
         headers=csrf_headers(client),
     )
     assert response.status_code == 201
-    return response.json()["id"]
+
+    field_id = response.json()["id"]
+
+    if include_prediction_context:
+        add_prediction_context(field_id)
+
+    return field_id
+
 
 
 def test_registration_creates_hashed_farmer_and_server_session(client_pair):
@@ -249,10 +300,15 @@ def test_field_coordinates_are_created_returned_and_updated(client_pair):
     assert client.get("/api/fields").json()[0]["longitude"] == 78.75
 
 
-def test_field_api_coordinates_reach_reduced_weather_prediction(client_pair, monkeypatch):
+def test_field_api_coordinates_reach_reduced_weather_prediction(
+    client_pair,
+    monkeypatch,
+):
     client, _ = client_pair
     assert register(client).status_code == 201
+
     coordinates = {"latitude": 12.5, "longitude": 77.6}
+
     created = client.post(
         "/api/fields",
         json={
@@ -264,38 +320,45 @@ def test_field_api_coordinates_reach_reduced_weather_prediction(client_pair, mon
         },
         headers=csrf_headers(client),
     )
+
     assert created.status_code == 201
     field_id = created.json()["id"]
-    assert {key: created.json()[key] for key in coordinates} == coordinates
+    add_prediction_context(field_id)
+
+    assert {
+        key: created.json()[key] for key in coordinates
+    } == coordinates
 
     listed = client.get("/api/fields")
     assert listed.status_code == 200
-    listed_field = next(field for field in listed.json() if field["id"] == field_id)
-    assert {key: listed_field[key] for key in coordinates} == coordinates
+
+    listed_field = next(
+        field for field in listed.json()
+        if field["id"] == field_id
+    )
+
+    assert {
+        key: listed_field[key] for key in coordinates
+    } == coordinates
 
     with main.Session(main.engine) as db:
         stored_field = db.get(main.FarmerField, field_id)
         assert stored_field is not None
-        assert {key: getattr(stored_field, key) for key in coordinates} == coordinates
+        assert {
+            key: getattr(stored_field, key)
+            for key in coordinates
+        } == coordinates
 
     requested_locations = []
+
+    def mock_forecast(location, days):
+        requested_locations.append(location)
+        return fresh_daily_forecasts(), []
+
     monkeypatch.setattr(
-        main,
-        "get_current_weather",
-        lambda location: requested_locations.append(location) or fresh_weather(),
-    )
-    monkeypatch.setattr(
-        main,
-        "_load_reduced_weather_predictor",
-        lambda: (
-            reduced_weather_bundle(),
-            lambda bundle, records: [{
-                "prediction": 0,
-                "proxy_positive_probability": 0.25,
-                "target": "irrigation_needed_proxy",
-                "warning": "Synthetic proxy demonstration only.",
-            }],
-        ),
+        main.irrigation_weather_adapter,
+        "fetch_daily_forecast",
+        mock_forecast,
     )
 
     prediction = client.post(
@@ -303,14 +366,20 @@ def test_field_api_coordinates_reach_reduced_weather_prediction(client_pair, mon
         json={"field_id": field_id},
         headers=csrf_headers(client),
     )
+
     assert prediction.status_code == 200, prediction.json()
     assert requested_locations == ["12.500000,77.600000"]
+    assert prediction.json()["decision"] in ("irrigate", "hold")
 
-
-def test_each_field_prediction_uses_its_own_saved_coordinates(client_pair, monkeypatch):
+def test_each_field_prediction_uses_its_own_saved_coordinates(
+    client_pair,
+    monkeypatch,
+):
     client, _ = client_pair
     assert register(client).status_code == 201
+
     fields = []
+
     for name, latitude, longitude in (
         ("North", 12.5, 77.6),
         ("East", 13.1, 78.2),
@@ -327,37 +396,39 @@ def test_each_field_prediction_uses_its_own_saved_coordinates(client_pair, monke
             },
             headers=csrf_headers(client),
         )
+
         assert created.status_code == 201
-        fields.append(created.json())
+
+        field_record = created.json()
+        add_prediction_context(field_record["id"])
+        fields.append(field_record)
 
     listed_fields = client.get("/api/fields").json()
+
     assert {
         field["id"]: (field["latitude"], field["longitude"])
         for field in listed_fields
-        if field["id"] in {record["id"] for record in fields}
+        if field["id"] in {
+            record["id"] for record in fields
+        }
     } == {
-        record["id"]: (record["latitude"], record["longitude"])
+        record["id"]: (
+            record["latitude"],
+            record["longitude"],
+        )
         for record in fields
     }
 
     weather_locations = []
+
+    def mock_forecast(location, days):
+        weather_locations.append(location)
+        return fresh_daily_forecasts(), []
+
     monkeypatch.setattr(
-        main,
-        "get_current_weather",
-        lambda location: weather_locations.append(location) or fresh_weather(),
-    )
-    monkeypatch.setattr(
-        main,
-        "_load_reduced_weather_predictor",
-        lambda: (
-            reduced_weather_bundle(),
-            lambda bundle, records: [{
-                "prediction": 1,
-                "proxy_positive_probability": 0.75,
-                "target": "irrigation_needed_proxy",
-                "warning": "Synthetic proxy demonstration only.",
-            }],
-        ),
+        main.irrigation_weather_adapter,
+        "fetch_daily_forecast",
+        mock_forecast,
     )
 
     for field in fields:
@@ -366,9 +437,14 @@ def test_each_field_prediction_uses_its_own_saved_coordinates(client_pair, monke
             json={"field_id": field["id"]},
             headers=csrf_headers(client),
         )
-        assert response.status_code == 200, response.json()
 
-    assert weather_locations == ["12.500000,77.600000", "13.100000,78.200000"]
+        assert response.status_code == 200, response.json()
+        assert response.json()["decision"] in ("irrigate", "hold")
+
+    assert weather_locations == [
+        "12.500000,77.600000",
+        "13.100000,78.200000",
+    ]
 
 
 def test_field_coordinate_validation_rejects_bad_ranges_nonfinite_and_pairs(client_pair):
@@ -538,7 +614,30 @@ def fresh_weather(**overrides):
         "observation_time": datetime.now(timezone.utc).isoformat(),
         **overrides,
     }
+def fresh_daily_forecasts():
+    from datetime import date, timedelta
+    from irrigation_optimizer.models import DailyForecast
 
+    today = date.today()
+
+    return [
+        DailyForecast(
+            date=today,
+            temp_min=20.0,
+            temp_max=30.0,
+            rain_mm=0.0,
+            rain_prob=0.0,
+            et0_mm=5.0,
+        ),
+        DailyForecast(
+            date=today + timedelta(days=1),
+            temp_min=20.0,
+            temp_max=30.0,
+            rain_mm=0.0,
+            rain_prob=0.0,
+            et0_mm=5.0,
+        ),
+    ]
 
 def test_reduced_weather_prediction_requires_authentication_and_csrf(client_pair):
     client, _ = client_pair
@@ -554,35 +653,28 @@ def test_reduced_weather_prediction_requires_authentication_and_csrf(client_pair
         headers={"X-CSRF-Token": "invalid-token"},
     ).status_code == 403
 
-
 def test_reduced_weather_prediction_uses_owned_field_and_fresh_weather(
     client_pair,
     monkeypatch,
 ):
     client, _ = client_pair
     assert register(client).status_code == 201
-    field_id = create_prediction_field(client)
+
+    field_id = create_prediction_field(
+        client,
+        include_prediction_context=True,
+    )
+
     seen_locations = []
-    seen_records = []
 
-    def mock_weather(location):
+    def mock_forecast(location, days):
         seen_locations.append(location)
-        return fresh_weather()
+        return fresh_daily_forecasts(), []
 
-    def mock_predict(bundle, records):
-        seen_records.extend(records)
-        return [{
-            "prediction": 1,
-            "proxy_positive_probability": 0.75,
-            "target": "irrigation_needed_proxy",
-            "warning": "Synthetic proxy demonstration only.",
-        }]
-
-    monkeypatch.setattr(main, "get_current_weather", mock_weather)
     monkeypatch.setattr(
-        main,
-        "_load_reduced_weather_predictor",
-        lambda: (reduced_weather_bundle(), mock_predict),
+        main.irrigation_weather_adapter,
+        "fetch_daily_forecast",
+        mock_forecast,
     )
 
     response = client.post(
@@ -591,31 +683,40 @@ def test_reduced_weather_prediction_uses_owned_field_and_fresh_weather(
         headers=csrf_headers(client),
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.json()
     assert response.headers["cache-control"] == "no-store"
-    assert response.json()["prediction"] == 1
-    assert response.json()["proxy_rule"] == "soil_moisture <= 20.0"
-    assert response.json()["dataset_provenance"] == "synthetic_or_synthetic_augmented"
-    assert response.json()["feature_sources"] == {
-        "temperature_c": "selected_field_current_weather_api",
-        "humidity_percent": "selected_field_current_weather_api",
-    }
-    assert response.json()["feature_inputs"] == seen_records[0]
+
+    body = response.json()
+
+    assert body["decision"] in ("irrigate", "hold")
+    assert body["irrigation_needed"] == (
+        body["decision"] == "irrigate"
+    )
+    assert body["soil_moisture_percent"] == 35.0
+    assert body["rainfall_mm"] == 0.0
+    assert body["rain_probability_percent"] == 0.0
+    assert body["et0_mm"] >= 0.0
+    assert body["forecast_date"] is not None
+    assert body["observation_time"] is not None
     assert seen_locations == ["12.500000,77.600000"]
-    assert seen_records == [{"temperature_c": 25.0, "humidity_percent": 60.0}]
+    assert seen_locations == ["12.500000,77.600000"]
 
-
-def test_reduced_weather_endpoint_runs_the_saved_model_with_current_field_weather(
+def test_reduced_weather_endpoint_returns_current_assessment(
     client_pair,
     monkeypatch,
 ):
     client, _ = client_pair
     assert register(client).status_code == 201
-    field_id = create_prediction_field(client)
+
+    field_id = create_prediction_field(
+        client,
+        include_prediction_context=True,
+    )
+
     monkeypatch.setattr(
-        main,
-        "get_current_weather",
-        lambda location: fresh_weather(),
+        main.irrigation_weather_adapter,
+        "fetch_daily_forecast",
+        lambda location, days: (fresh_daily_forecasts(), []),
     )
 
     response = client.post(
@@ -624,21 +725,21 @@ def test_reduced_weather_endpoint_runs_the_saved_model_with_current_field_weathe
         headers=csrf_headers(client),
     )
 
-    assert response.status_code == 200
-    body = response.json()
-    assert body["prediction"] in (0, 1)
-    assert 0.0 <= body["proxy_positive_probability"] <= 1.0
-    assert body["selected_model"] == "random_forest"
-    assert body["proxy_rule"] == "soil_moisture <= 20.0"
-    assert body["feature_sources"] == {
-        "temperature_c": "selected_field_current_weather_api",
-        "humidity_percent": "selected_field_current_weather_api",
-    }
-    assert body["feature_inputs"] == {
-        "temperature_c": 25.0,
-        "humidity_percent": 60.0,
-    }
+    assert response.status_code == 200, response.json()
 
+    body = response.json()
+
+    assert body["decision"] in ("irrigate", "hold")
+    assert body["irrigation_needed"] == (
+        body["decision"] == "irrigate"
+    )
+    assert body["soil_moisture_percent"] == 35.0
+    assert body["rainfall_mm"] == 0.0
+    assert body["rain_probability_percent"] == 0.0
+    assert body["et0_mm"] >= 0.0
+    assert body["forecast_date"] is not None
+    assert body["observation_time"] is not None
+    assert body["weather_source"] in ("tomorrow_io", "open_meteo")
 
 def test_reduced_weather_prediction_enforces_field_ownership_and_coordinates(
     client_pair,
@@ -646,18 +747,21 @@ def test_reduced_weather_prediction_enforces_field_ownership_and_coordinates(
 ):
     first, second = client_pair
     assert register(first).status_code == 201
+
     owned_field_id = create_prediction_field(first)
+
     assert register(second, email="another@example.com").status_code == 201
+
     weather_called = []
+
+    def mock_forecast(location, days):
+        weather_called.append(location)
+        return fresh_daily_forecasts(), []
+
     monkeypatch.setattr(
-        main,
-        "get_current_weather",
-        lambda location: weather_called.append(location) or fresh_weather(),
-    )
-    monkeypatch.setattr(
-        main,
-        "_load_reduced_weather_predictor",
-        lambda: pytest.fail("A foreign field must not load a prediction model."),
+        main.irrigation_weather_adapter,
+        "fetch_daily_forecast",
+        mock_forecast,
     )
 
     foreign_response = second.post(
@@ -665,57 +769,94 @@ def test_reduced_weather_prediction_enforces_field_ownership_and_coordinates(
         json={"field_id": owned_field_id},
         headers=csrf_headers(second),
     )
+
     assert foreign_response.status_code == 404
     assert weather_called == []
 
-    field_without_coordinates = create_prediction_field(first, coordinates=False)
+    field_without_coordinates = create_prediction_field(
+        first,
+        coordinates=False,
+    )
+
     response = first.post(
         "/api/ml/reduced-weather-prediction",
         json={"field_id": field_without_coordinates},
         headers=csrf_headers(first),
     )
+
     assert response.status_code == 422
     assert weather_called == []
 
 
-def test_reduced_weather_prediction_rejects_stale_and_out_of_training_range(
+def test_reduced_weather_prediction_rejects_stale_and_future_sensor_readings(
     client_pair,
     monkeypatch,
 ):
+    from datetime import datetime, timedelta, timezone
+
     client, _ = client_pair
     assert register(client).status_code == 201
-    field_id = create_prediction_field(client)
-    monkeypatch.setattr(main, "_load_reduced_weather_predictor", lambda: (
-        reduced_weather_bundle(),
-        lambda bundle, records: pytest.fail("Rejected weather must not be predicted."),
-    ))
+
+    field_id = create_prediction_field(
+        client,
+        include_prediction_context=True,
+    )
 
     monkeypatch.setattr(
-        main,
-        "get_current_weather",
-        lambda location: fresh_weather(is_stale=True),
+        main.irrigation_weather_adapter,
+        "fetch_daily_forecast",
+        lambda location, days: pytest.fail(
+            "Invalid sensor readings must be rejected before fetching weather."
+        ),
     )
-    stale = client.post(
+
+    with main.Session(main.engine) as db:
+        stale_time = datetime.now(timezone.utc) - timedelta(hours=25)
+
+        db.execute(
+            main.text("""
+                UPDATE farmer_sensor_readings
+                SET recorded_at = :recorded_at
+                WHERE field_id = :field_id
+            """),
+            {
+                "recorded_at": stale_time.isoformat(),
+                "field_id": field_id,
+            },
+        )
+        db.commit()
+
+    stale_response = client.post(
         "/api/ml/reduced-weather-prediction",
         json={"field_id": field_id},
         headers=csrf_headers(client),
     )
-    assert stale.status_code == 422
-    assert "Fresh field-specific weather" in stale.json()["detail"]
 
-    monkeypatch.setattr(
-        main,
-        "get_current_weather",
-        lambda location: fresh_weather(temperature_c=5.0),
-    )
-    outside_training_range = client.post(
+    assert stale_response.status_code == 422
+
+    with main.Session(main.engine) as db:
+        future_time = datetime.now(timezone.utc) + timedelta(minutes=2)
+
+        db.execute(
+            main.text("""
+                UPDATE farmer_sensor_readings
+                SET recorded_at = :recorded_at
+                WHERE field_id = :field_id
+            """),
+            {
+                "recorded_at": future_time.isoformat(),
+                "field_id": field_id,
+            },
+        )
+        db.commit()
+
+    future_response = client.post(
         "/api/ml/reduced-weather-prediction",
         json={"field_id": field_id},
         headers=csrf_headers(client),
     )
-    assert outside_training_range.status_code == 422
-    assert "observed training range" in outside_training_range.json()["detail"]
 
+    assert future_response.status_code == 422
 
 def test_water_requirement_endpoint_fails_closed_with_authenticated_field_and_crop(
     client_pair,
@@ -1047,3 +1188,290 @@ def test_expired_session_is_rejected(client_pair):
         db.commit()
 
     assert client.get("/api/auth/me").status_code == 401
+
+
+def test_field_sensor_readings_are_created_and_returned_in_time_order(client_pair):
+    client, _ = client_pair
+    assert register(client).status_code == 201
+
+    field_id = create_prediction_field(client)
+    path = f"/api/fields/{field_id}/sensor-readings"
+
+    older = {
+        "soil_moisture_percent": 24.5,
+        "soil_temperature_c": 26.2,
+        "humidity_percent": 70.0,
+        "ph": 6.5,
+        "electrical_conductivity_us_cm": 850.0,
+        "recorded_at": "2026-11-10T07:00:00Z",
+    }
+    newer = {
+        "soil_moisture_percent": 31.5,
+        "recorded_at": "2026-11-10T08:00:00Z",
+    }
+
+    first = client.post(path, json=older, headers=csrf_headers(client))
+    second = client.post(path, json=newer, headers=csrf_headers(client))
+
+    assert first.status_code == 201, first.json()
+    assert second.status_code == 201, second.json()
+    assert first.json()["ph"] == 6.5
+    assert first.json()["electrical_conductivity_us_cm"] == 850.0
+    assert second.json()["ph"] is None
+    assert second.json()["soil_temperature_c"] is None
+
+    history = client.get(path)
+    assert history.status_code == 200, history.json()
+
+    readings = history.json()
+    assert len(readings) == 2
+    assert [row["soil_moisture_percent"] for row in readings] == [31.5, 24.5]
+
+
+def test_field_sensor_readings_require_auth_csrf_and_field_ownership(client_pair):
+    first, second = client_pair
+
+    assert first.get("/api/fields/1/sensor-readings").status_code == 401
+
+    assert register(first).status_code == 201
+    assert register(second, email="another@example.com").status_code == 201
+
+    field_id = create_prediction_field(first)
+    path = f"/api/fields/{field_id}/sensor-readings"
+    payload = {
+        "soil_moisture_percent": 35.0,
+        "recorded_at": "2026-11-10T09:00:00Z",
+    }
+
+    no_csrf = first.post(path, json=payload)
+    assert no_csrf.status_code == 403
+
+    created = first.post(
+        path,
+        json=payload,
+        headers=csrf_headers(first),
+    )
+    assert created.status_code == 201, created.json()
+
+    assert second.get(path).status_code == 404
+    foreign_write = second.post(
+        path,
+        json=payload,
+        headers=csrf_headers(second),
+    )
+    assert foreign_write.status_code == 404
+
+
+def test_field_sensor_readings_reject_invalid_values_and_timestamps(client_pair):
+    client, _ = client_pair
+    assert register(client).status_code == 201
+
+    field_id = create_prediction_field(client)
+    path = f"/api/fields/{field_id}/sensor-readings"
+    headers = csrf_headers(client)
+
+    invalid_moisture = client.post(
+        path,
+        json={
+            "soil_moisture_percent": 101,
+            "recorded_at": "2026-11-10T09:00:00Z",
+        },
+        headers=headers,
+    )
+    assert invalid_moisture.status_code == 422
+
+    invalid_ph = client.post(
+        path,
+        json={
+            "soil_moisture_percent": 35,
+            "ph": 15,
+            "recorded_at": "2026-11-10T09:00:00Z",
+        },
+        headers=headers,
+    )
+    assert invalid_ph.status_code == 422
+
+    missing_timezone = client.post(
+        path,
+        json={
+            "soil_moisture_percent": 35,
+            "recorded_at": "2026-11-10T09:00:00",
+        },
+        headers=headers,
+    )
+    assert missing_timezone.status_code == 422
+
+def test_sensor_device_registration_ingestion_and_owner_security(client_pair):
+    farmer, other = client_pair
+
+    assert register(farmer).status_code == 201
+    assert register(other, email="device-other@example.com").status_code == 201
+
+    field_id = create_prediction_field(farmer)
+    device_path = f"/api/fields/{field_id}/sensor-devices"
+
+    device_payload = {"name": "North Field Sensor"}
+
+    # Registration requires CSRF protection.
+    assert farmer.post(
+        device_path,
+        json=device_payload,
+    ).status_code == 403
+
+    registration = farmer.post(
+        device_path,
+        json=device_payload,
+        headers=csrf_headers(farmer),
+    )
+
+    assert registration.status_code == 201, registration.json()
+
+    device = registration.json()
+    token = device["token"]
+
+    assert device["field_id"] == field_id
+    assert device["device_id"].startswith("JAL-")
+    assert token
+
+    # Ordinary device listing must never reveal the secret token.
+    listed = farmer.get(device_path)
+    assert listed.status_code == 200
+    assert len(listed.json()) == 1
+    assert "token" not in listed.json()[0]
+    assert listed.json()[0]["is_active"] is True
+
+    # Another farmer cannot view or register devices for this field.
+    assert other.get(device_path).status_code == 404
+
+    foreign_registration = other.post(
+        device_path,
+        json=device_payload,
+        headers=csrf_headers(other),
+    )
+    assert foreign_registration.status_code == 404
+
+    # An active device cannot be registered twice for the same field.
+    duplicate = farmer.post(
+        device_path,
+        json=device_payload,
+        headers=csrf_headers(farmer),
+    )
+    assert duplicate.status_code == 409
+
+    reading_payload = {
+        "soil_moisture_percent": 27.5,
+        "soil_temperature_c": 26.0,
+        "humidity_percent": 68.0,
+        "ph": 6.5,
+        "electrical_conductivity_us_cm": 800.0,
+        "recorded_at": "2026-11-10T10:00:00Z",
+    }
+
+    # Device ingestion requires a valid bearer token.
+    assert farmer.post(
+        "/api/sensor-data",
+        json=reading_payload,
+    ).status_code == 401
+
+    assert farmer.post(
+        "/api/sensor-data",
+        json=reading_payload,
+        headers={"Authorization": "Bearer invalid-token"},
+    ).status_code == 401
+
+    # Valid device token submits a reading.
+    ingested = farmer.post(
+        "/api/sensor-data",
+        json=reading_payload,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert ingested.status_code == 201, ingested.json()
+    assert ingested.json()["field_id"] == field_id
+    assert ingested.json()["soil_moisture_percent"] == 27.5
+
+    # The reading is visible in the owning farmer's field history.
+    history = farmer.get(
+        f"/api/fields/{field_id}/sensor-readings"
+    )
+
+    assert history.status_code == 200
+    assert len(history.json()) == 1
+    assert history.json()[0]["soil_moisture_percent"] == 27.5
+
+    # Device activity timestamp should now be populated.
+    updated_device = farmer.get(device_path).json()[0]
+    assert updated_device["last_seen_at"] is not None
+
+
+def test_sensor_device_revocation_and_replacement(client_pair):
+    farmer, _ = client_pair
+
+    assert register(farmer).status_code == 201
+    field_id = create_prediction_field(farmer)
+    device_path = f"/api/fields/{field_id}/sensor-devices"
+
+    first_registration = farmer.post(
+        device_path,
+        json={"name": "First Sensor"},
+        headers=csrf_headers(farmer),
+    )
+
+    assert first_registration.status_code == 201
+    first_device = first_registration.json()
+    first_token = first_device["token"]
+
+    revoke_path = (
+        f"{device_path}/{first_device['id']}/revoke"
+    )
+
+    revoked = farmer.post(
+        revoke_path,
+        headers=csrf_headers(farmer),
+    )
+
+    assert revoked.status_code == 200
+    assert revoked.json()["is_active"] is False
+
+    reading_payload = {
+        "soil_moisture_percent": 30.0,
+        "recorded_at": "2026-11-10T11:00:00Z",
+    }
+
+    # Revoked credentials must no longer work.
+    old_token_response = farmer.post(
+        "/api/sensor-data",
+        json=reading_payload,
+        headers={"Authorization": f"Bearer {first_token}"},
+    )
+    assert old_token_response.status_code == 401
+
+    # Registering again replaces the revoked device credentials.
+    second_registration = farmer.post(
+        device_path,
+        json={"name": "Replacement Sensor"},
+        headers=csrf_headers(farmer),
+    )
+
+    assert second_registration.status_code == 201
+    second_device = second_registration.json()
+    second_token = second_device["token"]
+
+    assert second_token != first_token
+    assert second_device["id"] == first_device["id"]
+
+    # The old token remains invalid.
+    old_token_again = farmer.post(
+        "/api/sensor-data",
+        json=reading_payload,
+        headers={"Authorization": f"Bearer {first_token}"},
+    )
+    assert old_token_again.status_code == 401
+
+    # The replacement token works.
+    new_token_response = farmer.post(
+        "/api/sensor-data",
+        json=reading_payload,
+        headers={"Authorization": f"Bearer {second_token}"},
+    )
+    assert new_token_response.status_code == 201

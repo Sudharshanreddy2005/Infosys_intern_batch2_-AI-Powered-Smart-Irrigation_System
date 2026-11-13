@@ -8,8 +8,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+Assamese:wght@400;500;600;700&family=Noto+Sans+Bengali:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600;700&family=Noto+Sans+Gujarati:wght@400;500;600;700&family=Noto+Sans+Gurmukhi:wght@400;500;600;700&family=Noto+Sans+Kannada:wght@400;500;600;700&family=Noto+Sans+Malayalam:wght@400;500;600;700&family=Noto+Sans+Oriya:wght@400;500;600;700&family=Noto+Sans+Tamil:wght@400;500;600;700&family=Noto+Sans+Telugu:wght@400;500;600;700&family=Noto+Nastaliq+Urdu&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/static/sections.css?v=20261104-model1-input-details1-scrollbars1" />
+    <link rel="stylesheet" href="/static/sections.css?v=20261113-alerts1" />
     <link rel="stylesheet" href="/static/topbar.css?v=20261104-glass-nav-refine10" />
+    <link rel="stylesheet" href="/static/monitoring.css?v=3" />
   </head>
   <body class="portal-body" data-i18n-static>
     <div class="common-topbar-mount" data-common-topbar></div>
@@ -22,6 +23,14 @@
           <a class="portal-nav-link" data-view-link="fields" href="/static/sections.html?view=fields">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21V9" /><path d="M11 14C6 14 4 11 4 7c5 0 8 2 9 6 1-5 4-8 9-8 0 6-3 10-9 11z" /></svg><span data-i18n-key="nav.fields">My Fields</span>
           </a>
+          <a class="portal-nav-link"
+            data-view-link="field-monitoring"
+            href="/static/sections.html?view=field-monitoring">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 12h4l3-8 4 16 3-8h4" />
+          </svg>
+          <span>Field Monitoring</span>
+         </a>
           <a class="portal-nav-link" data-view-link="crops" href="/static/sections.html?view=crops">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21V9" /><path d="M11 14C6 14 4 11 4 7c5 0 8 2 9 6 1-5 4-8 9-8 0 6-3 10-9 11z" /></svg><span data-i18n-key="nav.crops">Crops</span>
           </a>
@@ -36,9 +45,6 @@
           </a>
           <a class="portal-nav-link" data-view-link="weather" href="/static/sections.html?view=weather">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 18h12a4 4 0 0 0 0-8 6 6 0 0 0-11-2 5 5 0 0 0-1 10z" /></svg><span data-i18n-key="nav.weather">Weather</span>
-          </a>
-          <a class="portal-nav-link" data-view-link="experimental-model" href="/static/sections.html?view=experimental-model">
-            <svg class="portal-nav-outline" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16M6 16l4-5 3 2 5-7" /><circle cx="6" cy="16" r="1" /><circle cx="10" cy="11" r="1" /><circle cx="13" cy="13" r="1" /><circle cx="18" cy="6" r="1" /></svg><span data-i18n-key="nav.modelLab">Model Lab</span>
           </a>
           <a class="portal-nav-link" data-view-link="predictions" href="/static/sections.html?view=predictions">
             <svg class="portal-nav-outline" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16M7 16V9m5 7V5m5 11v-4" /></svg><span>Field Predictions</span>
@@ -71,11 +77,10 @@
     <script src="/static/weather.js?v=20261028-field-weather1"></script>
     <script src="/static/field-location.js?v=20261028-field-coordinates1"></script>
     <script src="/static/model1-recommendation.js?v=20261027-i18n2"></script>
-    <script src="/static/experimental-model.js?v=20261028-model1-auto1"></script>
-    <script src="/static/water-requirement.js?v=20261027-model2-v1"></script>
-    <script src="/static/farmer-assistant.js?v=20261027-i18n2"></script>
     <script src="/static/model-predictions.js?v=20261031-model34"></script>
     <script src="/static/ai-model-dashboard.js?v=20261104-model1-input-details1"></script>
-    <script src="/static/sections.js?v=20261104-glass-nav-refine10"></script>
+    <script src="/static/monitoring.js?v=5"></script>
+    <script src="/static/sections.js?v=20261113-alerts1"></script>
+
   </body>
 </html>
