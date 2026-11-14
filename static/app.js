@@ -38,22 +38,22 @@ document.addEventListener("DOMContentLoaded", async () => {
     </div>`).join("");
     mapEmpty.hidden = fields.length !== 0;
     if (fields.length > 3) {
-      mapPlots.insertAdjacentHTML("beforeend", `<span class="field-map-overflow">+${fields.length - 3} more saved fields</span>`);
+      mapPlots.insertAdjacentHTML("beforeend", `<span class="field-map-overflow">+${window.JalSaathiI18n.numberMarkup(fields.length - 3)} more saved fields</span>`);
     }
   };
   const renderDashboardFields = (fields) => {
     dashboardFields = window.JalSaathiFieldNumbering.withDisplayNumbers(fields);
-    countNode.textContent = `${dashboardFields.length} saved ${dashboardFields.length === 1 ? "field" : "fields"}`;
+    countNode.textContent = `${window.JalSaathiI18n.formatNumber(dashboardFields.length)} saved ${dashboardFields.length === 1 ? "field" : "fields"}`;
     renderFieldMap(dashboardFields);
     fieldsNode.classList.toggle("is-empty", dashboardFields.length === 0);
     fieldsNode.innerHTML = dashboardFields.length ? dashboardFields.map((field) => `<div class="field-item">
-      <button class="field-select-button" type="button" data-field-select="${escapeHtml(field.id)}" aria-pressed="false" aria-label="Select Field ${field.displayNumber}, ${escapeHtml(field.name)} in irrigation recommendation">
+      <button class="field-select-button" type="button" data-field-select="${escapeHtml(field.id)}" aria-pressed="false" aria-label="Select Field ${window.JalSaathiI18n.formatNumber(field.displayNumber)}, ${escapeHtml(field.name)} in irrigation recommendation">
         <span class="field-thumb field-thumb--green" aria-hidden="true"></span>
         <span class="field-meta">
-          <span class="field-row"><span class="field-label">Field ${field.displayNumber}: <span data-user-content>${escapeHtml(field.name)}</span></span><span class="status-pill">No sensor data</span></span>
+          <span class="field-row"><span class="field-label">Field ${window.JalSaathiI18n.numberMarkup(field.displayNumber)}: <span data-user-content>${escapeHtml(field.name)}</span></span><span class="status-pill">No sensor data</span></span>
           <span class="field-details">
             <span class="detail"><span class="detail-label">Crop</span><strong data-user-content data-i18n-crop>${escapeHtml(field.crop || "Not set")}</strong></span>
-            <span class="detail"><span class="detail-label">Area</span><strong data-user-content>${escapeHtml(field.area)} ${escapeHtml(field.area_unit)}</strong></span>
+            <span class="detail"><span class="detail-label">Area</span><strong data-user-content>${window.JalSaathiI18n.numberMarkup(field.area, {}, field.area_unit ? ` ${field.area_unit}` : "")}</strong></span>
           </span>
         </span>
       </button>
@@ -99,7 +99,12 @@ document.addEventListener("DOMContentLoaded", async () => {
       dashboardCrops = crops;
       renderDashboardFields(fields);
     } catch (error) {
-      fieldsNode.textContent = error instanceof Error ? error.message : "Your fields could not be loaded.";
+      fieldsNode.textContent = error instanceof TypeError
+        ? window.JalSaathiProfile?.apiErrorMessage?.(0, "", "/api/fields") ||
+          window.JalSaathiI18n?.t("api.error.unavailable") || ""
+        : error instanceof SyntaxError
+          ? window.JalSaathiI18n?.t("api.error.invalidResponse") || ""
+          : error instanceof Error ? error.message : "Your fields could not be loaded.";
       fieldsNode.classList.remove("is-empty");
       countNode.textContent = "Account fields unavailable";
       recordLoadError = fieldsNode.textContent;
@@ -109,6 +114,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   const fieldCarouselCleanups = new WeakMap();
   initializeFieldCarousel(dashboardFields, dashboardCrops, recordLoadError);
   initializeSeasonTracking(dashboardCrops, recordLoadError);
+  window.addEventListener("jalsaathi:language-changed", () => {
+    if (fieldsNode instanceof HTMLElement && countNode instanceof HTMLElement) {
+      renderDashboardFields(dashboardFields);
+    }
+    initializeSeasonTracking(dashboardCrops, recordLoadError);
+  });
 
   const weatherCard = document.querySelector(".weather-card");
   if (weatherCard instanceof HTMLElement) window.JalSaathiWeather?.initializeDashboard(weatherCard);
@@ -199,7 +210,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         } else {
           state.status = "loaded";
           state.condition = window.JalSaathiWeather.formatCurrentCondition(current.weather_code);
-          state.temperature = window.JalSaathiWeather.formatCurrentTemperature(temperature);
+          state.temperatureC = temperature;
           state.expiresAt = Date.now() + Math.min(
             10 * 60 * 1000,
             Math.max(0, 15 * 60 * 1000 - age),
@@ -210,7 +221,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           const weather = slides[index]?.querySelector("[data-recommendation-weather]");
           if (weather instanceof HTMLElement) {
             weather.textContent = state.status === "loaded"
-              ? `${state.condition} · ${state.temperature}`
+              ? `${state.condition} · ${window.JalSaathiWeather.formatCurrentTemperature(state.temperatureC)}`
               : "Unavailable";
           }
         }
@@ -267,7 +278,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       const fieldName = typeof field.name === "string" && field.name.trim()
         ? field.name.trim()
         : "Unnamed field";
-      name.textContent = `Field ${field.displayNumber}: ${fieldName}`;
+      name.innerHTML = `Field ${window.JalSaathiI18n.numberMarkup(field.displayNumber)}: ${escapeHtml(fieldName)}`;
       const fieldCrops = currentCrops.filter((entry) => String(entry.field_id) === String(field.id));
       const cropLabels = fieldCrops.map((entry) => [entry.name, entry.variety].filter(Boolean).join(" · "));
       const cropName = cropLabels.join(", ") || field.crop || "Not recorded";
@@ -292,20 +303,21 @@ document.addEventListener("DOMContentLoaded", async () => {
       const cropRecords = fieldCrops.map((entry) => {
         const details = [];
         if (typeof entry.planting_date === "string" && entry.planting_date.trim()) {
-          details.push(`Planting: ${entry.planting_date.trim()}`);
+          details.push(`Planting: ${window.JalSaathiI18n.dateMarkup(entry.planting_date.trim())}`);
         }
         if (typeof entry.expected_harvest_date === "string" && entry.expected_harvest_date.trim()) {
-          details.push(`Expected harvest: ${entry.expected_harvest_date.trim()}`);
+          details.push(`Expected harvest: ${window.JalSaathiI18n.dateMarkup(entry.expected_harvest_date.trim())}`);
         }
         if (typeof entry.growth_stage === "string" && entry.growth_stage.trim()) {
-          details.push(`Growth stage: ${entry.growth_stage.trim()}`);
+          details.push(`Growth stage: ${escapeHtml(entry.growth_stage.trim())}`);
         }
-        return details.length ? `${entry.name || "Crop"} · ${details.join(" · ")}` : "";
+        return details.length ? `${escapeHtml(entry.name || "Crop")} · ${details.join(" · ")}` : "";
       }).filter(Boolean);
-      cropDetails.textContent = cropRecords.join(" | ");
+      cropDetails.innerHTML = cropRecords.join(" | ");
       cropDetails.hidden = cropRecords.length === 0;
-      area.textContent = field.area !== null && field.area !== undefined && field.area !== ""
-        ? `${Number.isFinite(Number(field.area)) ? Number(field.area).toLocaleString(undefined, { maximumFractionDigits: 2 }) : field.area}${field.area_unit ? ` ${field.area_unit}` : ""}`
+      area.innerHTML = field.area !== null && field.area !== undefined && field.area !== "" &&
+        Number.isFinite(Number(field.area))
+        ? window.JalSaathiI18n.numberMarkup(field.area, {}, field.area_unit ? ` ${field.area_unit}` : "")
         : "Unavailable";
       moisture.textContent = "Not connected";
       const weatherState = fieldWeather.get(String(field.id));
@@ -313,7 +325,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         ? weatherState.status === "pending"
           ? "Loading…"
           : weatherState.status === "loaded"
-            ? `${weatherState.condition} · ${weatherState.temperature}`
+            ? `${weatherState.condition} · ${window.JalSaathiWeather.formatCurrentTemperature(weatherState.temperatureC)}`
             : "Unavailable"
         : "Unavailable";
       const normalizedCrop = typeof cropName === "string" ? cropName.toLowerCase() : "";
@@ -356,7 +368,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const dot = document.createElement("button");
         dot.type = "button";
         dot.className = "carousel-dot";
-        dot.setAttribute("aria-label", `Show Field ${field.displayNumber}: ${field.name || "unnamed"}`);
+        dot.setAttribute("aria-label", `Show Field ${window.JalSaathiI18n.formatNumber(field.displayNumber)}: ${field.name || "unnamed"}`);
         dot.addEventListener("click", () => show(dotIndex, true), { signal });
         dots.append(dot);
         return dot;
@@ -378,7 +390,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         button.setAttribute("aria-pressed", String(selected));
         button.closest(".field-item")?.classList.toggle("is-selected", selected);
       });
-      indicator.textContent = currentFields.length ? `${index + 1} / ${currentFields.length}` : "";
+      indicator.innerHTML = currentFields.length
+        ? `${window.JalSaathiI18n.numberMarkup(index + 1)} / ${window.JalSaathiI18n.numberMarkup(currentFields.length)}`
+        : "";
       if (model1Recommendation) {
         const activeStatus = slides[index]?.querySelector("[data-recommendation-status]");
         if (activeStatus instanceof HTMLElement && currentFields[index]) {
@@ -394,6 +408,24 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
       if (currentFields[index]) loadFieldWeather(currentFields[index]);
     };
+
+    window.addEventListener("jalsaathi:language-changed", () => {
+      dotButtons.forEach((dot, dotIndex) => {
+        const field = currentFields[dotIndex];
+        dot.setAttribute(
+          "aria-label",
+          `Show Field ${window.JalSaathiI18n.formatNumber(field.displayNumber)}: ${field.name || "unnamed"}`,
+        );
+      });
+      currentFields.forEach((field, fieldIndex) => {
+        const state = fieldWeather.get(String(field.id));
+        if (state?.status !== "loaded") return;
+        const weather = slides[fieldIndex]?.querySelector("[data-recommendation-weather]");
+        if (weather instanceof HTMLElement) {
+          weather.textContent = `${state.condition} · ${window.JalSaathiWeather.formatCurrentTemperature(state.temperatureC)}`;
+        }
+      });
+    }, { signal });
 
     const clearTimer = () => {
       if (timer) window.clearInterval(timer);
@@ -572,15 +604,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (recordedRanges.length) {
       const earliest = new Date(Math.min(...recordedRanges.map(({ planting }) => planting.getTime())));
       const latest = new Date(Math.max(...recordedRanges.map(({ harvest }) => harvest.getTime())));
-      const formatDate = (date) => new Intl.DateTimeFormat(undefined, {
-        month: "short",
-        year: "numeric",
-      }).format(date);
       const dateLabel = document.createElement("span");
       dateLabel.textContent = "Recorded crop dates";
       dateLabel.setAttribute("data-i18n-key", "season.recordedCropDates");
       const dateValues = document.createElement("span");
-      dateValues.textContent = ` · ${formatDate(earliest)} – ${formatDate(latest)}`;
+      dateValues.innerHTML = ` · ${window.JalSaathiI18n.dateMarkup(earliest, "month-year")} – ${window.JalSaathiI18n.dateMarkup(latest, "month-year")}`;
       dateValues.setAttribute("data-i18n-ignore", "");
       dateRange.append(dateLabel, dateValues);
     } else {
@@ -599,7 +627,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const allCropNames = [...cropsByName.values()];
     const visibleCropNames = allCropNames.slice(0, 3);
     if (allCropNames.length > visibleCropNames.length) {
-      visibleCropNames.push(`+${allCropNames.length - visibleCropNames.length} more`);
+      visibleCropNames.push(`+${window.JalSaathiI18n.formatNumber(allCropNames.length - visibleCropNames.length)} more`);
     }
     if (visibleCropNames.length) {
       visibleCropNames.forEach((name, index) => {
@@ -630,7 +658,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     progressSummary.append(progressHeading);
     if (estimates.length) {
       const averageProgress = Math.round(estimates.reduce((total, value) => total + value, 0) / estimates.length);
-      progressValue.textContent = `${averageProgress}%`;
+      progressValue.innerHTML = window.JalSaathiI18n.numberMarkup(averageProgress, {}, "%");
       const track = document.createElement("div");
       track.className = "season-progress-track";
       track.setAttribute("role", "progressbar");

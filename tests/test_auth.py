@@ -810,13 +810,14 @@ def test_farmer_assistant_chat_requires_auth_csrf_and_returns_provider_answer(
     monkeypatch,
 ):
     client, _ = client_pair
-    async def mocked_answer(question):
+    async def mocked_answer(question, language_code):
         assert question == "How does rainfall affect irrigation?"
+        assert language_code == "te-IN"
         return "Rainfall may reduce crop water demand."
 
     monkeypatch.setattr(main, "answer_farmer_question", mocked_answer)
     path = "/api/assistant/chat"
-    payload = {"question": "  How does rainfall affect irrigation?  "}
+    payload = {"question": "  How does rainfall affect irrigation?  ", "language_code": "te-IN"}
     assert client.post(path, json=payload).status_code == 401
     assert register(client).status_code == 201
     assert client.post(path, json=payload).status_code == 403
@@ -837,6 +838,11 @@ def test_farmer_assistant_chat_rejects_blank_oversize_and_extra_input(client_pai
     assert client.post(path, json={"question": "q" * 1501}, headers=headers).status_code == 422
     assert client.post(
         path,
+        json={"question": "Hello", "language_code": "fr-FR"},
+        headers=headers,
+    ).status_code == 422
+    assert client.post(
+        path,
         json={"question": "Hello", "api_key": "do-not-accept"},
         headers=headers,
     ).status_code == 422
@@ -848,7 +854,7 @@ def test_farmer_assistant_rate_limit_is_per_farmer(client_pair, monkeypatch):
     assert register(other, email="other-farmer@example.com").status_code == 201
     monkeypatch.setattr(main, "ASSISTANT_MAX_ATTEMPTS", 1)
 
-    async def mocked_answer(_question):
+    async def mocked_answer(_question, _language_code):
         return "Answer."
 
     monkeypatch.setattr(main, "answer_farmer_question", mocked_answer)
@@ -923,15 +929,21 @@ def test_model2_explanation_keeps_server_prediction_separate_from_text(
     }
     monkeypatch.setattr(main, "_get_model2_prediction", lambda *_args: prediction)
 
-    async def mocked_explanation(question, trusted_prediction):
+    async def mocked_explanation(question, trusted_prediction, language_code):
         assert "Explain" in question
         assert trusted_prediction is prediction
+        assert language_code == "ml-IN"
         return "This is a test-only explanation."
 
     monkeypatch.setattr(main, "explain_model2_prediction", mocked_explanation)
     response = client.post(
         "/api/assistant/model2-explanation",
-        json={"field_id": 1, "crop_id": 1, "question": "Explain this."},
+        json={
+            "field_id": 1,
+            "crop_id": 1,
+            "question": "Explain this.",
+            "language_code": "ml-IN",
+        },
         headers=csrf_headers(client),
     )
 
@@ -962,8 +974,8 @@ def test_experimental_dashboard_is_separate_and_does_not_change_recommendations(
     assert 'data-view-link="experimental-model"' in sections
     assert "/static/experimental-model.js" in sections
     assert "/static/experimental-model.html" in sections_script
-    assert "/static/weather.js?v=20261028-field-weather1" in sections
-    assert "/static/app.js?v=20261027-i18n2" in template
+    assert "/static/weather.js?v=" in sections
+    assert "/static/app.js?v=" in template
     assert "Experimental demonstration only. This model was trained on synthetic or synthetic-augmented data and predicts a proxy target. It is not a validated real-world irrigation recommendation. Do not use this result alone to decide whether to irrigate." in lab
     assert 'name="soil_moisture"' not in template
     assert 'name="soil_moisture"' not in lab
@@ -990,6 +1002,8 @@ def test_experimental_dashboard_is_separate_and_does_not_change_recommendations(
     assert 'data-assistant-form' in lab
     assert "/api/assistant/chat" in assistant_script
     assert "/api/assistant/model2-explanation" in assistant_script
+    assert "language_code: getLanguageCode()" in assistant_script
+    assert "error.message" not in assistant_script
     assert "textContent" in assistant_script
     assert "innerHTML" not in assistant_script
     assert "JalSaathiFarmerAssistant.initialize()" in sections_script

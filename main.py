@@ -30,6 +30,9 @@ from sqlalchemy.orm import Session
 from models import (
     AuthSession,
     Base,
+    DailyFarmReminderSetting,
+    DailyFarmTask,
+    FarmNotificationSubscription,
     Farmer,
     FarmerCrop,
     FarmerField,
@@ -40,6 +43,11 @@ from schemas import (
     CropCreate,
     CropPatch,
     CropResponse,
+    DailyFarmReminderSettings,
+    DailyFarmReminderSettingsResponse,
+    DailyFarmTaskCreate,
+    DailyFarmTaskResponse,
+    DailyFarmTaskUpdate,
     ExperimentalPredictionRequest,
     ExperimentalPredictionResponse,
     EXPERIMENTAL_CROP_NAMES,
@@ -52,6 +60,8 @@ from schemas import (
     FieldPatch,
     FieldResponse,
     Model2ExplanationRequest,
+    NotificationSubscriptionPayload,
+    NotificationSubscriptionResponse,
     ReducedWeatherPredictionRequest,
     ReducedWeatherPredictionResponse,
     TranslationRequest,
@@ -68,11 +78,13 @@ from weather_api.integrations.weather_api import (
 )
 from sarvam_translation import (
     TranslationConfigurationError,
+    TranslationEntitlementError,
     TranslationProviderError,
     TranslationRateLimitError,
     translate_texts,
 )
 from weather_api.integrations.reverse_geocoding import get_locality
+import farmer_assistant
 from farmer_assistant import (
     AssistantServiceError,
     answer_farmer_question,
@@ -656,6 +668,41 @@ def _field_response(field: FarmerField) -> FieldResponse:
 
 def _crop_response(crop: FarmerCrop) -> CropResponse:
     return CropResponse.model_validate(crop)
+
+
+def _task_response(task: DailyFarmTask) -> DailyFarmTaskResponse:
+    return DailyFarmTaskResponse.model_validate(task)
+
+
+def _owned_task(db: Session, farmer_id: int, task_id: int) -> DailyFarmTask:
+    task = db.scalar(
+        select(DailyFarmTask).where(
+            DailyFarmTask.id == task_id,
+            DailyFarmTask.farmer_id == farmer_id,
+        )
+    )
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found.")
+    return task
+
+
+def _get_or_create_reminder_settings(db: Session, farmer_id: int) -> DailyFarmReminderSetting:
+    setting = db.scalar(
+        select(DailyFarmReminderSetting).where(DailyFarmReminderSetting.farmer_id == farmer_id)
+    )
+    if setting is not None:
+        return setting
+    setting = DailyFarmReminderSetting(
+        farmer_id=farmer_id,
+        enabled=False,
+        interval_hours=2,
+        custom_interval_hours=None,
+        next_reminder_at=None,
+    )
+    db.add(setting)
+    db.commit()
+    db.refresh(setting)
+    return setting
 
 
 def _owned_field(db: Session, farmer_id: int, field_id: int) -> FarmerField:
@@ -1549,12 +1596,21 @@ def _get_model2_prediction(
 async def farmer_assistant_chat(
     payload: FarmerAssistantRequest,
     response: Response,
+    db: Session = Depends(get_db),
     context: tuple[Farmer, AuthSession] = Depends(require_csrf),
 ):
     response.headers["Cache-Control"] = "no-store"
     _limit_assistant_requests(context[0].id)
+    token = farmer_assistant.assistant_request_context.set({
+        "db": db,
+        "farmer_id": context[0].id,
+        "farmer": context[0],
+    })
     try:
-        answer = await answer_farmer_question(payload.question)
+        answer = await answer_farmer_question(
+            payload.question,
+            payload.language_code,
+        )
     except AssistantServiceError as error:
         logger.warning("Farmer assistant request failed with status %s.", error.status_code)
         headers = {"Cache-Control": "no-store"}
@@ -1565,6 +1621,8 @@ async def farmer_assistant_chat(
             detail=error.detail,
             headers=headers,
         ) from error
+    finally:
+        farmer_assistant.assistant_request_context.reset(token)
     return {"answer": answer}
 
 
@@ -1585,7 +1643,11 @@ async def farmer_assistant_model2_explanation(
         payload.crop_id,
     )
     try:
-        explanation = await explain_model2_prediction(payload.question, prediction)
+        explanation = await explain_model2_prediction(
+            payload.question,
+            prediction,
+            payload.language_code,
+        )
     except AssistantServiceError as error:
         logger.warning("Model 2 explanation request failed with status %s.", error.status_code)
         headers = {"Cache-Control": "no-store"}
@@ -1784,6 +1846,174 @@ def management_page():
     return RedirectResponse("/static/sections.html?view=fields", status_code=303)
 
 
+@app.get("/todo", include_in_schema=False)
+def daily_farm_todo_page(request: Request, db: Session = Depends(get_db)):
+    try:
+        get_auth_context(request, db)
+    except HTTPException as error:
+        if error.status_code != 401:
+            raise
+        return RedirectResponse("/static/auth.html?view=login", status_code=303)
+    return FileResponse(TEMPLATES_DIR / "todo-list.html")
+
+
+@app.get("/api/todo/tasks", response_model=list[DailyFarmTaskResponse])
+def list_daily_farm_tasks(
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(get_auth_context),
+):
+    farmer_id = context[0].id
+    tasks = db.scalars(
+        select(DailyFarmTask)
+        .where(DailyFarmTask.farmer_id == farmer_id)
+        .order_by(DailyFarmTask.completed_at.is_not(None), DailyFarmTask.created_at.desc())
+    ).all()
+    return [_task_response(task) for task in tasks]
+
+
+@app.post("/api/todo/tasks", response_model=DailyFarmTaskResponse, status_code=201)
+def create_daily_farm_task(
+    payload: DailyFarmTaskCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    farmer_id = context[0].id
+    task = DailyFarmTask(
+        farmer_id=farmer_id,
+        title=payload.title,
+        field_name=payload.field_name,
+        completed_at=None,
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    return _task_response(task)
+
+
+@app.patch("/api/todo/tasks/{task_id}", response_model=DailyFarmTaskResponse)
+def update_daily_farm_task(
+    task_id: int,
+    payload: DailyFarmTaskUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    task = _owned_task(db, context[0].id, task_id)
+    if payload.title is not None:
+        task.title = payload.title
+    if payload.field_name is not None:
+        task.field_name = payload.field_name
+    if payload.completed is not None:
+        task.completed_at = datetime.now(timezone.utc) if payload.completed else None
+    db.commit()
+    db.refresh(task)
+    return _task_response(task)
+
+
+@app.delete("/api/todo/tasks/{task_id}", status_code=204)
+def delete_daily_farm_task(
+    task_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    task = _owned_task(db, context[0].id, task_id)
+    db.delete(task)
+    db.commit()
+    return Response(status_code=204)
+
+
+@app.get("/api/todo/reminder-settings", response_model=DailyFarmReminderSettingsResponse)
+def get_daily_farm_reminder_settings(
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(get_auth_context),
+):
+    settings = _get_or_create_reminder_settings(db, context[0].id)
+    return DailyFarmReminderSettingsResponse.model_validate(settings)
+
+
+@app.post("/api/todo/reminder-settings", response_model=DailyFarmReminderSettingsResponse)
+def update_daily_farm_reminder_settings(
+    payload: DailyFarmReminderSettings,
+    request: Request,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    settings = _get_or_create_reminder_settings(db, context[0].id)
+    settings.enabled = payload.enabled
+    settings.interval_hours = payload.interval_hours
+    settings.custom_interval_hours = payload.custom_interval_hours
+    settings.next_reminder_at = (
+        datetime.now(timezone.utc) + timedelta(hours=payload.interval_hours)
+        if payload.enabled
+        else None
+    )
+    db.commit()
+    db.refresh(settings)
+    return DailyFarmReminderSettingsResponse.model_validate(settings)
+
+
+@app.get("/api/todo/pending-tasks", response_model=list[DailyFarmTaskResponse])
+def get_pending_daily_farm_tasks(
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(get_auth_context),
+):
+    tasks = db.scalars(
+        select(DailyFarmTask)
+        .where(DailyFarmTask.farmer_id == context[0].id)
+        .where(DailyFarmTask.completed_at.is_(None))
+        .order_by(DailyFarmTask.created_at.desc())
+    ).all()
+    return [_task_response(task) for task in tasks]
+
+
+@app.post("/api/todo/notification-subscriptions", response_model=NotificationSubscriptionResponse, status_code=201)
+def register_notification_subscription(
+    payload: NotificationSubscriptionPayload,
+    request: Request,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    expires_at = payload.expires_at
+    if expires_at is not None and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    subscription = FarmNotificationSubscription(
+        farmer_id=context[0].id,
+        endpoint=payload.endpoint,
+        p256dh=payload.p256dh,
+        auth=payload.auth,
+        expires_at=expires_at,
+        revoked_at=None,
+    )
+    db.add(subscription)
+    db.commit()
+    db.refresh(subscription)
+    return NotificationSubscriptionResponse.model_validate(subscription)
+
+
+@app.delete("/api/todo/notification-subscriptions", status_code=204)
+def revoke_notification_subscription(
+    request: Request,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    endpoint = request.headers.get("x-notification-endpoint") or request.query_params.get("endpoint")
+    if not endpoint:
+        raise HTTPException(status_code=400, detail="Notification endpoint is required.")
+    subscriptions = db.scalars(
+        select(FarmNotificationSubscription).where(
+            FarmNotificationSubscription.farmer_id == context[0].id,
+            FarmNotificationSubscription.endpoint == endpoint,
+            FarmNotificationSubscription.revoked_at.is_(None),
+        )
+    ).all()
+    for subscription in subscriptions:
+        subscription.revoked_at = datetime.now(timezone.utc)
+    db.commit()
+    return Response(status_code=204)
+
+
 @app.post("/api/translate", response_model=TranslationResponse)
 def translate_ui_text(
     payload: TranslationRequest,
@@ -1808,6 +2038,20 @@ def translate_ui_text(
             detail="Translation service is busy. Please try again later.",
             headers={"Retry-After": str(error.retry_after_seconds or 60)},
         ) from error
+    except TranslationEntitlementError as error:
+        logger.warning(
+            "Sarvam translation request blocked: category=%s upstream_status=%s",
+            error.category,
+            error.status_code,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Sarvam translation is unavailable because the account may not have "
+                "the required plan, credits, or API entitlement. Local dictionary "
+                "translations remain available."
+            ),
+        ) from error
     except TranslationProviderError as error:
         logger.warning(
             "Sarvam translation request failed: category=%s upstream_status=%s",
@@ -1816,7 +2060,10 @@ def translate_ui_text(
         )
         raise HTTPException(
             status_code=502,
-            detail="Translation is temporarily unavailable. Untranslated text remains in English.",
+            detail=(
+                "Sarvam translation is temporarily unavailable. Use locally stored "
+                "translations or try again later."
+            ),
         ) from error
     except ValueError as error:
         raise HTTPException(

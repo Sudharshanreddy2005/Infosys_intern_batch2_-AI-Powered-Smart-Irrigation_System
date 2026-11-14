@@ -45,6 +45,13 @@
 
   const finiteWeatherValue = (value) =>
     typeof value === "number" && Number.isFinite(value) ? value : null;
+  const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[character]);
 
   const isCurrentWeatherRequest = (
     requestGeneration,
@@ -362,12 +369,12 @@
         weatherObservedAt = Date.parse(mapped.observation_time);
         const missingWeather = WEATHER_FEATURES.filter((name) => mapped.values[name] === null);
         const observedAt = mapped.observation_time
-          ? ` Observation time: ${mapped.observation_time}.`
+          ? ` Observation time: ${window.JalSaathiI18n.dateMarkup(mapped.observation_time, "date-time")}.`
           : " Provider observation time was not supplied.";
         const wind = mapped.wind_speed_mps === null
           ? " Wind speed is unavailable."
           : " Wind speed is available from the provider in m/s, but is not mapped because the model feature unit is undocumented.";
-        weatherStatus.textContent = `Fresh current weather loaded for ${field.name}.${observedAt}${wind}`;
+        weatherStatus.innerHTML = `Fresh current weather loaded for ${escapeHtml(field.name)}.${observedAt}${wind}`;
         if (missingWeather.length) {
           const labels = missingWeather.map((name) => WEATHER_LABELS[name]);
           weatherStatus.textContent += ` Missing weather reading(s): ${labels.join(", ")}.`;
@@ -557,8 +564,6 @@
           "[data-result-class]": prediction.prediction === 1
             ? "Proxy class 1 predicted"
             : "Proxy class 0 predicted",
-          "[data-result-probability]":
-            `${(prediction.proxy_positive_probability * 100).toFixed(1)}%`,
           "[data-result-target]": prediction.target,
           "[data-result-status]": prediction.model_status,
           "[data-result-provenance]": prediction.dataset_provenance,
@@ -571,6 +576,16 @@
           }
           node.textContent = value;
         }
+        const probabilityNode = result.querySelector("[data-result-probability]");
+        if (!(probabilityNode instanceof HTMLElement)) {
+          throw new Error("The experimental result panel is unavailable.");
+        }
+        window.JalSaathiI18n.setNumber(
+          probabilityNode,
+          prediction.proxy_positive_probability * 100,
+          {},
+          "%",
+        );
         result.hidden = false;
         message.textContent = "Experimental proxy result received. The dashboard does not reuse manually entered values as verified field measurements.";
       } catch (error) {

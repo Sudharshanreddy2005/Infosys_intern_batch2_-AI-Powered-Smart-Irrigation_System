@@ -4,15 +4,17 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useFarmData } from "@/components/farm-data-provider";
-import { useI18n } from "@/components/i18n-provider";
+import { isTranslationSource, useI18n, type TranslationSource } from "@/components/i18n-provider";
 import { ErrorState, LoadingState, OfflineBanner } from "@/components/states";
 
-const desktopNavigation = [
+type NavigationItem = { href: string; label: TranslationSource; icon: string };
+const desktopNavigation: NavigationItem[] = [
   { href: "/dashboard", label: "Home", icon: "⌂" },
   { href: "/fields", label: "Fields", icon: "♧" },
   { href: "/crops", label: "Crops", icon: "✿" },
   { href: "/schedule", label: "Schedule", icon: "▦" },
   { href: "/weather", label: "Weather", icon: "☼" },
+  { href: "/crop-disease", label: "Crop disease", icon: "🩺" },
   { href: "/alerts", label: "Alerts", icon: "ⓘ" },
   { href: "/profile", label: "Profile", icon: "◉" },
 ];
@@ -23,7 +25,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   const pathname = usePathname();
   const { data, loading, online, error, refreshing, refreshCooling, refresh, signOut } = useFarmData();
   const { t, formatDateTime } = useI18n();
-  const [scheduleActionNotice, setScheduleActionNotice] = useState("");
+  const [scheduleActionNotice, setScheduleActionNotice] = useState<TranslationSource | "">("");
 
   useEffect(() => {
     const navigateFromCache = (event: MouseEvent) => {
@@ -46,7 +48,8 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   useEffect(() => {
     let timer: number | undefined;
     const showNotice = (event: Event) => {
-      if (!(event instanceof CustomEvent) || typeof event.detail?.message !== "string") return;
+      if (!(event instanceof CustomEvent) || typeof event.detail?.message !== "string" ||
+          !isTranslationSource(event.detail.message)) return;
       setScheduleActionNotice(event.detail.message);
       if (timer !== undefined) window.clearTimeout(timer);
       timer = window.setTimeout(() => setScheduleActionNotice(""), 5000);
@@ -94,7 +97,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
       <main className="content">
         {!online && <OfflineBanner lastUpdated={data.lastUpdated} />}
         {error && online && <ErrorState>{t(error)}</ErrorState>}
-        {scheduleActionNotice && <p className="notice schedule-action-notice" role="status">{scheduleActionNotice}</p>}
+        {scheduleActionNotice && <p className="notice schedule-action-notice" role="status">{t(scheduleActionNotice)}</p>}
         {children}
         <footer className="page-footer"><span>JalSaathi · {t("Smart Irrigation")}</span><span>{t("Last updated {date}", { date: formatDateTime(data.lastUpdated) })}</span></footer>
       </main>

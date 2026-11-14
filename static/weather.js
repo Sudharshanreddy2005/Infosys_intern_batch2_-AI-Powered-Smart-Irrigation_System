@@ -11,6 +11,12 @@
   const currentInFlight = new Map();
   const cache = new Map();
   const currentCache = new Map();
+  const translate = (key, parameters) =>
+    window.JalSaathiI18n?.t?.(key, parameters) || key;
+  const isValidWeatherValue = (value) =>
+    (typeof value === "number" || typeof value === "string") &&
+    !(typeof value === "string" && !value.trim()) &&
+    Number.isFinite(Number(value));
   const displayWeatherFields = [
     "temperature_c",
     "feels_like_c",
@@ -30,6 +36,29 @@
   const isCoordinateLocation = (location) =>
     /^-?\d{1,3}(?:\.\d+)?\s*,\s*-?\d{1,3}(?:\.\d+)?$/.test(String(location || "").trim());
 
+  const getProfileLocation = () => {
+    const profile = window.JalSaathiProfile?.getProfile?.();
+    const parts = [profile?.village, profile?.district, profile?.state]
+      .filter((part) => typeof part === "string")
+      .map((part) => part.trim())
+      .filter(Boolean);
+    if (!parts.length) return "";
+    let location = "";
+    for (const part of parts) {
+      const candidate = location ? `${location}, ${part}` : part;
+      if (candidate.length > 100) break;
+      location = candidate;
+    }
+    return (location || parts[0]).slice(0, 100);
+  };
+
+  const manualLocationStorageKey = () => {
+    const profileId = window.JalSaathiProfile?.getProfile?.()?.id;
+    return Number.isSafeInteger(profileId)
+      ? `${MANUAL_LOCATION_KEY}.${profileId}`
+      : MANUAL_LOCATION_KEY;
+  };
+
   const displayLocation = (current, source, selection = {}) => {
     const candidate = source === "current-location"
       ? current?.locality || current?.location_name
@@ -37,7 +66,9 @@
     if (typeof candidate === "string" && candidate.trim() && !isCoordinateLocation(candidate)) {
       return candidate.trim().slice(0, 120);
     }
-    return source === "configured" ? "Configured location" : "";
+    if (source === "configured") return translate("weather.configuredLocation");
+    if (source === "current-location") return translate("weather.currentLocation");
+    return "";
   };
 
   const hasDisplayableWeather = (current) => current && typeof current === "object" &&
@@ -49,10 +80,7 @@
     "wind_speed_mps",
     "rainfall_mm_per_hr",
     "precipitation_probability_percent",
-  ].some((field) => {
-    const value = current[field];
-    return value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value));
-  });
+  ].some((field) => isValidWeatherValue(current[field]));
 
   const readDisplayWeather = ({ location } = {}) => {
     try {
@@ -86,7 +114,8 @@
 
   const saveDisplayWeather = (data, source) => {
     const current = data?.current;
-    if (!hasDisplayableWeather(current) || !["current-location", "manual", "configured"].includes(source)) return;
+    if (!hasDisplayableWeather(current) ||
+        !["current-location", "manual", "profile", "configured"].includes(source)) return;
     const locationLabel = displayLocation(current, source, data.selection);
     if (!locationLabel) return;
     const configuredCoordinates = source === "configured" &&
@@ -122,6 +151,10 @@
 
   const getManualLocation = () => {
     try {
+      const saved = localStorage.getItem(manualLocationStorageKey())?.trim();
+      if (saved) return saved;
+      const profile = window.JalSaathiProfile?.getProfile?.();
+      if (Number.isSafeInteger(profile?.id) && getProfileLocation()) return "";
       return localStorage.getItem(MANUAL_LOCATION_KEY)?.trim() || "";
     } catch (error) {
       console.error("JalSaathi could not read the saved manual weather location:", error);
@@ -133,7 +166,7 @@
     const value = String(location || "").trim();
     if (!value) throw new Error("Enter a city or locality.");
     try {
-      localStorage.setItem(MANUAL_LOCATION_KEY, value);
+      localStorage.setItem(manualLocationStorageKey(), value);
     } catch (error) {
       console.error("JalSaathi could not save the manual weather location:", error);
       throw new Error("The location could not be saved in this browser.");
@@ -169,7 +202,13 @@
     } : { credentials: "same-origin" };
     let response;
     for (let attempt = 0; attempt <= MAX_TRANSIENT_WEATHER_RETRIES; attempt += 1) {
-      response = await fetch(url, requestOptions);
+      try {
+        response = await fetch(url, requestOptions);
+      } catch (error) {
+        if (!(error instanceof TypeError)) throw error;
+        throw new Error(window.JalSaathiProfile?.apiErrorMessage?.(0, "", path) ||
+          "The service is temporarily unavailable. Please try again later.");
+      }
       if (response.ok || ![429, 503].includes(response.status) ||
           attempt === MAX_TRANSIENT_WEATHER_RETRIES) break;
 
@@ -180,9 +219,12 @@
     }
     const payload = await response.json().catch(() => null);
     if (!response.ok) {
-      const error = new Error(payload && typeof payload.detail === "string"
-        ? payload.detail
-        : "Weather data is unavailable. Check the provider configuration and try again.");
+      const detail = payload && typeof payload.detail === "string" ? payload.detail : "";
+      const error = new Error(window.JalSaathiProfile?.apiErrorMessage?.(
+        response.status,
+        detail,
+        path,
+      ) || "Weather data is unavailable. Check the provider configuration and try again.");
       error.status = response.status;
       const retryAfter = response.headers?.get?.("retry-after");
       if (retryAfter) {
@@ -206,11 +248,15 @@
     { query: new URLSearchParams({ hours: String(hours), timestep }).toString() },
   );
 
-  const load = (selection = {}, { refresh = false } = {}) => {
+  const load = (selection = {}, {
+    refresh = false,
+    includeHourly = true,
+    includeDaily = true,
+  } = {}) => {
     const normalized = selection.coordinates
       ? { coordinates: validateCoordinates(selection.coordinates) }
       : { location: selection.location?.trim() || "" };
-    const key = selectionKey(normalized);
+    const key = `${selectionKey(normalized)}|hourly:${includeHourly}|daily:${includeDaily}`;
     const existing = cache.get(key);
     if (!refresh && existing && Date.now() - existing.time < CACHE_MILLISECONDS) {
       return Promise.resolve(existing.data);
@@ -219,8 +265,8 @@
 
     const request = Promise.allSettled([
       requestJson("/weather/current", normalized),
-      forecast(normalized, "1h", 24),
-      forecast(normalized, "1d", 5),
+      includeHourly ? forecast(normalized, "1h", 24) : Promise.resolve({ data: [] }),
+      includeDaily ? forecast(normalized, "1d", 5) : Promise.resolve({ data: [] }),
     ]).then(([currentResult, hourlyResult, dailyResult]) => {
       if (currentResult.status === "rejected") throw currentResult.reason;
       if (!hasDisplayableWeather(currentResult.value)) {
@@ -307,8 +353,65 @@
     );
   });
 
-  const loadAutomatic = async ({ refresh = false, explicit = false } = {}) => {
+  const savedLocationCandidates = () => {
+    const candidates = [];
     const manualLocation = getManualLocation();
+    const profileLocation = getProfileLocation();
+    if (manualLocation) candidates.push({ location: manualLocation, source: "manual" });
+    if (profileLocation && normalizeLocationKey(profileLocation) !== normalizeLocationKey(manualLocation)) {
+      candidates.push({ location: profileLocation, source: "profile" });
+    }
+    return candidates;
+  };
+
+  const loadLocationFallback = async ({
+    refresh = false,
+    includeHourly = true,
+    includeDaily = true,
+    locationIssue = null,
+    initialError = null,
+  } = {}) => {
+    const candidates = [
+      ...savedLocationCandidates(),
+      { location: "", source: "configured" },
+    ];
+    let lastError = initialError;
+    let savedLocationFailed = false;
+    for (const candidate of candidates) {
+      try {
+        const selection = candidate.location ? { location: candidate.location } : {};
+        const data = await load(selection, { refresh, includeHourly, includeDaily });
+        return {
+          data,
+          source: candidate.source,
+          locationIssue: savedLocationFailed
+            ? "saved-location-unavailable"
+            : locationIssue,
+        };
+      } catch (error) {
+        lastError = error;
+        if (candidate.source !== "configured") savedLocationFailed = true;
+      }
+    }
+    return {
+      data: null,
+      source: "unavailable",
+      locationIssue: savedLocationFailed ? "saved-location-unavailable" : locationIssue,
+      weatherError: lastError || new Error("Weather data is unavailable."),
+    };
+  };
+
+  const loadAutomatic = async ({
+    refresh = false,
+    explicit = false,
+    includeHourly = true,
+    includeDaily = true,
+  } = {}) => {
+    const savedLocations = savedLocationCandidates();
+    if (!explicit && savedLocations.length) {
+      return loadLocationFallback({ refresh, includeHourly, includeDaily });
+    }
+
     const permission = await geolocationPermission();
     let wasPreviouslyDenied = false;
     try { wasPreviouslyDenied = localStorage.getItem("jalsaathi.location-denied.v1") === "true"; } catch (error) {
@@ -319,49 +422,15 @@
         console.warn("JalSaathi could not clear the saved location permission state:", error);
       }
     }
-    const loadLocationFallback = async (locationError) => {
-      let manualError = null;
-      if (manualLocation) {
-        try {
-          return {
-            data: await load({ location: manualLocation }, { refresh }),
-            source: "manual",
-            locationError,
-          };
-        } catch (error) {
-          manualError = error;
-        }
-      }
-      if (manualError?.hasRetryAfter) {
-        return {
-          data: null,
-          source: "unavailable",
-          locationError: `${locationError} Saved city weather is rate limited.`,
-          weatherError: manualError,
-        };
-      }
-      try {
-        return {
-          data: await load({}, { refresh }),
-          source: "configured",
-          locationError: manualError
-            ? `${locationError} Saved city weather was unavailable; showing the configured location.`
-            : locationError,
-        };
-      } catch (weatherError) {
-        return {
-          data: null,
-          source: "unavailable",
-          locationError: manualError
-            ? `${locationError} Saved city and configured weather are unavailable.`
-            : locationError,
-          weatherError,
-        };
-      }
-    };
     if (!explicit && (permission === "denied" || (wasPreviouslyDenied && permission !== "granted"))) {
-      return loadLocationFallback("Location permission is off.");
+      return loadLocationFallback({
+        refresh,
+        includeHourly,
+        includeDaily,
+        locationIssue: "permission-denied",
+      });
     }
+
     let coordinates;
     try {
       coordinates = await getCoordinates();
@@ -371,51 +440,61 @@
           console.warn("JalSaathi could not remember the denied location preference:", storageError);
         }
       }
-      return loadLocationFallback(error.message);
+      return loadLocationFallback({
+        refresh,
+        includeHourly,
+        includeDaily,
+        locationIssue: error.geolocationCode === 1
+          ? "permission-denied"
+          : "location-unavailable",
+      });
     }
-    return { data: await load({ coordinates }, { refresh }), source: "current-location" };
-  };
 
-  const loadAutomaticWithFallback = async ({ refresh = false, explicit = false } = {}) => {
     try {
-      return await loadAutomatic({ refresh, explicit });
-    } catch (automaticError) {
-      if (automaticError.hasRetryAfter) throw automaticError;
-      const manualLocation = getManualLocation();
-      const fallbackLocations = manualLocation ? [manualLocation, ""] : [""];
-      let fallbackError = automaticError;
-      for (const location of fallbackLocations) {
-        try {
-          return {
-            data: await load({ location }, { refresh }),
-            source: location ? "manual" : "configured",
-            locationError: `Automatic location unavailable: ${automaticError.message}`,
-          };
-        } catch (error) {
-          fallbackError = error;
-          if (error.hasRetryAfter) break;
-        }
-      }
-      return { data: null, source: "unavailable", weatherError: fallbackError };
+      return {
+        data: await load({ coordinates }, { refresh, includeHourly, includeDaily }),
+        source: "current-location",
+      };
+    } catch (error) {
+      return loadLocationFallback({
+        refresh,
+        includeHourly,
+        includeDaily,
+        locationIssue: "current-location-unavailable",
+        initialError: error,
+      });
     }
   };
 
-  const formatNumber = (value, suffix = "") => value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value))
-    ? `${Number(value).toLocaleString(undefined, { maximumFractionDigits: 1 })}${suffix}`
-    : "Not provided";
+  const loadAutomaticWithFallback = async (options = {}) => {
+    try {
+      return await loadAutomatic(options);
+    } catch (error) {
+      return loadLocationFallback({
+        ...options,
+        locationIssue: "current-location-unavailable",
+        initialError: error,
+      });
+    }
+  };
+
+  const formatNumber = (value, suffix = "") => isValidWeatherValue(value)
+    ? `${window.JalSaathiI18n.formatNumber(Number(value))}${suffix}`
+    : window.JalSaathiI18n.t("legacy.not.provided.20a04182");
+
+  const isValidTemperature = isValidWeatherValue;
 
   const formatCurrentTemperature = (value) => {
-    if ((typeof value !== "number" && typeof value !== "string") ||
-        (typeof value === "string" && value.trim() === "")) return "Unavailable";
-    const temperature = Number(value);
-    return Number.isFinite(temperature) ? `${Math.round(temperature)}°C` : "Unavailable";
+    return isValidTemperature(value)
+      ? window.JalSaathiI18n.formatTemperature(value)
+      : translate("weather.shortUnavailable");
   };
 
   const publishCurrentWeather = (current) => {
     window.dispatchEvent(new CustomEvent("jalsaathi:weather-updated", {
       detail: {
         temperatureC: current?.temperature_c ?? null,
-        condition: current ? condition(current.weather_code) : "Unavailable",
+        condition: current ? condition(current.weather_code) : translate("legacy.unavailable.2c9c1f79"),
       },
     }));
   };
@@ -423,16 +502,16 @@
   const setTemperatureIndicator = (root, selector, value) => {
     const indicator = root.querySelector(selector);
     if (indicator instanceof HTMLElement) {
-      indicator.hidden = formatCurrentTemperature(value) === "Unavailable";
+      indicator.hidden = !isValidTemperature(value);
     }
   };
 
   const formatTime = (value) => {
-    if (!value) return "Not provided";
+    if (!value) return window.JalSaathiI18n.t("legacy.not.provided.20a04182");
     const date = new Date(value);
     return Number.isNaN(date.getTime())
-      ? String(value)
-      : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
+      ? window.JalSaathiI18n.t("legacy.not.provided.20a04182")
+      : window.JalSaathiI18n.formatDate(date, { dateStyle: "medium", timeStyle: "short" });
   };
 
   const weatherConditions = {
@@ -479,6 +558,23 @@
     if (element instanceof HTMLElement) element.textContent = value;
   };
 
+  const setTemperatureValue = (root, selector, value) => {
+    const element = root.querySelector(selector);
+    if (!(element instanceof HTMLElement)) return;
+    element.textContent = formatCurrentTemperature(value);
+    element.classList.toggle("is-unavailable", !isValidTemperature(value));
+  };
+
+  const locationIssueMessage = (issue) => {
+    const key = {
+      "permission-denied": "weather.locationPermissionOff",
+      "location-unavailable": "weather.locationUnavailable",
+      "saved-location-unavailable": "weather.savedLocationUnavailable",
+      "current-location-unavailable": "weather.currentLocationUnavailable",
+    }[issue];
+    return key ? translate(key) : "";
+  };
+
   const renderDashboard = (root, result) => {
     const current = result.data?.current;
     const illustration = weatherIllustration(current?.weather_code);
@@ -490,44 +586,46 @@
     setValue(root, '[data-weather="location"]', result.source === "cached"
       ? result.cacheLocation
       : current ? displayLocation(current, result.source, result.data?.selection) ||
-        (result.source === "current-location" ? "Current location" : result.source === "manual"
-          ? result.data?.selection?.location || "Chosen location"
-          : "Configured location")
-        : result.selection?.location || "Location unavailable");
-    setValue(root, '[data-weather="temperature"]', formatCurrentTemperature(current?.temperature_c));
+        (result.source === "current-location" ? translate("weather.currentLocation") : result.source === "manual"
+          ? result.data?.selection?.location || translate("legacy.chosen.location.7ded283f")
+          : translate("weather.configuredLocation"))
+        : result.selection?.location || translate("weather.locationUnavailable"));
+    setTemperatureValue(root, '[data-weather="temperature"]', current?.temperature_c);
     setTemperatureIndicator(root, ".temperature-indicator", current?.temperature_c);
     publishCurrentWeather(current);
     setValue(root, '[data-weather="condition"]', current
       ? condition(current.weather_code)
-      : result.weatherError?.message || "Weather unavailable");
-    setValue(root, '[data-weather="feels_like"]', current ? formatNumber(current.feels_like_c, "°C") : "Not provided");
-    setValue(root, '[data-weather="humidity"]', current ? formatNumber(current.humidity_percent, "%") : "Not provided");
-    setValue(root, '[data-weather="wind_speed"]', current ? formatNumber(current.wind_speed_mps, " m/s") : "Not provided");
-    setValue(root, '[data-weather="rainfall"]', current ? formatNumber(current.rainfall_mm_per_hr, " mm/h") : "Not provided");
-    setValue(root, '[data-weather="rain_probability"]', current ? formatNumber(current.precipitation_probability_percent, "%") : "Not provided");
+      : translate("weather.currentUnavailable"));
+    setTemperatureValue(root, '[data-weather="feels_like"]', current?.feels_like_c);
+    setValue(root, '[data-weather="humidity"]', formatNumber(current?.humidity_percent, "%"));
+    setValue(root, '[data-weather="wind_speed"]', formatNumber(current?.wind_speed_mps, " m/s"));
+    setValue(root, '[data-weather="rainfall"]', formatNumber(current?.rainfall_mm_per_hr, " mm/h"));
+    setValue(root, '[data-weather="rain_probability"]', formatNumber(current?.precipitation_probability_percent, "%"));
     setValue(root, "[data-weather-updated]", result.source === "cached"
       ? `Saved weather · ${formatTime(result.cacheTime)}`
       : current?.observation_time
         ? `${current.is_stale ? "Cached observation" : "Last updated"} · ${formatTime(current.observation_time)}`
-        : "Last updated unavailable");
+        : translate("legacy.not.provided.20a04182"));
     const status = root.querySelector("[data-dashboard-weather-message]");
+    const locationPicker = root.querySelector("[data-weather-location-picker]");
     if (status instanceof HTMLElement) {
       status.textContent = result.source === "cached"
-        ? `Showing saved weather for ${result.cacheLocation} · Refreshing in the background.`
+        ? translate("weather.savedWeatherRefreshing", { location: result.cacheLocation })
         : result.refreshError
-          ? `Unable to refresh · showing the last successful weather${result.cacheLocation ? ` for ${result.cacheLocation}` : ""}.`
-          : result.locationError
-        ? `${result.locationError}${result.source === "configured" ? "" : " Choose a city on the Weather page."}`
-        : result.source === "current-location"
-          ? "Weather for your current location."
-          : result.source === "manual"
-            ? "Weather for your chosen location."
-            : current ? "Weather for the configured location." : "Weather is unavailable. Choose a city on the Weather page.";
+          ? translate(result.cacheLocation ? "weather.refreshFallback" : "weather.refreshFallbackNoLocation", {
+            location: result.cacheLocation || "",
+          })
+          : current
+            ? locationIssueMessage(result.locationIssue)
+            : translate("weather.currentUnavailable");
+    }
+    if (locationPicker instanceof HTMLElement) {
+      locationPicker.hidden = Boolean(current && !result.locationIssue && !result.refreshError);
     }
     if (result.data?.daily?.length) {
       const today = result.data.daily[0];
       setValue(root, "[data-weather-high-low]", today.temperature_high_c != null && today.temperature_low_c != null
-        ? `Next forecast day · ${formatNumber(today.temperature_high_c, "°C")} / ${formatNumber(today.temperature_low_c, "°C")}`
+        ? `Next forecast day · ${formatCurrentTemperature(today.temperature_high_c)} / ${formatCurrentTemperature(today.temperature_low_c)}`
         : "Forecast high/low not provided");
     } else {
       setValue(root, "[data-weather-high-low]", "Forecast high/low unavailable");
@@ -538,37 +636,54 @@
     const status = root.querySelector("[data-dashboard-weather-message]");
     const loading = root.querySelector("[data-weather-loading]");
     const manualLocation = getManualLocation();
-    const cached = readDisplayWeather({ location: manualLocation || undefined });
+    const preferredLocation = manualLocation || getProfileLocation();
+    const cached = readDisplayWeather({ location: preferredLocation || undefined });
     let hasWeather = Boolean(cached?.data?.current);
     let requestGeneration = 0;
+    let lastResult = cached;
     if (cached) renderDashboard(root, cached);
-    else {
-      setValue(root, '[data-weather="location"]', manualLocation || "Finding location…");
+    window.addEventListener("jalsaathi:language-changed", () => {
+      if (lastResult) renderDashboard(root, lastResult);
+    });
+    if (!cached) {
+      setValue(root, '[data-weather="location"]', preferredLocation || "Finding location…");
       setValue(root, '[data-weather="temperature"]', "Loading…");
-      setValue(root, '[data-weather="condition"]', "Loading weather…");
+      setValue(root, '[data-weather="condition"]', translate("legacy.audit.loading-weather.ff988149"));
       setValue(root, '[data-weather="feels_like"]', "Loading…");
       setValue(root, '[data-weather="humidity"]', "Loading…");
       setValue(root, '[data-weather="wind_speed"]', "Loading…");
       setValue(root, '[data-weather="rainfall"]', "Loading…");
       setValue(root, '[data-weather="rain_probability"]', "Loading…");
       setValue(root, "[data-weather-high-low]", "Loading forecast…");
-      if (status instanceof HTMLElement) status.textContent = "Loading weather…";
+      if (status instanceof HTMLElement) status.textContent = translate("legacy.audit.loading-weather.ff988149");
     }
     const setLoading = (isLoading) => {
       root.classList.toggle("is-loading", isLoading);
       if (loading instanceof HTMLElement) loading.hidden = !isLoading;
-      if (status instanceof HTMLElement && isLoading && !hasWeather) status.textContent = "Loading weather…";
+      if (status instanceof HTMLElement && isLoading && !hasWeather) {
+        status.textContent = translate("legacy.audit.loading-weather.ff988149");
+      }
     };
-    const renderFailure = (error, generation) => {
+    const renderFailure = (error, generation, failureResult = {}) => {
       if (generation !== undefined && generation !== requestGeneration) return;
+      if (error) console.warn("Dashboard weather refresh failed; retaining any saved weather.", error);
       if (hasWeather) {
         const latest = readDisplayWeather();
         if (status instanceof HTMLElement) {
-          status.textContent = `Unable to refresh · showing the last successful weather${latest?.cacheLocation ? ` for ${latest.cacheLocation}` : ""}.`;
+          status.textContent = translate(
+            latest?.cacheLocation ? "weather.refreshFallback" : "weather.refreshFallbackNoLocation",
+            { location: latest?.cacheLocation || "" },
+          );
         }
         return;
       }
-      renderDashboard(root, { data: null, source: "unavailable", weatherError: error });
+      lastResult = {
+        ...failureResult,
+        data: null,
+        source: "unavailable",
+        weatherError: error,
+      };
+      renderDashboard(root, lastResult);
     };
     const commit = (result, generation) => {
       if (generation !== requestGeneration) return;
@@ -577,18 +692,23 @@
       }
       hasWeather = true;
       const saved = saveDisplayWeather(result.data, result.source);
-      renderDashboard(root, {
+      lastResult = {
         ...result,
         cacheTime: saved?.savedAt,
         cacheLocation: saved?.locationLabel,
-      });
+      };
+      renderDashboard(root, lastResult);
       return true;
     };
     const startRefresh = (generation, explicit = false) => {
       setLoading(true);
-      loadAutomaticWithFallback({ refresh: true, explicit }).then((result) => {
+      loadAutomaticWithFallback({ refresh: true, explicit, includeHourly: false }).then((result) => {
         if (!commit(result, generation)) {
-          renderFailure(result.weatherError || new Error("Weather data is unavailable."), generation);
+          renderFailure(
+            result.weatherError || new Error("Weather data is unavailable."),
+            generation,
+            result,
+          );
         }
       }).catch((error) => renderFailure(error, generation)).finally(() => {
         if (generation === requestGeneration) setLoading(false);
@@ -603,11 +723,14 @@
       const currentGeneration = requestGeneration;
       const matchingCache = readDisplayWeather({ location });
       hasWeather = Boolean(matchingCache?.data?.current);
-      if (matchingCache) renderDashboard(root, matchingCache);
+      if (matchingCache) {
+        lastResult = matchingCache;
+        renderDashboard(root, lastResult);
+      }
       else {
         setValue(root, '[data-weather="location"]', location);
         setValue(root, '[data-weather="temperature"]', "Loading…");
-        setValue(root, '[data-weather="condition"]', "Loading weather…");
+        setValue(root, '[data-weather="condition"]', translate("legacy.audit.loading-weather.ff988149"));
         setValue(root, '[data-weather="feels_like"]', "Loading…");
         setValue(root, '[data-weather="humidity"]', "Loading…");
         setValue(root, '[data-weather="wind_speed"]', "Loading…");
@@ -636,13 +759,15 @@
     if (!(currentRoot instanceof HTMLElement) || !(status instanceof HTMLElement)) return;
 
     const savedLocation = getManualLocation();
-    const cached = readDisplayWeather({ location: savedLocation || undefined });
+    const preferredLocation = savedLocation || getProfileLocation();
+    const cached = readDisplayWeather({ location: preferredLocation || undefined });
     let hasWeather = Boolean(cached?.data?.current);
     let requestGeneration = 0;
+    let lastResult = cached;
     if (!cached) {
-      setValue(currentRoot, "[data-weather-location]", savedLocation || "Finding location…");
+      setValue(currentRoot, "[data-weather-location]", preferredLocation || "Finding location…");
       setValue(currentRoot, "[data-weather-temperature]", "Loading…");
-      setValue(currentRoot, "[data-weather-condition]", "Loading weather…");
+      setValue(currentRoot, "[data-weather-condition]", translate("legacy.audit.loading-weather.ff988149"));
       setValue(currentRoot, "[data-weather-feels-like]", "Loading…");
       setValue(currentRoot, "[data-weather-high-low]", "Loading…");
       setValue(currentRoot, "[data-weather-updated]", "Loading…");
@@ -655,83 +780,101 @@
     }
 
     const render = (result) => {
+      lastResult = result;
       const data = result.data;
       const current = data?.current;
       setValue(currentRoot, "[data-weather-location]", result.source === "cached"
         ? result.cacheLocation
         : current ? displayLocation(current, result.source, data?.selection) ||
-          (result.source === "current-location" ? "Current location" : result.source === "manual"
-            ? data?.selection?.location || "Chosen location"
-            : "Configured location")
-          : result.selection?.location || "Location unavailable");
-      setValue(currentRoot, "[data-weather-temperature]", formatCurrentTemperature(current?.temperature_c));
+          (result.source === "current-location" ? translate("weather.currentLocation") : result.source === "manual"
+            ? data?.selection?.location || translate("legacy.chosen.location.7ded283f")
+            : translate("weather.configuredLocation"))
+          : result.selection?.location || translate("weather.locationUnavailable"));
+      setTemperatureValue(currentRoot, "[data-weather-temperature]", current?.temperature_c);
       setTemperatureIndicator(currentRoot, "[data-weather-temperature-indicator]", current?.temperature_c);
       publishCurrentWeather(current);
-      setValue(currentRoot, "[data-weather-feels-like]", current ? formatNumber(current.feels_like_c, "°C") : "Not provided");
-      setValue(currentRoot, "[data-weather-condition]", current ? condition(current.weather_code) : result.weatherError?.message || "Unavailable");
+      setTemperatureValue(currentRoot, "[data-weather-feels-like]", current?.feels_like_c);
+      setValue(currentRoot, "[data-weather-condition]", current
+        ? condition(current.weather_code)
+        : translate("weather.currentUnavailable"));
       setValue(currentRoot, "[data-weather-observation]", result.source === "cached"
-        ? `Saved weather · ${formatTime(result.cacheTime)}`
+        ? translate("weather.savedWeatherRefreshing", {
+          location: result.cacheLocation || translate("weather.locationUnavailable"),
+        })
         : current
           ? `${current.is_stale ? "Cached data" : "Provider data"} · ${formatTime(current.observation_time)}`
-          : "Current weather unavailable");
-      setValue(currentRoot, "[data-weather-humidity]", current ? formatNumber(current.humidity_percent, "%") : "Not provided");
-      setValue(currentRoot, "[data-weather-wind]", current ? formatNumber(current.wind_speed_mps, " m/s") : "Not provided");
-      setValue(currentRoot, "[data-weather-rainfall]", current ? formatNumber(current.rainfall_mm_per_hr, " mm/h") : "Not provided");
-      setValue(currentRoot, "[data-weather-rain-probability]", current ? formatNumber(current.precipitation_probability_percent, "%") : "Not provided");
+          : translate("legacy.not.provided.20a04182"));
+      setValue(currentRoot, "[data-weather-humidity]", formatNumber(current?.humidity_percent, "%"));
+      setValue(currentRoot, "[data-weather-wind]", formatNumber(current?.wind_speed_mps, " m/s"));
+      setValue(currentRoot, "[data-weather-rainfall]", formatNumber(current?.rainfall_mm_per_hr, " mm/h"));
+      setValue(currentRoot, "[data-weather-rain-probability]", formatNumber(current?.precipitation_probability_percent, "%"));
       const daily = data?.daily?.[0];
       setValue(currentRoot, "[data-weather-high-low]", daily?.temperature_high_c != null && daily?.temperature_low_c != null
-        ? `${formatNumber(daily.temperature_high_c, "°C")} / ${formatNumber(daily.temperature_low_c, "°C")}`
-        : "Not provided");
+        ? `${formatCurrentTemperature(daily.temperature_high_c)} / ${formatCurrentTemperature(daily.temperature_low_c)}`
+        : translate("legacy.not.provided.20a04182"));
       setValue(currentRoot, "[data-weather-updated]", result.source === "cached"
         ? formatTime(result.cacheTime)
-        : current?.observation_time ? formatTime(current.observation_time) : "Not provided");
+        : current?.observation_time ? formatTime(current.observation_time) : translate("legacy.not.provided.20a04182"));
       status.textContent = result.source === "cached"
-        ? `Showing saved weather for ${result.cacheLocation} · Refreshing in the background.`
+        ? translate("weather.savedWeatherRefreshing", { location: result.cacheLocation })
         : result.refreshError
-          ? `Unable to refresh · showing the last successful weather${result.cacheLocation ? ` for ${result.cacheLocation}` : ""}.`
-          : result.locationError
-        ? `${result.locationError}${result.source === "configured" ? " Showing configured location." : ""}`
-        : result.weatherError?.message
-          || (result.source === "current-location"
-            ? "Weather for your current location"
-            : result.source === "manual"
-              ? "Chosen location"
-              : "Configured location");
+          ? translate(result.cacheLocation ? "weather.refreshFallback" : "weather.refreshFallbackNoLocation", {
+            location: result.cacheLocation || "",
+          })
+          : current
+            ? locationIssueMessage(result.locationIssue)
+            : translate("weather.currentUnavailable");
 
       if (result.source !== "cached" && hourlyRows instanceof HTMLElement) {
         hourlyRows.innerHTML = (data?.hourly || []).map((item) => `<tr>
-          <td>${escapeText(formatTime(item.time))}</td><td>${escapeText(formatNumber(item.temperature_c, "°C"))}</td>
-          <td>${escapeText(formatNumber(item.feels_like_c, "°C"))}</td><td>${escapeText(formatNumber(item.rainfall_mm_per_hr, " mm/h"))}</td>
+          <td>${escapeText(formatTime(item.time))}</td><td>${escapeText(formatCurrentTemperature(item.temperature_c))}</td>
+          <td>${escapeText(formatCurrentTemperature(item.feels_like_c))}</td><td>${escapeText(formatNumber(item.rainfall_mm_per_hr, " mm/h"))}</td>
           <td>${escapeText(formatNumber(item.rain_probability_percent, "%"))}</td>
         </tr>`).join("");
       }
       if (result.source !== "cached" && dailyRows instanceof HTMLElement) {
         dailyRows.innerHTML = (data?.daily || []).map((item) => `<tr>
           <td>${escapeText(formatTime(item.time))}</td><td>${escapeText(condition(item.weather_code))}</td>
-          <td>${escapeText(formatNumber(item.temperature_high_c, "°C"))}</td><td>${escapeText(formatNumber(item.temperature_low_c, "°C"))}</td>
+          <td>${escapeText(formatCurrentTemperature(item.temperature_high_c))}</td><td>${escapeText(formatCurrentTemperature(item.temperature_low_c))}</td>
           <td>${escapeText(formatNumber(item.rain_probability_percent, "%"))}</td>
         </tr>`).join("");
       }
       if (result.source !== "cached") {
         setValue(root, "[data-forecast-status]", data?.hourly?.length
-          ? `${data.hourly.length} hourly periods${data.hourlyError ? " · daily data unavailable" : ""}`
+          ? window.JalSaathiI18n.t("weather.hourlyPeriods", {
+            value: window.JalSaathiI18n.formatNumber(data.hourly.length),
+          })
           : data?.hourlyError?.message || "Hourly forecast unavailable");
         setValue(root, "[data-daily-forecast-status]", data?.daily?.length
-          ? `${data.daily.length} daily periods`
+          ? window.JalSaathiI18n.t("weather.dailyPeriods", {
+            value: window.JalSaathiI18n.formatNumber(data.daily.length),
+          })
           : data?.dailyError?.message || "Daily forecast unavailable");
       }
     };
 
+    window.addEventListener("jalsaathi:language-changed", () => {
+      if (lastResult) render(lastResult);
+    });
     if (cached) render(cached);
     if (input instanceof HTMLInputElement) input.value = getManualLocation();
-    const renderFailure = (error, generation) => {
+    const renderFailure = (error, generation, failureResult = {}) => {
       if (generation !== requestGeneration) return;
+      if (error) console.warn("Weather refresh failed; retaining any saved weather.", error);
       if (hasWeather) {
         const latest = readDisplayWeather();
-        status.textContent = `Unable to refresh · showing the last successful weather${latest?.cacheLocation ? ` for ${latest.cacheLocation}` : ""}.`;
+        status.textContent = translate(
+          latest?.cacheLocation ? "weather.refreshFallback" : "weather.refreshFallbackNoLocation",
+          { location: latest?.cacheLocation || "" },
+        );
         return;
       }
-      render({ data: null, source: "unavailable", weatherError: error });
+      render({
+        ...failureResult,
+        data: null,
+        source: "unavailable",
+        weatherError: error,
+      });
     };
     const applyResult = (result, generation) => {
       if (generation !== requestGeneration) return;
@@ -753,10 +896,10 @@
       hasWeather = Boolean(matchingCache?.data?.current);
       if (matchingCache) render(matchingCache);
       else {
-        status.textContent = "Loading weather…";
+        status.textContent = translate("legacy.audit.loading-weather.ff988149");
         setValue(currentRoot, "[data-weather-location]", location);
         setValue(currentRoot, "[data-weather-temperature]", "Loading…");
-        setValue(currentRoot, "[data-weather-condition]", "Loading weather…");
+        setValue(currentRoot, "[data-weather-condition]", translate("legacy.audit.loading-weather.ff988149"));
         setValue(currentRoot, "[data-weather-feels-like]", "Loading…");
         setValue(currentRoot, "[data-weather-high-low]", "Loading…");
         setValue(currentRoot, "[data-weather-updated]", "Loading…");
@@ -772,10 +915,14 @@
       }).catch((error) => renderFailure(error, generation));
     });
     const generation = ++requestGeneration;
-    if (!hasWeather) status.textContent = "Loading weather…";
+    if (!hasWeather) status.textContent = translate("legacy.audit.loading-weather.ff988149");
     loadAutomaticWithFallback({ refresh: true }).then((result) => {
       if (!applyResult(result, generation)) {
-        renderFailure(result.weatherError || new Error("Weather data is unavailable."), generation);
+        renderFailure(
+          result.weatherError || new Error("Weather data is unavailable."),
+          generation,
+          result,
+        );
       }
     }).catch((error) => renderFailure(error, generation));
   };

@@ -20,6 +20,7 @@ body.auth-body {
   min-width: 320px;
   min-height: 100vh;
   margin: 0;
+  overflow-wrap: anywhere;
   color: var(--auth-ink);
   background: var(--auth-cream);
   font-family: Inter, "Noto Sans Devanagari", "Noto Sans Telugu", "Noto Sans Kannada",

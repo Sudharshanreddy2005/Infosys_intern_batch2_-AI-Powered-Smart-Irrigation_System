@@ -4,10 +4,34 @@
   const appendMessage = (log, role, content) => {
     const message = document.createElement("p");
     message.className = `farmer-assistant-message farmer-assistant-message--${role}`;
-    message.textContent = content;
+    message.textContent = role === "assistant"
+      ? window.JalSaathiNumberFormat.normalizeAssistantText(content)
+      : content;
     message.setAttribute("data-user-content", "");
     log.append(message);
     log.scrollTop = log.scrollHeight;
+  };
+
+  const getLanguageCode = () => {
+    const profile = window.JalSaathiProfile;
+    const i18n = window.JalSaathiI18n;
+    const language = profile?.getLanguage?.() || i18n?.getLanguage?.() || "en";
+    return profile?.getLanguages?.().find((item) => item.code === language)?.locale ||
+      i18n?.languages?.find((item) => item.code === language)?.locale ||
+      "en-IN";
+  };
+
+  const setLocalizedStatus = (element, key) => {
+    const i18n = window.JalSaathiI18n;
+    const source = i18n?.translationKeys?.[key] ||
+      i18n?.translationKeys?.["common.translationMissing"];
+    if (!source || typeof i18n?.translate !== "function") {
+      throw new Error("The shared localization service is unavailable.");
+    }
+    element.removeAttribute("data-user-content");
+    element.setAttribute("data-i18n-key", key);
+    element.textContent = source;
+    i18n.translate(element);
   };
 
   const initialize = () => {
@@ -37,7 +61,7 @@
 
       appendMessage(log, "user", text);
       submit.disabled = true;
-      status.textContent = "The assistant is preparing a response…";
+      setLocalizedStatus(status, "assistant.status.preparing");
       try {
         const api = window.JalSaathiProfile?.apiRequest;
         if (typeof api !== "function") {
@@ -46,18 +70,22 @@
         const result = await api("/api/assistant/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question: text }),
+          body: JSON.stringify({
+            question: text,
+            language_code: getLanguageCode(),
+          }),
         });
         if (typeof result?.answer !== "string" || !result.answer.trim()) {
           throw new Error("The assistant returned an invalid response.");
         }
         appendMessage(log, "assistant", result.answer);
         question.value = "";
-        status.textContent = "Assistant responses are educational and may be incorrect.";
+        setLocalizedStatus(status, "assistant.notice.educational");
       } catch (error) {
-        status.textContent = error instanceof Error
-          ? error.message
-          : "The assistant is unavailable. Please try again later.";
+        setLocalizedStatus(
+          status,
+          error?.status === 429 ? "assistant.error.busy" : "assistant.error.unavailable",
+        );
       } finally {
         submit.disabled = false;
       }
@@ -73,12 +101,12 @@
         !field.value ||
         !crop.value
       ) {
-        model2Status.textContent = "Choose an owned field and crop before requesting an explanation.";
+        setLocalizedStatus(model2Status, "assistant.model2.selectFieldCrop");
         return;
       }
 
       model2Button.disabled = true;
-      model2Status.textContent = "Checking for a server-validated Model 2 estimate…";
+      setLocalizedStatus(model2Status, "assistant.model2.checking");
       try {
         const api = window.JalSaathiProfile?.apiRequest;
         if (typeof api !== "function") {
@@ -90,6 +118,7 @@
           body: JSON.stringify({
             field_id: Number(field.value),
             crop_id: Number(crop.value),
+            language_code: getLanguageCode(),
             question: "Explain what this estimate represents and summarize its limitations. Do not recalculate or change the estimate.",
           }),
         });
@@ -106,15 +135,34 @@
           typeof result.explanation !== "string" ||
           !result.explanation.trim()
         ) {
-          throw new Error("The server returned an invalid or unverified Model 2 explanation.");
+          setLocalizedStatus(model2Status, "assistant.model2.invalidExplanation");
+          return;
         }
-        model2Status.textContent =
-          `Server-validated estimate considered by the assistant: ${prediction.estimated_water_liters} ${prediction.unit} for ${prediction.prediction_period_hours} hours. ${result.explanation}`;
-        appendMessage(log, "assistant", result.explanation);
+        model2Status.setAttribute("data-user-content", "");
+        model2Status.removeAttribute("data-i18n-key");
+        const amount = window.JalSaathiI18n?.formatNumber
+          ? window.JalSaathiI18n.formatNumber(prediction.estimated_water_liters)
+          : String(prediction.estimated_water_liters);
+        const i18n = window.JalSaathiI18n;
+        const unit = i18n?.t("assistant.model2.unit") ||
+          i18n?.t("common.translationMissing");
+        const estimatePrefix = i18n?.t("assistant.model2.estimatePrefix", {
+          amount,
+          unit,
+          hours: prediction.prediction_period_hours,
+        }) || i18n?.t("common.translationMissing");
+        if (!unit || !estimatePrefix) {
+          setLocalizedStatus(model2Status, "assistant.model2.unavailable");
+          return;
+        }
+        const explanation = window.JalSaathiNumberFormat.normalizeAssistantText(result.explanation);
+        model2Status.textContent = `${estimatePrefix} ${explanation}`;
+        appendMessage(log, "assistant", explanation);
       } catch (error) {
-        model2Status.textContent = error instanceof Error
-          ? error.message
-          : "A validated Model 2 estimate is unavailable.";
+        setLocalizedStatus(
+          model2Status,
+          error?.status === 429 ? "assistant.error.busy" : "assistant.model2.unavailable",
+        );
       } finally {
         model2Button.disabled = false;
       }

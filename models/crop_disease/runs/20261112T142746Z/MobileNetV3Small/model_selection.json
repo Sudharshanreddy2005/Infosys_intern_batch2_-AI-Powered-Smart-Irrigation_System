@@ -1,0 +1,34 @@
+{
+  "selected_architecture": "MobileNetV3Small",
+  "selected_phase": "fine_tuning",
+  "selection_metric_order": [
+    "validation_macro_f1",
+    "validation_weighted_f1",
+    "validation_accuracy"
+  ],
+  "validation_phase_metrics": [
+    {
+      "phase": "frozen_backbone",
+      "checkpoint": "C:\\Users\\sudha\\OneDrive\\Desktop\\irrigation-feature\\models\\crop_disease\\runs\\20261112T142746Z\\MobileNetV3Small\\frozen_backbone_best.keras",
+      "accuracy": 0.7731378452677052,
+      "macro_precision": 0.7692221868459027,
+      "macro_recall": 0.7854324163027148,
+      "macro_f1": 0.7640775776613028,
+      "minimum_class_f1": 0.3434343434343434,
+      "weighted_f1": 0.7766012544114741
+    },
+    {
+      "phase": "fine_tuning",
+      "checkpoint": "C:\\Users\\sudha\\OneDrive\\Desktop\\irrigation-feature\\models\\crop_disease\\runs\\20261112T142746Z\\MobileNetV3Small\\fine_tuning_best.keras",
+      "accuracy": 0.8383296242963739,
+      "macro_precision": 0.8250022878072518,
+      "macro_recall": 0.8414336178592619,
+      "macro_f1": 0.8273988454798069,
+      "minimum_class_f1": 0.5,
+      "weighted_f1": 0.8401410652385795
+    }
+  ],
+  "cpu_inference_ms_per_image": 226.5616000004229,
+  "checkpoint_path": "C:\\Users\\sudha\\OneDrive\\Desktop\\irrigation-feature\\models\\crop_disease\\runs\\20261112T142746Z\\MobileNetV3Small\\fine_tuning_best.keras",
+  "test_used_for_selection": false
+}

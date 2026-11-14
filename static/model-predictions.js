@@ -27,26 +27,37 @@
     node.textContent = error instanceof Error ? error.message : "The prediction could not be generated.";
     node.hidden = false;
   };
+  const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[character]);
 
   const renderModel3 = (node, result) => {
     node.hidden = false;
+    const formatNumber = (value) => window.JalSaathiI18n.formatNumber(value);
+    const currentMoisture = formatNumber(result.current_moisture_percent);
+    const predictionHorizon = formatNumber(result.prediction_horizon_hours ?? 24);
+    const predictedMoisture = formatNumber(result.predicted_moisture_24h_percent);
     node.innerHTML = `
       <strong>Prediction available</strong>
-      <p>Current moisture: ${result.current_moisture_percent}%</p>
-      <p>Predicted moisture after ${result.prediction_horizon_hours ?? 24} hours: ${result.predicted_moisture_24h_percent}%</p>
-      <p>Strategy: ${result.strategy}</p>
-      ${result.warning ? `<p>${result.warning}</p>` : ""}
+      <p>${escapeHtml(window.JalSaathiI18n.t(`Current moisture: ${currentMoisture}%`))}</p>
+      <p>${escapeHtml(window.JalSaathiI18n.t(`Predicted moisture after ${predictionHorizon} hours: ${predictedMoisture}%`))}</p>
+      <p>Strategy: ${escapeHtml(window.JalSaathiNumberFormat.normalizeAssistantText(result.strategy))}</p>
+      ${result.warning ? `<p>${escapeHtml(window.JalSaathiNumberFormat.normalizeAssistantText(result.warning))}</p>` : ""}
     `;
   };
 
   const renderModel4 = (node, result) => {
     node.hidden = false;
     const probability = Number.isFinite(Number(result.confidence))
-      ? `<p>Model-estimated probability: ${(Number(result.confidence) * 100).toFixed(2)}%</p>`
+      ? `<p>Model-estimated probability: ${window.JalSaathiI18n.numberMarkup(Number(result.confidence) * 100, {}, "%")}</p>`
       : "";
     node.innerHTML = `
       <strong>Prediction available</strong>
-      <p>Numeric class: ${result.predicted_class}</p>
+      <p>Numeric class: ${escapeHtml(result.predicted_class)}</p>
       <p>The class-to-stress-label mapping is not verified, so no stress label is shown.</p>
       ${probability}
     `;
@@ -58,6 +69,13 @@
     if (!(model3Form instanceof HTMLFormElement) || !(model4Form instanceof HTMLFormElement)) return;
 
     let fields;
+    let latestModel3Result = null;
+    const model3Result = root.querySelector("[data-model3-result]");
+    window.addEventListener("jalsaathi:language-changed", () => {
+      if (latestModel3Result && model3Result instanceof HTMLElement) {
+        renderModel3(model3Result, latestModel3Result);
+      }
+    });
     try {
       fields = await window.JalSaathiFieldStore.loadServerFields();
       const options = fields.map((field) =>
@@ -86,7 +104,8 @@
         if (!Number.isFinite(Number(response.predicted_moisture_24h_percent))) {
           throw new Error("The soil moisture service returned an invalid prediction.");
         }
-        renderModel3(result, response);
+        latestModel3Result = response;
+        renderModel3(result, latestModel3Result);
       } catch (requestError) {
         result.hidden = true;
         setError(error, requestError);

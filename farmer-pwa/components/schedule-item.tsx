@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import type { ApiError, IrrigationSchedule, ScheduleAction } from "@/lib/types";
 import { useFarmData } from "@/components/farm-data-provider";
-import { useI18n } from "@/components/i18n-provider";
+import { useI18n, type TranslationSource } from "@/components/i18n-provider";
 
 type ScheduleStatus = { label: "Upcoming" | "In Progress" | "Completed"; className: string };
 
@@ -34,10 +34,11 @@ export function ScheduleItem({ schedule }: { schedule: IrrigationSchedule }) {
   const { online, performScheduleAction } = useFarmData();
   const [busyAction, setBusyAction] = useState<ScheduleAction | null>(null);
   const [cancelPrompt, setCancelPrompt] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState<TranslationSource | "">("");
   const status = statusFor(schedule);
-  const reason = schedule.plan?.reason || schedule.plan?.notes?.join(" ") ||
-    (schedule.plan?.action === "irrigate" ? t("Irrigation recommended by your farm plan.") : t("See the saved irrigation plan for details."));
+  const reason = schedule.plan?.action === "irrigate"
+    ? t("Irrigation recommended by your farm plan.")
+    : t("See the saved irrigation plan for details.");
   const statusLabel = t(status.label);
 
   async function runAction(action: ScheduleAction) {
@@ -47,21 +48,21 @@ export function ScheduleItem({ schedule }: { schedule: IrrigationSchedule }) {
     try {
       await performScheduleAction(schedule.id, action);
       setCancelPrompt(false);
-      const message = action === "confirm"
-        ? t("Schedule confirmed and water reserved.")
+      const message: TranslationSource = action === "confirm"
+        ? "Schedule confirmed and water reserved."
         : action === "cancel"
-          ? t("Schedule cancelled; any reservation was released.")
-          : t("Schedule marked completed; reserved water was recorded as used.");
+          ? "Schedule cancelled; any reservation was released."
+          : "Schedule marked completed; reserved water was recorded as used.";
       window.dispatchEvent(new CustomEvent("jalsaathi:schedule-action", { detail: { message } }));
     } catch (error) {
       const apiError = error as ApiError;
       setErrorMessage(apiError.status === 401
-        ? t("Your session expired. Sign in again to continue.")
+        ? "Your session expired. Sign in again to continue."
         : apiError.status === 404
-          ? t("This irrigation schedule is no longer available.")
+          ? "This irrigation schedule is no longer available."
           : apiError.status === 409
-            ? t("This schedule could not be changed. Refresh the schedule and try again.")
-            : t("The schedule action could not be completed. Please try again."));
+            ? "This schedule could not be changed. Refresh the schedule and try again."
+            : "The schedule action could not be completed. Please try again.");
     } finally {
       setBusyAction(null);
     }
@@ -75,7 +76,7 @@ export function ScheduleItem({ schedule }: { schedule: IrrigationSchedule }) {
         <p className="schedule-reason">{reason}</p>
         <div className="schedule-metrics">
           <span><strong>{schedule.duration_minutes ? `${formatNumber(schedule.duration_minutes)} ${t("min")}` : t("Not available")}</strong>{t("Duration")}</span>
-          <span><strong>{schedule.water_liters != null ? `${formatNumber(Math.round(schedule.water_liters))} L` : t("Not available")}</strong>{t("Water quantity")}</span>
+          <span><strong>{schedule.water_liters != null ? `${formatNumber(schedule.water_liters)} L` : t("Not available")}</strong>{t("Water quantity")}</span>
         </div>
         {(schedule.status === "recommended" || schedule.status === "insufficient_water" || schedule.status === "confirmed") && <div className="schedule-actions">
           {schedule.status === "recommended" && <button className="primary-button schedule-action-button" type="button" onClick={() => void runAction("confirm")} disabled={!online || busyAction !== null}>{busyAction === "confirm" ? t("Please wait…") : t("Confirm")}</button>}
@@ -83,7 +84,7 @@ export function ScheduleItem({ schedule }: { schedule: IrrigationSchedule }) {
           {["recommended", "insufficient_water", "confirmed"].includes(schedule.status) && <button className="secondary-button schedule-action-button" type="button" onClick={() => { setErrorMessage(""); setCancelPrompt(true); }} disabled={!online || busyAction !== null}>{t("Cancel schedule")}</button>}
         </div>}
         {!online && schedule.status !== "cancelled" && schedule.status !== "completed" && <p className="schedule-offline-hint" role="status">{t("You're offline.")} {t("Schedule actions are available when you reconnect.")}</p>}
-        {errorMessage && <p className="schedule-action-error" role="alert">{errorMessage}{errorMessage.includes("Sign in again") && <> <Link href="/login">{t("Sign in")}</Link></>}</p>}
+        {errorMessage && <p className="schedule-action-error" role="alert">{t(errorMessage)}{errorMessage === "Your session expired. Sign in again to continue." && <> <Link href="/login">{t("Sign in")}</Link></>}</p>}
       </div>
       {cancelPrompt && <div className="form-sheet-backdrop"><section className="confirm-sheet" role="alertdialog" aria-modal="true" aria-labelledby={`cancel-schedule-${schedule.id}`} aria-describedby={`cancel-schedule-message-${schedule.id}`}>
         <h2 id={`cancel-schedule-${schedule.id}`}>{t("Cancel this irrigation schedule?")}</h2>

@@ -50,6 +50,7 @@ body {
   min-height: 100vh;
   height: 100dvh;
   overflow: hidden;
+  overflow-wrap: anywhere;
 }
 
 button {
@@ -732,6 +733,13 @@ body.sidebar-open .menu-close-icon {
   letter-spacing: -0.08em;
   font-weight: 800;
   color: #1d2a1e;
+}
+
+.temperature.is-unavailable {
+  font-size: 1rem;
+  line-height: 1.3;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
 }
 
 .temperature-indicator {
@@ -2596,6 +2604,17 @@ body.sidebar-open .menu-close-icon {
 .weather-location-actions [role="status"] {
   color: #586c60;
   font-size: 0.78rem;
+}
+
+.weather-location-picker {
+  color: #2f704b;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-underline-offset: 2px;
+}
+
+.weather-location-picker[hidden] {
+  display: none;
 }
 
 .season-card .compact-head {

@@ -564,7 +564,7 @@
       const items = [
         `<span data-user-content data-i18n-crop>${escapeHtml(field.crop || "Crop not set")}</span>`,
         `<span data-user-content>${escapeHtml(field.location)}</span>`,
-        `<span data-user-content>${window.JalSaathiI18n.formatNumber(field.area)} ${escapeHtml(field.areaUnit)}</span>`,
+        `<span data-user-content>${window.JalSaathiI18n.numberMarkup(field.area)} ${escapeHtml(field.areaUnit)}</span>`,
       ];
       return items.join(" · ");
     };
@@ -576,7 +576,7 @@
         const status = fieldStatus(field);
         return `<article class="portal-field-row">
           <span class="portal-color-dot portal-color-dot--${color}" aria-hidden="true"></span>
-          <div class="portal-field-copy"><strong data-user-content>Field ${field.displayNumber}: ${escapeHtml(field.name)}</strong><small>${fieldDetails(field)}</small></div>
+          <div class="portal-field-copy"><strong data-user-content>Field ${window.JalSaathiI18n.numberMarkup(field.displayNumber)}: ${escapeHtml(field.name)}</strong><small>${fieldDetails(field)}</small></div>
           <span class="portal-status ${status.className}">${status.label}</span>
           <button class="portal-edit-field" type="button" data-edit-field="${escapeHtml(field.id)}" aria-label="Edit ${escapeHtml(field.name)}" title="Edit field">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16.5-.8 4.3 4.3-.8L19 8.5 15.5 5 4 16.5ZM13.8 6.7l3.5 3.5" /></svg>
@@ -596,7 +596,7 @@
         const points = fieldBoundary(field, index);
         const centerX = points.reduce((sum, point) => sum + point[0], 0) / points.length;
         const centerY = points.reduce((sum, point) => sum + point[1], 0) / points.length;
-        return `<span class="portal-map-pin portal-map-pin--${palette[index % palette.length]}" style="left:${centerX}%;top:${centerY}%" aria-hidden="true"><span>${index + 1}</span></span>`;
+        return `<span class="portal-map-pin portal-map-pin--${palette[index % palette.length]}" style="left:${centerX}%;top:${centerY}%" aria-hidden="true"><span>${window.JalSaathiI18n.numberMarkup(index + 1)}</span></span>`;
       }).join("");
 
       const count = window.JalSaathiI18n.formatNumber(fields.length);
@@ -868,7 +868,24 @@
         !(fieldsForReservoir instanceof HTMLSelectElement)) return;
 
     const apiRequest = window.JalSaathiProfile.apiRequest;
-    const liters = (value) => `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value)} L`;
+    const liters = (value) => window.JalSaathiI18n.numberMarkup(
+      value,
+      {},
+      " L",
+    );
+    const timeMarkup = (value) => {
+      const text = String(value || "");
+      const time = text.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+      if (time) {
+        const date = new Date();
+        date.setHours(Number(time[1]), Number(time[2]), Number(time[3] || 0), 0);
+        return window.JalSaathiI18n.dateMarkup(date, "time");
+      }
+      const date = new Date(text);
+      return text && !Number.isNaN(date.getTime())
+        ? window.JalSaathiI18n.dateMarkup(date, "time")
+        : escapeText(text);
+    };
     const showError = (error) => {
       const status = Number(error?.status);
       if (status === 401) return "Your session has expired. Sign in again to manage irrigation.";
@@ -909,8 +926,12 @@
       fieldValues.name.textContent = selectedField?.name || "Not selected";
       fieldValues.crop.textContent = (selectedField ? linkedCrop(selectedField.id)?.name : null)
         || selectedField?.crop || "Not recorded";
-      fieldValues.area.textContent = selectedField
-        ? `${selectedField.area} ${selectedField.area_unit}`
+      fieldValues.area.innerHTML = selectedField
+        ? window.JalSaathiI18n.numberMarkup(
+          selectedField.area,
+          {},
+          selectedField.area_unit ? ` ${selectedField.area_unit}` : "",
+        )
         : "Not recorded";
       fieldValues.zone.textContent = "Not recorded in field profile";
       const crop = selectedField ? linkedCrop(selectedField.id) : null;
@@ -947,12 +968,12 @@
       selectedReservoir = reservoirs.find(
         (reservoir) => String(reservoir.id) === reservoirSelect.value,
       ) || null;
-      waterValues.capacity.textContent = selectedReservoir ? liters(selectedReservoir.capacity_liters) : "Not available";
-      waterValues.available.textContent = selectedReservoir ? liters(selectedReservoir.available_liters) : "Not available";
-      waterValues.reserved.textContent = selectedReservoir ? liters(selectedReservoir.reserved_liters) : "Not available";
-      waterValues.remaining.textContent = selectedReservoir ? liters(selectedReservoir.remaining_liters) : "Not available";
-      waterValues.updated.textContent = selectedReservoir?.updated_at
-        ? new Date(selectedReservoir.updated_at).toLocaleString()
+      waterValues.capacity.innerHTML = selectedReservoir ? liters(selectedReservoir.capacity_liters) : "Not available";
+      waterValues.available.innerHTML = selectedReservoir ? liters(selectedReservoir.available_liters) : "Not available";
+      waterValues.reserved.innerHTML = selectedReservoir ? liters(selectedReservoir.reserved_liters) : "Not available";
+      waterValues.remaining.innerHTML = selectedReservoir ? liters(selectedReservoir.remaining_liters) : "Not available";
+      waterValues.updated.innerHTML = selectedReservoir?.updated_at
+        ? window.JalSaathiI18n.dateMarkup(selectedReservoir.updated_at, "date-time")
         : "Not available";
       waterEdit.hidden = !selectedReservoir;
       waterForm.hidden = true;
@@ -1002,20 +1023,20 @@
 
     function renderSchedules(result) {
       const summary = result.summary || {};
-      summaryValues.scheduled.textContent = liters(summary.total_scheduled_liters || 0);
-      summaryValues.reserved.textContent = liters(summary.total_reserved_liters || 0);
-      summaryValues.remaining.textContent = liters(summary.remaining_available_liters || 0);
-      summaryValues.upcoming.textContent = String(summary.upcoming_events || 0);
-      summaryValues.completed.textContent = String(summary.completed_events || 0);
+      summaryValues.scheduled.innerHTML = liters(summary.total_scheduled_liters || 0);
+      summaryValues.reserved.innerHTML = liters(summary.total_reserved_liters || 0);
+      summaryValues.remaining.innerHTML = liters(summary.remaining_available_liters || 0);
+      summaryValues.upcoming.innerHTML = window.JalSaathiI18n.numberMarkup(summary.upcoming_events || 0);
+      summaryValues.completed.innerHTML = window.JalSaathiI18n.numberMarkup(summary.completed_events || 0);
       schedules = result.schedules || [];
       schedulesEmpty.hidden = schedules.length > 0;
       schedulesWrap.hidden = schedules.length === 0;
       scheduleRows.innerHTML = schedules.map((schedule) => {
         const time = schedule.start_time
-          ? `${escapeText(schedule.start_time)}–${escapeText(schedule.end_time || "")}`
+          ? `${timeMarkup(schedule.start_time)}–${timeMarkup(schedule.end_time)}`
           : "Not scheduled";
         const duration = schedule.duration_minutes
-          ? `${escapeText(schedule.duration_minutes)} min`
+          ? `${window.JalSaathiI18n.numberMarkup(schedule.duration_minutes)} min`
           : "Not scheduled";
         const actions = [
           `<button class="portal-secondary-action" type="button" data-irrigation-view="${escapeText(schedule.id)}">View details</button>`,
@@ -1031,7 +1052,7 @@
         ].filter(Boolean).join(" ");
         return `<tr data-irrigation-schedule-row="${escapeText(schedule.id)}">
           <td>${escapeText(schedule.field_name)}</td><td>${escapeText(schedule.crop_name)}</td>
-          <td>${escapeText(schedule.scheduled_date)}</td><td>${time}</td>
+          <td>${window.JalSaathiI18n.dateMarkup(schedule.scheduled_date)}</td><td>${time}</td>
           <td>${liters(schedule.water_liters)}</td><td>${duration}</td>
           <td>${escapeText(schedule.irrigation_method)}</td><td>${escapeText(schedule.status)}</td>
           <td><div class="portal-irrigation-actions">${actions}</div></td>
@@ -1175,23 +1196,23 @@
       }[plan.action] || escapeText(plan.action);
       const amount = plan.action === "insufficient_water"
         ? `<p><strong>Required event:</strong> ${liters(plan.required_liters)} · <strong>Shortage:</strong> ${liters(plan.water_shortage_liters)}</p>`
-        : `<p><strong>Scheduled pump volume:</strong> ${liters(plan.litres)} · <strong>Duration:</strong> ${plan.sessions?.reduce((sum, session) => sum + session.minutes, 0) || 0} min</p>`;
+        : `<p><strong>Scheduled pump volume:</strong> ${liters(plan.litres)} · <strong>Duration:</strong> ${window.JalSaathiI18n.numberMarkup(plan.sessions?.reduce((sum, session) => sum + session.minutes, 0) || 0)} min</p>`;
       const scheduleAction = result.schedule?.status === "recommended"
         ? `<button class="portal-action" type="button" data-irrigation-confirm="${escapeText(result.schedule.id)}">Confirm schedule and reserve water</button>`
         : "";
       const weather = result.weather;
       const weatherInfo = weather
-        ? `<p><strong>Forecast temperatures:</strong> ${escapeText(weather.temperature_min_c)}–${escapeText(weather.temperature_max_c)} °C · <strong>Rain probability:</strong> ${escapeText(Math.round(weather.rain_probability * 100))}%</p>`
+        ? `<p><strong>Forecast temperatures:</strong> ${escapeText(window.JalSaathiI18n.formatTemperature(weather.temperature_min_c))}–${escapeText(window.JalSaathiI18n.formatTemperature(weather.temperature_max_c))} · <strong>Rain probability:</strong> ${window.JalSaathiI18n.numberMarkup(weather.rain_probability * 100)}%</p>`
         : "";
       const forecastWarning = result.warnings?.length
         ? `<p class="portal-form-help">${result.warnings.map(escapeText).join(" ")}</p>`
         : "";
       planResult.innerHTML = `
         <h3>${escapeText(statusText)}</h3>
-        <p><strong>Date:</strong> ${escapeText(plan.date)} · <strong>Method:</strong> ${escapeText(inputs.irrigation_method)}</p>
+        <p><strong>Date:</strong> ${window.JalSaathiI18n.dateMarkup(plan.date)} · <strong>Method:</strong> ${escapeText(inputs.irrigation_method)}</p>
         ${amount}
-        <p><strong>Soil moisture provided:</strong> ${escapeText(inputs.soil_moisture_pct)}% · <strong>ETc:</strong> ${escapeText(plan.etc_mm)} mm</p>
-        <p><strong>Forecast rainfall:</strong> ${escapeText(plan.rain_mm)} mm · <strong>Effective rainfall:</strong> ${escapeText(plan.effective_rain_mm)} mm</p>
+        <p><strong>Soil moisture provided:</strong> ${window.JalSaathiI18n.numberMarkup(inputs.soil_moisture_pct)}% · <strong>ETc:</strong> ${window.JalSaathiI18n.numberMarkup(plan.etc_mm)} mm</p>
+        <p><strong>Forecast rainfall:</strong> ${window.JalSaathiI18n.numberMarkup(plan.rain_mm)} mm · <strong>Effective rainfall:</strong> ${window.JalSaathiI18n.numberMarkup(plan.effective_rain_mm)} mm</p>
         ${weatherInfo}
         <p><strong>Water remaining before confirmation:</strong> ${liters(result.reservoir.remaining_liters)}</p>
         ${forecastWarning}${notes}${scheduleAction}
@@ -1321,6 +1342,25 @@
     const retry = root.querySelector("[data-sensor-retry]");
     if (!(state instanceof HTMLElement) || !(provenance instanceof HTMLElement) || !(rows instanceof HTMLElement) || !(tableWrap instanceof HTMLElement) || !(retry instanceof HTMLButtonElement)) return;
 
+    const renderPayload = (payload) => {
+      const sensorValue = (value) => value !== null && value !== undefined && value !== "" &&
+        Number.isFinite(Number(value))
+        ? window.JalSaathiI18n.numberMarkup(value)
+        : escapeText(value ?? "Not recorded");
+      rows.innerHTML = payload.data.map((reading) => `<tr>
+          <td data-user-content>${window.JalSaathiI18n.dateMarkup(reading.timestamp, "date-time")}</td>
+          <td data-user-content>${escapeText(reading.field_id)}</td>
+          <td data-user-content>${sensorValue(reading.soil_moisture ?? "Not recorded")}</td>
+          <td data-user-content>${escapeText(window.JalSaathiI18n.formatTemperature(reading.temperature_c ?? reading.temperature ?? null))}</td>
+          <td data-user-content>${sensorValue(reading.humidity_percent ?? reading.humidity ?? "Not recorded")}</td>
+        </tr>`).join("");
+      const origin = payload.data_origin === "mixed_or_unavailable" ? "mixed or unavailable origin" : payload.data_origin;
+      provenance.innerHTML = `${window.JalSaathiI18n.numberMarkup(payload.count)} historical records · ${escapeText(origin)}`;
+      state.textContent = payload.data.length ? "Historical data; not live telemetry." : "No historical records are available.";
+      state.hidden = false;
+      tableWrap.hidden = payload.data.length === 0;
+    };
+
     const load = async () => {
       retry.hidden = true;
       state.textContent = "Loading historical records…";
@@ -1331,20 +1371,14 @@
         if (!response.ok) throw new Error("Historical sensor records could not be loaded.");
         const payload = await response.json();
         if (!Array.isArray(payload.data)) throw new Error("Historical sensor response has an invalid shape.");
-        rows.innerHTML = payload.data.map((reading) => `<tr>
-          <td data-user-content>${escapeText(reading.timestamp)}</td>
-          <td data-user-content>${escapeText(reading.field_id)}</td>
-          <td data-user-content>${escapeText(reading.soil_moisture ?? "Not recorded")}</td>
-          <td data-user-content>${escapeText(reading.temperature_c ?? reading.temperature ?? "Not recorded")}</td>
-          <td data-user-content>${escapeText(reading.humidity_percent ?? reading.humidity ?? "Not recorded")}</td>
-        </tr>`).join("");
-        const origin = payload.data_origin === "mixed_or_unavailable" ? "mixed or unavailable origin" : payload.data_origin;
-        provenance.textContent = `${payload.count} historical records · ${origin}`;
-        state.textContent = payload.data.length ? "Historical data; not live telemetry." : "No historical records are available.";
-        state.hidden = false;
-        tableWrap.hidden = payload.data.length === 0;
+        renderPayload(payload);
       } catch (error) {
-        state.textContent = error instanceof Error ? error.message : "Historical sensor records could not be loaded.";
+        state.textContent = error instanceof TypeError
+          ? window.JalSaathiProfile?.apiErrorMessage?.(0, "", "/sensor-readings") ||
+            window.JalSaathiI18n?.t("api.error.unavailable") || ""
+          : error instanceof SyntaxError
+            ? window.JalSaathiI18n?.t("api.error.invalidResponse") || ""
+            : error instanceof Error ? error.message : "Historical sensor records could not be loaded.";
         retry.hidden = false;
       }
     };
@@ -1358,8 +1392,8 @@
 
   function formatDate(value) {
     if (!value) return "Not recorded";
-    const date = new Date(`${value}T00:00:00`);
-    return Number.isNaN(date.getTime()) ? value : window.JalSaathiI18n.formatDate(date);
+    const formatted = window.JalSaathiI18n.formatDate(value);
+    return formatted === "—" ? "Not recorded" : formatted;
   }
 
   function escapeText(value) {
@@ -1402,6 +1436,7 @@
       fieldOptions.innerHTML = `<option value="">No field selected</option>${fields.map((field) => `<option data-user-content value="${escapeText(field.id)}">${escapeText(field.name)}</option>`).join("")}`;
       crops = await window.JalSaathiProfile.apiRequest("/api/crops");
       render();
+      window.addEventListener("jalsaathi:language-changed", render);
     } catch (error) {
       cropList.textContent = error instanceof Error ? error.message : "Crops could not be loaded.";
       return;
@@ -1509,6 +1544,7 @@
     fieldSelect.addEventListener("change", render);
     cropSelect.addEventListener("change", render);
     window.addEventListener("jalsaathi:fields-changed", render);
+    window.addEventListener("jalsaathi:language-changed", render);
     try {
       await window.JalSaathiFieldStore.loadServerFields();
       render();

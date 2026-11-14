@@ -6,8 +6,9 @@
 2. From `farmer-pwa`, copy `.env.example` to `.env.local`.
 3. Keep `NEXT_PUBLIC_API_URL` empty to use the same-origin Next.js rewrite proxy. Set `FASTAPI_ORIGIN` to the reachable backend URL.
 4. Configure the backend's `FARMER_PWA_ORIGINS` to allow `http://localhost:3000` and `http://127.0.0.1:3000`; this is used by existing origin/CSRF checks, not CORS.
-5. Run `npm install` if dependencies are not installed, then `npm run dev`.
-6. Open `http://localhost:3000`.
+5. Set `CROP_DISEASE_ORIGIN` (or `NEXT_PUBLIC_CROP_DISEASE_URL`) when the standalone crop disease service is running on another host or in Docker. Do not assume `localhost` resolves to the same machine from both the browser and the container.
+6. Run `npm install` if dependencies are not installed, then `npm run dev`.
+7. Open `http://localhost:3000`.
 
 The browser sends API calls to the Next.js app's `/api` and `/weather` paths. The Next.js rewrites proxy these requests to FastAPI, preserving the existing cookie-session and CSRF flow without requiring browser CORS access.
 

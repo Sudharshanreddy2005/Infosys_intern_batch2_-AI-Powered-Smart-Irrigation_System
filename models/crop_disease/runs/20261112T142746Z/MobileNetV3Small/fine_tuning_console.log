@@ -1,0 +1,233 @@
+2026-11-12 22:10:21.309183: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 AVX_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+Epoch 1/10
+[monitor] CPU=0%, process RAM=0.67 GiB, available RAM=0.39 GiB
+[monitor] CPU=56%, process RAM=0.66 GiB, available RAM=0.77 GiB
+[monitor] CPU=45%, process RAM=0.69 GiB, available RAM=1.15 GiB
+[monitor] CPU=37%, process RAM=0.66 GiB, available RAM=1.06 GiB
+[monitor] CPU=64%, process RAM=0.66 GiB, available RAM=1.22 GiB
+[monitor] CPU=58%, process RAM=0.60 GiB, available RAM=2.24 GiB
+[monitor] CPU=40%, process RAM=0.60 GiB, available RAM=2.16 GiB
+[monitor] CPU=50%, process RAM=0.61 GiB, available RAM=2.26 GiB
+[monitor] CPU=57%, process RAM=0.60 GiB, available RAM=1.95 GiB
+[monitor] CPU=50%, process RAM=0.60 GiB, available RAM=2.53 GiB
+[monitor] CPU=46%, process RAM=0.48 GiB, available RAM=2.76 GiB
+[monitor] CPU=38%, process RAM=0.49 GiB, available RAM=2.87 GiB
+2026-11-12 22:22:45.681371: W external/local_xla/xla/tsl/framework/cpu_allocator_impl.cc:84] Allocation of 60466176 exceeds 10% of free system memory.
+[monitor] CPU=47%, process RAM=0.47 GiB, available RAM=2.16 GiB
+[monitor] CPU=55%, process RAM=0.48 GiB, available RAM=2.49 GiB
+[monitor] CPU=68%, process RAM=0.46 GiB, available RAM=2.28 GiB
+[monitor] CPU=56%, process RAM=0.44 GiB, available RAM=2.87 GiB
+[monitor] CPU=40%, process RAM=0.43 GiB, available RAM=3.02 GiB
+[monitor] CPU=56%, process RAM=0.43 GiB, available RAM=3.26 GiB
+[monitor] CPU=37%, process RAM=0.43 GiB, available RAM=3.14 GiB
+2026-11-12 22:29:36.428180: W external/local_xla/xla/tsl/framework/cpu_allocator_impl.cc:84] Allocation of 53747712 exceeds 10% of free system memory.
+2026-11-12 22:29:49.700827: W external/local_xla/xla/tsl/framework/cpu_allocator_impl.cc:84] Allocation of 53747712 exceeds 10% of free system memory.
+[monitor] CPU=44%, process RAM=0.43 GiB, available RAM=3.29 GiB
+[monitor] CPU=42%, process RAM=0.39 GiB, available RAM=2.78 GiB
+2026-11-12 22:31:39.154350: W external/local_xla/xla/tsl/framework/cpu_allocator_impl.cc:84] Allocation of 66355200 exceeds 10% of free system memory.
+2026-11-12 22:31:59.305553: W tensorflow/core/lib/png/png_io.cc:95] PNG warning: iCCP: known incorrect sRGB profile
+2026-11-12 22:31:59.305658: W tensorflow/core/lib/png/png_io.cc:95] PNG warning: iCCP: cHRM chunk does not match sRGB
+[monitor] CPU=36%, process RAM=0.40 GiB, available RAM=3.00 GiB
+[monitor] CPU=39%, process RAM=0.39 GiB, available RAM=2.86 GiB
+[monitor] CPU=64%, process RAM=0.39 GiB, available RAM=2.36 GiB
+[monitor] CPU=48%, process RAM=0.40 GiB, available RAM=2.18 GiB
+
+Epoch 1: val_loss improved from None to 0.61087, saving model to C:\Users\sudha\OneDrive\Desktop\irrigation-feature\models\crop_disease\runs\20261112T142746Z\MobileNetV3Small\fine_tuning_best.keras
+[fine_tuning] epoch 1: loss=0.6557, val_loss=0.6109, val_accuracy=0.8085, 25.6 min, CPU=301% of one core, RAM=0.38 GiB
+4427/4427 - 1537s - 347ms/step - accuracy: 0.7696 - loss: 0.6557 - val_accuracy: 0.8085 - val_loss: 0.6109 - learning_rate: 1.0000e-05
+Epoch 2/10
+[monitor] CPU=46%, process RAM=0.36 GiB, available RAM=2.37 GiB
+[monitor] CPU=64%, process RAM=0.37 GiB, available RAM=2.27 GiB
+[monitor] CPU=52%, process RAM=0.37 GiB, available RAM=2.54 GiB
+[monitor] CPU=60%, process RAM=0.38 GiB, available RAM=2.41 GiB
+[monitor] CPU=54%, process RAM=0.38 GiB, available RAM=2.20 GiB
+[monitor] CPU=50%, process RAM=0.34 GiB, available RAM=2.42 GiB
+[monitor] CPU=56%, process RAM=0.35 GiB, available RAM=2.79 GiB
+2026-11-12 22:42:50.237350: W external/local_xla/xla/tsl/framework/cpu_allocator_impl.cc:84] Allocation of 66355200 exceeds 10% of free system memory.
+[monitor] CPU=52%, process RAM=0.35 GiB, available RAM=2.48 GiB
+[monitor] CPU=58%, process RAM=0.35 GiB, available RAM=1.93 GiB
+[monitor] CPU=58%, process RAM=0.35 GiB, available RAM=2.68 GiB
+[monitor] CPU=64%, process RAM=0.35 GiB, available RAM=1.86 GiB
+[monitor] CPU=58%, process RAM=0.34 GiB, available RAM=2.55 GiB
+2026-11-12 22:48:21.313608: W tensorflow/core/lib/png/png_io.cc:95] PNG warning: iCCP: known incorrect sRGB profile
+2026-11-12 22:48:21.313801: W tensorflow/core/lib/png/png_io.cc:95] PNG warning: iCCP: cHRM chunk does not match sRGB
+[monitor] CPU=41%, process RAM=0.34 GiB, available RAM=2.60 GiB
+[monitor] CPU=61%, process RAM=0.34 GiB, available RAM=2.05 GiB
+[monitor] CPU=61%, process RAM=0.34 GiB, available RAM=2.27 GiB
+[monitor] CPU=38%, process RAM=0.34 GiB, available RAM=2.75 GiB
+[monitor] CPU=55%, process RAM=0.33 GiB, available RAM=2.38 GiB
+[monitor] CPU=60%, process RAM=0.33 GiB, available RAM=2.57 GiB
+[monitor] CPU=49%, process RAM=0.33 GiB, available RAM=2.71 GiB
+[monitor] CPU=39%, process RAM=0.33 GiB, available RAM=2.80 GiB
+[monitor] CPU=38%, process RAM=0.33 GiB, available RAM=2.74 GiB
+[monitor] CPU=42%, process RAM=0.33 GiB, available RAM=2.73 GiB
+[monitor] CPU=39%, process RAM=0.27 GiB, available RAM=2.83 GiB
+
+Epoch 2: val_loss improved from 0.61087 to 0.58309, saving model to C:\Users\sudha\OneDrive\Desktop\irrigation-feature\models\crop_disease\runs\20261112T142746Z\MobileNetV3Small\fine_tuning_best.keras
+[fine_tuning] epoch 2: loss=0.6196, val_loss=0.5831, val_accuracy=0.8127, 23.4 min, CPU=299% of one core, RAM=0.47 GiB
+4427/4427 - 1404s - 317ms/step - accuracy: 0.7841 - loss: 0.6196 - val_accuracy: 0.8127 - val_loss: 0.5831 - learning_rate: 1.0000e-05
+Epoch 3/10
+[monitor] CPU=55%, process RAM=0.48 GiB, available RAM=1.43 GiB
+[monitor] CPU=48%, process RAM=0.51 GiB, available RAM=1.85 GiB
+[monitor] CPU=47%, process RAM=0.51 GiB, available RAM=1.81 GiB
+[monitor] CPU=52%, process RAM=0.50 GiB, available RAM=1.79 GiB
+[monitor] CPU=65%, process RAM=0.50 GiB, available RAM=1.01 GiB
+[monitor] CPU=76%, process RAM=0.51 GiB, available RAM=1.53 GiB
+2026-11-12 23:05:21.651578: W tensorflow/core/lib/png/png_io.cc:95] PNG warning: iCCP: known incorrect sRGB profile
+2026-11-12 23:05:21.651654: W tensorflow/core/lib/png/png_io.cc:95] PNG warning: iCCP: cHRM chunk does not match sRGB
+[monitor] CPU=59%, process RAM=0.52 GiB, available RAM=1.24 GiB
+[monitor] CPU=67%, process RAM=0.53 GiB, available RAM=1.37 GiB
+[monitor] CPU=61%, process RAM=0.48 GiB, available RAM=1.40 GiB
+[monitor] CPU=53%, process RAM=0.48 GiB, available RAM=1.55 GiB
+[monitor] CPU=68%, process RAM=0.48 GiB, available RAM=1.16 GiB
+[monitor] CPU=72%, process RAM=0.48 GiB, available RAM=1.28 GiB
+[monitor] CPU=69%, process RAM=0.49 GiB, available RAM=1.23 GiB
+[monitor] CPU=73%, process RAM=0.48 GiB, available RAM=0.47 GiB
+[monitor] CPU=70%, process RAM=0.46 GiB, available RAM=0.98 GiB
+[monitor] CPU=78%, process RAM=0.47 GiB, available RAM=1.03 GiB
+[monitor] CPU=68%, process RAM=0.46 GiB, available RAM=1.06 GiB
+[monitor] CPU=40%, process RAM=0.47 GiB, available RAM=0.86 GiB
+[monitor] CPU=37%, process RAM=0.21 GiB, available RAM=1.88 GiB
+[monitor] CPU=41%, process RAM=0.20 GiB, available RAM=1.91 GiB
+[monitor] CPU=48%, process RAM=0.21 GiB, available RAM=1.74 GiB
+
+Epoch 3: val_loss improved from 0.58309 to 0.56594, saving model to C:\Users\sudha\OneDrive\Desktop\irrigation-feature\models\crop_disease\runs\20261112T142746Z\MobileNetV3Small\fine_tuning_best.keras
+[fine_tuning] epoch 3: loss=0.5996, val_loss=0.5659, val_accuracy=0.8201, 20.3 min, CPU=322% of one core, RAM=0.20 GiB
+4427/4427 - 1220s - 276ms/step - accuracy: 0.7888 - loss: 0.5996 - val_accuracy: 0.8201 - val_loss: 0.5659 - learning_rate: 1.0000e-05
+Epoch 4/10
+[monitor] CPU=40%, process RAM=0.24 GiB, available RAM=1.81 GiB
+[monitor] CPU=36%, process RAM=0.24 GiB, available RAM=1.88 GiB
+[monitor] CPU=49%, process RAM=0.25 GiB, available RAM=1.78 GiB
+[monitor] CPU=44%, process RAM=0.25 GiB, available RAM=1.48 GiB
+[monitor] CPU=74%, process RAM=0.27 GiB, available RAM=1.07 GiB
+[monitor] CPU=61%, process RAM=0.28 GiB, available RAM=1.68 GiB
+[monitor] CPU=49%, process RAM=0.27 GiB, available RAM=1.45 GiB
+[monitor] CPU=55%, process RAM=0.27 GiB, available RAM=1.91 GiB
+[monitor] CPU=64%, process RAM=0.27 GiB, available RAM=1.80 GiB
+[monitor] CPU=52%, process RAM=0.26 GiB, available RAM=1.53 GiB
+[monitor] CPU=58%, process RAM=0.26 GiB, available RAM=2.23 GiB
+[monitor] CPU=78%, process RAM=0.28 GiB, available RAM=1.26 GiB
+[monitor] CPU=77%, process RAM=0.26 GiB, available RAM=1.55 GiB
+[monitor] CPU=70%, process RAM=0.26 GiB, available RAM=1.43 GiB
+[monitor] CPU=69%, process RAM=0.27 GiB, available RAM=1.51 GiB
+2026-11-12 23:35:27.055514: W tensorflow/core/lib/png/png_io.cc:95] PNG warning: iCCP: known incorrect sRGB profile
+2026-11-12 23:35:27.055628: W tensorflow/core/lib/png/png_io.cc:95] PNG warning: iCCP: cHRM chunk does not match sRGB
+[monitor] CPU=69%, process RAM=0.26 GiB, available RAM=1.64 GiB
+[monitor] CPU=72%, process RAM=0.20 GiB, available RAM=1.58 GiB
+[monitor] CPU=68%, process RAM=0.21 GiB, available RAM=1.46 GiB
+[monitor] CPU=75%, process RAM=0.22 GiB, available RAM=1.21 GiB
+
+Epoch 4: val_loss improved from 0.56594 to 0.55089, saving model to C:\Users\sudha\OneDrive\Desktop\irrigation-feature\models\crop_disease\runs\20261112T142746Z\MobileNetV3Small\fine_tuning_best.keras
+[fine_tuning] epoch 4: loss=0.5793, val_loss=0.5509, val_accuracy=0.8241, 19.4 min, CPU=327% of one core, RAM=0.19 GiB
+4427/4427 - 1161s - 262ms/step - accuracy: 0.7959 - loss: 0.5793 - val_accuracy: 0.8241 - val_loss: 0.5509 - learning_rate: 1.0000e-05
+Epoch 5/10
+[monitor] CPU=79%, process RAM=0.23 GiB, available RAM=0.84 GiB
+2026-11-12 23:39:43.537975: W tensorflow/core/lib/png/png_io.cc:95] PNG warning: iCCP: known incorrect sRGB profile
+2026-11-12 23:39:43.538140: W tensorflow/core/lib/png/png_io.cc:95] PNG warning: iCCP: cHRM chunk does not match sRGB
+[monitor] CPU=57%, process RAM=0.23 GiB, available RAM=0.95 GiB
+[monitor] CPU=56%, process RAM=0.25 GiB, available RAM=1.22 GiB
+[monitor] CPU=71%, process RAM=0.26 GiB, available RAM=0.74 GiB
+[monitor] CPU=82%, process RAM=0.26 GiB, available RAM=0.75 GiB
+[monitor] CPU=70%, process RAM=0.27 GiB, available RAM=0.97 GiB
+[monitor] CPU=56%, process RAM=0.26 GiB, available RAM=0.75 GiB
+[monitor] CPU=55%, process RAM=0.26 GiB, available RAM=0.59 GiB
+[monitor] CPU=72%, process RAM=0.26 GiB, available RAM=0.80 GiB
+[monitor] CPU=71%, process RAM=0.25 GiB, available RAM=1.75 GiB
+[monitor] CPU=44%, process RAM=0.26 GiB, available RAM=2.12 GiB
+[monitor] CPU=56%, process RAM=0.26 GiB, available RAM=1.97 GiB
+[monitor] CPU=70%, process RAM=0.25 GiB, available RAM=1.67 GiB
+[monitor] CPU=53%, process RAM=0.26 GiB, available RAM=1.75 GiB
+[monitor] CPU=47%, process RAM=0.25 GiB, available RAM=1.66 GiB
+[monitor] CPU=41%, process RAM=0.21 GiB, available RAM=1.92 GiB
+[monitor] CPU=47%, process RAM=0.21 GiB, available RAM=1.95 GiB
+
+Epoch 5: val_loss improved from 0.55089 to 0.53729, saving model to C:\Users\sudha\OneDrive\Desktop\irrigation-feature\models\crop_disease\runs\20261112T142746Z\MobileNetV3Small\fine_tuning_best.keras
+[fine_tuning] epoch 5: loss=0.5508, val_loss=0.5373, val_accuracy=0.8290, 16.7 min, CPU=328% of one core, RAM=0.18 GiB
+4427/4427 - 1004s - 227ms/step - accuracy: 0.8038 - loss: 0.5508 - val_accuracy: 0.8290 - val_loss: 0.5373 - learning_rate: 1.0000e-05
+Epoch 6/10
+[monitor] CPU=47%, process RAM=0.23 GiB, available RAM=1.96 GiB
+[monitor] CPU=83%, process RAM=0.23 GiB, available RAM=1.87 GiB
+[monitor] CPU=49%, process RAM=0.24 GiB, available RAM=2.53 GiB
+[monitor] CPU=58%, process RAM=0.23 GiB, available RAM=1.77 GiB
+2026-11-13 00:00:12.924656: W tensorflow/core/lib/png/png_io.cc:95] PNG warning: iCCP: known incorrect sRGB profile
+2026-11-13 00:00:12.924754: W tensorflow/core/lib/png/png_io.cc:95] PNG warning: iCCP: cHRM chunk does not match sRGB
+[monitor] CPU=57%, process RAM=0.23 GiB, available RAM=2.21 GiB
+[monitor] CPU=47%, process RAM=0.23 GiB, available RAM=0.36 GiB
+[monitor] CPU=48%, process RAM=0.24 GiB, available RAM=0.41 GiB
+[monitor] CPU=39%, process RAM=0.21 GiB, available RAM=0.87 GiB
+[monitor] CPU=40%, process RAM=0.21 GiB, available RAM=1.09 GiB
+[monitor] CPU=34%, process RAM=0.22 GiB, available RAM=1.11 GiB
+[monitor] CPU=45%, process RAM=0.23 GiB, available RAM=0.95 GiB
+[monitor] CPU=36%, process RAM=0.18 GiB, available RAM=0.95 GiB
+
+Epoch 6: val_loss improved from 0.53729 to 0.53244, saving model to C:\Users\sudha\OneDrive\Desktop\irrigation-feature\models\crop_disease\runs\20261112T142746Z\MobileNetV3Small\fine_tuning_best.keras
+[fine_tuning] epoch 6: loss=0.5299, val_loss=0.5324, val_accuracy=0.8300, 12.2 min, CPU=345% of one core, RAM=0.16 GiB
+4427/4427 - 731s - 165ms/step - accuracy: 0.8136 - loss: 0.5299 - val_accuracy: 0.8300 - val_loss: 0.5324 - learning_rate: 1.0000e-05
+Epoch 7/10
+[monitor] CPU=36%, process RAM=0.20 GiB, available RAM=1.35 GiB
+2026-11-13 00:09:23.136016: W tensorflow/core/lib/png/png_io.cc:95] PNG warning: iCCP: known incorrect sRGB profile
+2026-11-13 00:09:23.136102: W tensorflow/core/lib/png/png_io.cc:95] PNG warning: iCCP: cHRM chunk does not match sRGB
+[monitor] CPU=52%, process RAM=0.21 GiB, available RAM=0.83 GiB
+[monitor] CPU=56%, process RAM=0.20 GiB, available RAM=0.63 GiB
+[monitor] CPU=49%, process RAM=0.20 GiB, available RAM=0.87 GiB
+[monitor] CPU=56%, process RAM=0.22 GiB, available RAM=0.70 GiB
+[monitor] CPU=54%, process RAM=0.21 GiB, available RAM=1.14 GiB
+[monitor] CPU=47%, process RAM=0.22 GiB, available RAM=2.03 GiB
+[monitor] CPU=51%, process RAM=0.22 GiB, available RAM=1.83 GiB
+[monitor] CPU=52%, process RAM=0.21 GiB, available RAM=1.66 GiB
+[monitor] CPU=50%, process RAM=0.22 GiB, available RAM=1.61 GiB
+[monitor] CPU=44%, process RAM=0.17 GiB, available RAM=2.33 GiB
+
+Epoch 7: val_loss improved from 0.53244 to 0.52255, saving model to C:\Users\sudha\OneDrive\Desktop\irrigation-feature\models\crop_disease\runs\20261112T142746Z\MobileNetV3Small\fine_tuning_best.keras
+[fine_tuning] epoch 7: loss=0.5274, val_loss=0.5225, val_accuracy=0.8311, 11.4 min, CPU=348% of one core, RAM=0.16 GiB
+4427/4427 - 684s - 154ms/step - accuracy: 0.8112 - loss: 0.5274 - val_accuracy: 0.8311 - val_loss: 0.5225 - learning_rate: 1.0000e-05
+Epoch 8/10
+[monitor] CPU=43%, process RAM=0.20 GiB, available RAM=2.23 GiB
+[monitor] CPU=49%, process RAM=0.20 GiB, available RAM=1.85 GiB
+[monitor] CPU=54%, process RAM=0.23 GiB, available RAM=2.00 GiB
+[monitor] CPU=54%, process RAM=0.22 GiB, available RAM=2.34 GiB
+[monitor] CPU=65%, process RAM=0.22 GiB, available RAM=2.25 GiB
+[monitor] CPU=52%, process RAM=0.26 GiB, available RAM=2.37 GiB
+[monitor] CPU=46%, process RAM=0.26 GiB, available RAM=2.36 GiB
+[monitor] CPU=43%, process RAM=0.26 GiB, available RAM=2.33 GiB
+2026-11-13 00:27:24.929241: W tensorflow/core/lib/png/png_io.cc:95] PNG warning: iCCP: known incorrect sRGB profile
+2026-11-13 00:27:24.929327: W tensorflow/core/lib/png/png_io.cc:95] PNG warning: iCCP: cHRM chunk does not match sRGB
+[monitor] CPU=44%, process RAM=0.26 GiB, available RAM=1.87 GiB
+[monitor] CPU=46%, process RAM=0.31 GiB, available RAM=2.30 GiB
+[monitor] CPU=44%, process RAM=0.32 GiB, available RAM=3.09 GiB
+[monitor] CPU=44%, process RAM=0.18 GiB, available RAM=3.11 GiB
+
+Epoch 8: val_loss improved from 0.52255 to 0.50358, saving model to C:\Users\sudha\OneDrive\Desktop\irrigation-feature\models\crop_disease\runs\20261112T142746Z\MobileNetV3Small\fine_tuning_best.keras
+[fine_tuning] epoch 8: loss=0.5098, val_loss=0.5036, val_accuracy=0.8385, 11.8 min, CPU=333% of one core, RAM=0.16 GiB
+4427/4427 - 709s - 160ms/step - accuracy: 0.8184 - loss: 0.5098 - val_accuracy: 0.8385 - val_loss: 0.5036 - learning_rate: 1.0000e-05
+Epoch 9/10
+[monitor] CPU=38%, process RAM=0.22 GiB, available RAM=3.27 GiB
+[monitor] CPU=34%, process RAM=0.21 GiB, available RAM=3.06 GiB
+[monitor] CPU=36%, process RAM=0.22 GiB, available RAM=2.95 GiB
+2026-11-13 00:33:53.953022: W tensorflow/core/lib/png/png_io.cc:95] PNG warning: iCCP: known incorrect sRGB profile
+2026-11-13 00:33:53.953089: W tensorflow/core/lib/png/png_io.cc:95] PNG warning: iCCP: cHRM chunk does not match sRGB
+[monitor] CPU=36%, process RAM=0.22 GiB, available RAM=3.05 GiB
+[monitor] CPU=28%, process RAM=0.22 GiB, available RAM=3.09 GiB
+[monitor] CPU=28%, process RAM=0.24 GiB, available RAM=3.08 GiB
+[monitor] CPU=29%, process RAM=0.22 GiB, available RAM=3.10 GiB
+[monitor] CPU=31%, process RAM=0.23 GiB, available RAM=3.09 GiB
+[monitor] CPU=32%, process RAM=0.25 GiB, available RAM=3.01 GiB
+[monitor] CPU=32%, process RAM=0.18 GiB, available RAM=3.05 GiB
+
+Epoch 9: val_loss improved from 0.50358 to 0.49795, saving model to C:\Users\sudha\OneDrive\Desktop\irrigation-feature\models\crop_disease\runs\20261112T142746Z\MobileNetV3Small\fine_tuning_best.keras
+[fine_tuning] epoch 9: loss=0.4941, val_loss=0.4980, val_accuracy=0.8387, 9.6 min, CPU=339% of one core, RAM=0.17 GiB
+4427/4427 - 574s - 130ms/step - accuracy: 0.8201 - loss: 0.4941 - val_accuracy: 0.8387 - val_loss: 0.4980 - learning_rate: 1.0000e-05
+Epoch 10/10
+[monitor] CPU=34%, process RAM=0.20 GiB, available RAM=3.00 GiB
+[monitor] CPU=49%, process RAM=0.22 GiB, available RAM=2.49 GiB
+2026-11-13 00:42:51.264631: W tensorflow/core/lib/png/png_io.cc:95] PNG warning: iCCP: known incorrect sRGB profile
+2026-11-13 00:42:51.264698: W tensorflow/core/lib/png/png_io.cc:95] PNG warning: iCCP: cHRM chunk does not match sRGB
+[monitor] CPU=44%, process RAM=0.23 GiB, available RAM=2.33 GiB
+[monitor] CPU=36%, process RAM=0.23 GiB, available RAM=2.71 GiB
+[monitor] CPU=49%, process RAM=0.23 GiB, available RAM=2.11 GiB
+[monitor] CPU=51%, process RAM=0.23 GiB, available RAM=2.01 GiB
+[monitor] CPU=45%, process RAM=0.23 GiB, available RAM=2.23 GiB
+[monitor] CPU=36%, process RAM=0.23 GiB, available RAM=2.36 GiB
+[monitor] CPU=34%, process RAM=0.23 GiB, available RAM=2.32 GiB
+[monitor] CPU=4%, process RAM=0.23 GiB, available RAM=1.91 GiB

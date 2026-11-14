@@ -171,6 +171,26 @@ def test_identical_failed_translation_batch_is_cooled_down(monkeypatch):
     assert provider_calls == [True]
 
 
+def test_payment_required_disables_provider_for_new_batches(monkeypatch):
+    monkeypatch.setenv("SARVAM_API_KEY", "test-secret")
+    provider_calls = []
+    monkeypatch.setattr(
+        sarvam_translation.requests,
+        "post",
+        lambda *_args, **_kwargs: provider_calls.append(True) or ProviderResponse(402),
+    )
+
+    with pytest.raises(sarvam_translation.TranslationEntitlementError) as first:
+        sarvam_translation.translate_texts(["First phrase"], "en-IN", "te-IN")
+    with pytest.raises(sarvam_translation.TranslationEntitlementError) as second:
+        sarvam_translation.translate_texts(["Different phrase"], "en-IN", "hi-IN")
+
+    assert first.value.category == "account_entitlement_error"
+    assert second.value.category == "account_entitlement_cooldown"
+    assert provider_calls == [True]
+    assert sarvam_translation.translate_texts(["Hello"], "en-IN", "en-IN") == ["Hello"]
+
+
 def test_translation_provider_rate_limit_uses_bounded_cooldown_and_retry_after(monkeypatch):
     monkeypatch.setenv("SARVAM_API_KEY", "test-secret")
     calls = []
@@ -212,6 +232,36 @@ def test_translate_endpoint_rejects_invalid_codes_and_overlong_text():
 
     assert invalid_language.status_code == 422
     assert overlong.status_code == 422
+
+
+@pytest.mark.parametrize("target_language_code", ["te-IN", "hi-IN", "kn-IN", "ta-IN", "ml-IN"])
+def test_translate_endpoint_accepts_each_supported_application_language(
+    monkeypatch,
+    target_language_code,
+):
+    monkeypatch.setenv("SARVAM_API_KEY", "test-secret")
+    calls = []
+
+    def provider(_url, *, json, **_kwargs):
+        calls.append(json)
+        marker = SEGMENT_MARKER_PATTERN.search(json["input"]).group(0)
+        return ProviderResponse(200, f"{marker} localized text")
+
+    monkeypatch.setattr(sarvam_translation.requests, "post", provider)
+
+    with TestClient(main.app) as client:
+        response = client.post(
+            "/api/translate",
+            json={
+                "texts": ["A field-specific weather update"],
+                "source_language_code": "en-IN",
+                "target_language_code": target_language_code,
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"translations": ["localized text"]}
+    assert calls[0]["target_language_code"] == target_language_code
 
 
 def test_translate_endpoint_rejects_numbers_that_expand_past_provider_limit(monkeypatch):
@@ -292,6 +342,7 @@ def test_public_landing_page_loads_all_locales_before_translation_service():
     [
         (sarvam_translation.TranslationRateLimitError(), 429, "60"),
         (sarvam_translation.TranslationRateLimitError(17), 429, "17"),
+        (sarvam_translation.TranslationEntitlementError(), 503, None),
         (sarvam_translation.TranslationProviderError(), 502, None),
     ],
 )
@@ -336,14 +387,23 @@ def test_upstream_payment_required_is_not_retried_and_maps_safely(monkeypatch, c
                 "target_language_code": "hi-IN",
             },
         )
+        repeated = client.post(
+            "/api/translate",
+            json={
+                "texts": ["A different phrase"],
+                "source_language_code": "en-IN",
+                "target_language_code": "te-IN",
+            },
+        )
 
-    assert response.status_code == 502
-    assert response.json()["detail"] == (
-        "Translation is temporarily unavailable. Untranslated text remains in English."
-    )
+    assert response.status_code == 503
+    assert "required plan, credits, or API entitlement" in response.json()["detail"]
+    assert "Local dictionary translations remain available." in response.json()["detail"]
+    assert repeated.status_code == 503
     assert provider_calls == [True]
-    assert "category=upstream_http_error upstream_status=402" in caplog.text
+    assert "category=account_entitlement_error upstream_status=402" in caplog.text
     assert "test-secret" not in response.text
+    assert "test-secret" not in repeated.text
     assert "test-secret" not in caplog.text
 
 

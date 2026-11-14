@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import { useI18n } from "@/components/i18n-provider";
+import { useI18n, type TranslationSource } from "@/components/i18n-provider";
 
-export function LoadingState({ label = "Loading your farm…" }: { label?: string }) {
+export function LoadingState({ label = "Loading your farm…" }: { label?: TranslationSource }) {
   const { t } = useI18n();
   return <div className="state-card" role="status" aria-live="polite"><span className="spinner" aria-hidden="true" />{t(label)}</div>;
 }

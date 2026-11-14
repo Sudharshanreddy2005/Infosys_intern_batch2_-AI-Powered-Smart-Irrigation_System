@@ -12,8 +12,14 @@ const i18nSource = fs.readFileSync(
   path.join(__dirname, "..", "static", "i18n.js"),
   "utf8",
 );
+const numberFormatSource = fs.readFileSync(
+  path.join(__dirname, "..", "static", "number-format.js"),
+  "utf8",
+);
 const localeSources = ["en", "te", "hi", "kn", "ta", "ml"].map((code) =>
   fs.readFileSync(path.join(__dirname, "..", "static", "i18n", `${code}.js`), "utf8"));
+const REMOTE_TEST_PHRASE = "Untranslated test sentinel";
+const UNAPPROVED_TEST_PHRASE = "Unapproved test sentinel";
 
 function createProfileStore(storage = new Map(), fetchImpl = async () => ({ status: 401 })) {
   const listeners = new Map();
@@ -87,6 +93,10 @@ class MockElement {
     this.attributes.set(name, String(value));
   }
 
+  removeAttribute(name) {
+    this.attributes.delete(name);
+  }
+
   matches(selector) {
     return selector.split(",").some((part) => {
       const attribute = part.trim().match(/^\[([^\]]+)\]$/)?.[1];
@@ -144,8 +154,8 @@ function createI18nHarness(apiRequest, storage = new Map(), { remote = false } =
   const languageSelect = new MockSelect({ "data-language-select": "" });
   const status = new MockElement({ "data-translation-status": "", "data-i18n-ignore": "" });
   status.hidden = true;
-  const firstText = new MockText("Green water advice");
-  const duplicateText = new MockText("Green water advice");
+  const firstText = new MockText(REMOTE_TEST_PHRASE);
+  const duplicateText = new MockText(REMOTE_TEST_PHRASE);
   const localText = new MockText("Dashboard");
   const userText = new MockText("private field name");
   const remoteTextRoot = new MockElement(
@@ -255,11 +265,13 @@ function createI18nHarness(apiRequest, storage = new Map(), { remote = false } =
       removeItem: (key) => storage.delete(key),
     },
   };
+  vm.runInNewContext(numberFormatSource, context);
   localeSources.forEach((source) => vm.runInNewContext(source, context));
   vm.runInNewContext(i18nSource, context);
   document.ready();
   return {
     api: window.JalSaathiI18n,
+    numberFormatting: window.JalSaathiNumberFormat,
     languageSelect,
     nodes: [firstText, duplicateText, localText, userText],
     status,
@@ -315,37 +327,270 @@ test("all six languages update dashboard text without a page reload", () => {
   }
 });
 
-test("fixed interface gaps stay local-only and are reported by the audit", async () => {
+test("number and date formatting use the selected locale and reject invalid values", () => {
+  const { api } = createI18nHarness(async () => ({ translations: [] }));
+  const locales = {
+    en: "en-IN",
+    te: "te-IN",
+    hi: "hi-IN",
+    kn: "kn-IN",
+    ta: "ta-IN",
+    ml: "ml-IN",
+  };
+  const date = new Date(2025, 3, 5, 14, 30);
+  const formattedNumbers = [];
+  const formattedDates = [];
+
+  for (const [code, locale] of Object.entries(locales)) {
+    api.setLanguage(code);
+    const formattedNumber = api.formatNumber(1234567.89, { maximumFractionDigits: 1 });
+    const expectedNumber = new Intl.NumberFormat("en-IN", {
+      maximumFractionDigits: 1,
+      numberingSystem: "latn",
+    }).format(1234567.89);
+    const formattedDate = api.formatDate(date, { dateStyle: "medium", timeStyle: "short" });
+    const expectedDate = new Intl.DateTimeFormat(locale, {
+      dateStyle: "medium",
+      timeStyle: "short",
+      numberingSystem: "latn",
+    }).format(date);
+    formattedNumbers.push(formattedNumber);
+    formattedDates.push([...formattedDate.matchAll(/\d+/g)]
+      .map(([digits]) => Number(digits))
+      .sort((left, right) => left - right)
+      .join("|"));
+    assert.equal(
+      formattedNumber,
+      expectedNumber,
+    );
+    assert.equal(formattedDate, expectedDate);
+    assert.match(formattedNumber, /^[0-9,.-]+$/);
+    assert.match(formattedDate, /\d/);
+
+    const weatherReadings = [27.2, 27.3, 0, 0, 65, 3.2];
+    weatherReadings.forEach((value) => {
+      assert.equal(
+        api.formatNumber(value),
+        new Intl.NumberFormat("en-IN", {
+          maximumFractionDigits: 20,
+          numberingSystem: "latn",
+        }).format(value),
+      );
+    });
+    assert.equal(api.formatNumber(43) + "%", "43%");
+    assert.equal(api.formatNumber(0.8) + " m/s", "0.8 m/s");
+    assert.equal(api.formatNumber(0) + " mm/h", "0 mm/h");
+    assert.equal(api.formatNumber(32.5) + "%", "32.5%");
+    assert.equal(api.formatNumber(2) + " acres", "2 acres");
+    assert.equal(api.formatNumber(24), "24");
+    assert.equal(api.formatNumber(-2.6), "-2.6");
+    assert.equal(api.formatTemperature(null), api.t("legacy.unavailable.2c9c1f79"));
+  }
+
+  assert.equal(new Set(formattedNumbers).size, 1);
+  assert.equal(new Set(formattedDates).size, 1);
+  assert.equal(api.formatNumber(null), "—");
+  assert.equal(api.formatNumber(""), "—");
+  assert.equal(api.formatNumber("not a number"), "—");
+  assert.equal(api.formatTemperature(true), api.t("legacy.unavailable.2c9c1f79"));
+  assert.equal(api.formatTemperature("not a number"), api.t("legacy.unavailable.2c9c1f79"));
+  assert.equal(api.formatDate("not a date"), "—");
+  assert.match(
+    api.numberMarkup(12345.67, {}, " L"),
+    /data-i18n-number="12345\.67".*data-i18n-number-suffix=" L".*12,345\.67 L/,
+  );
+  assert.match(api.dateMarkup("2025-04-05"), /data-i18n-date="2025-04-05"/);
+  assert.equal(api.numberMarkup("not a number"), "—");
+});
+
+test("dynamic Model 3 labels use the selected locale and formatted values", () => {
+  const { api } = createI18nHarness(async () => ({ translations: [] }));
+  for (const language of ["en", "te", "hi", "kn", "ta", "ml"]) {
+    api.setLanguage(language);
+    const moisture = api.formatNumber(42.5);
+    const currentLabel = api.t(`Current moisture: ${moisture}%`);
+    const forecastLabel = api.t(
+      `Predicted moisture after ${api.formatNumber(24)} hours: ${api.formatNumber(39.1)}%`,
+    );
+    assert.ok(currentLabel.includes(moisture));
+    assert.ok(forecastLabel.includes(api.formatNumber(24)));
+    assert.ok(forecastLabel.includes(api.formatNumber(39.1)));
+    if (language !== "en") {
+      assert.notEqual(currentLabel, `Current moisture: ${moisture}%`);
+      assert.notEqual(forecastLabel, `Predicted moisture after ${api.formatNumber(24)} hours: ${api.formatNumber(39.1)}%`);
+    }
+  }
+});
+
+test("weather fallback and compact missing-value messages are localized in all six languages", () => {
+  const { api } = createI18nHarness(async () => ({ translations: [] }));
+  const expectedPlaceholders = {
+    en: "N/A",
+    te: "లేదు",
+    hi: "नहीं",
+    kn: "ಇಲ್ಲ",
+    ta: "இல்லை",
+    ml: "ഇല്ല",
+  };
+  const englishFallback = api.t("weather.refreshFallback", { location: "Mysuru" });
+
+  for (const [language, placeholder] of Object.entries(expectedPlaceholders)) {
+    api.setLanguage(language);
+    assert.equal(api.t("weather.shortUnavailable"), placeholder);
+    assert.ok(api.t("weather.currentUnavailable").trim());
+    assert.ok(api.t("weather.locationPermissionOff").trim());
+    assert.ok(api.t("weather.chooseCity").trim());
+    const fallback = api.t("weather.refreshFallback", { location: "Mysuru" });
+    assert.ok(fallback.includes("Mysuru"));
+    assert.doesNotMatch(fallback, /\{location\}/);
+    if (language !== "en") assert.notEqual(fallback, englishFallback);
+  }
+});
+
+test("registered numeric and date values update when the selected language changes", () => {
+  const harness = createI18nHarness(async () => ({ translations: [] }));
+  const numberNode = new MockElement();
+  const dateNode = new MockElement({
+    "data-i18n-date": "2025-04-05",
+    "data-i18n-date-style": "date",
+  });
+  harness.body.replaceChildren(...harness.body.childNodes, numberNode, dateNode);
+  harness.api.setNumber(numberNode, 12345.67, {}, " L");
+
+  for (const [code, locale] of [
+    ["en", "en-IN"],
+    ["te", "te-IN"],
+    ["hi", "hi-IN"],
+    ["kn", "kn-IN"],
+    ["ta", "ta-IN"],
+    ["ml", "ml-IN"],
+  ]) {
+    harness.api.setLanguage(code);
+    assert.equal(numberNode.textContent, "12,345.67 L");
+    assert.equal(
+      dateNode.textContent,
+      new Intl.DateTimeFormat(locale, {
+        dateStyle: "medium",
+        numberingSystem: "latn",
+      }).format(new Date(2025, 3, 5)),
+    );
+  }
+
+  assert.equal(numberNode.getAttribute("data-i18n-number"), "12345.67");
+});
+
+test("temperature formatting rounds display only and keeps Latin digits across all six languages", () => {
+  const { api } = createI18nHarness(async () => ({ translations: [] }));
+  const measurements = Object.freeze([
+    [20.3, "20°C"],
+    [20.8, "21°C"],
+    [28.25, "28°C"],
+    [28.6, "29°C"],
+    [27.5, "28°C"],
+    [0, "0°C"],
+    [0.4, "0°C"],
+    [-2.6, "-3°C"],
+    [-2.5, "-3°C"],
+  ]);
+  const rawReading = Object.freeze({ temperature_c: 20.8 });
+
+  for (const language of ["en", "te", "hi", "kn", "ta", "ml"]) {
+    api.setLanguage(language);
+    for (const [value, expected] of measurements) {
+      assert.equal(api.formatTemperature(value), expected);
+    }
+    assert.equal(api.formatTemperature(rawReading.temperature_c), "21°C");
+    assert.equal(rawReading.temperature_c, 20.8);
+  }
+});
+
+test("assistant output uses Latin digits and whole-degree Celsius", () => {
+  const { numberFormatting } = createI18nHarness(async () => ({ translations: [] }));
+  const generated = [
+    String.fromCodePoint(0x0C68, 0x0C66, 0x002E, 0x0C6E, 0x00B0, 0x0043),
+    String.fromCodePoint(0x0969, 0x0968, 0x002E, 0x096B, 0x0025),
+    String.fromCodePoint(0x002D, 0x0CE8, 0x002E, 0x0CEC, 0x00B0, 0x0043),
+  ].join("; ");
+
+  assert.equal(numberFormatting.normalizeAssistantText(generated), "21°C; 32.5%; -3°C");
+});
+
+test("local dictionaries do not embed regional numeral glyphs", () => {
+  const regionalDigits = /[०-९౦-౯೦-೯௦-௯൦-൯]/;
+  const pwaSources = ["en", "te", "hi", "kn", "ta", "ml"].map((code) =>
+    fs.readFileSync(path.join(__dirname, "..", "farmer-pwa", "locales", `${code}.json`), "utf8"));
+
+  for (const source of [...localeSources, ...pwaSources]) {
+    assert.doesNotMatch(source, regionalDigits);
+  }
+});
+
+test("classic app pages load the shared number formatter before i18n", () => {
+  const pages = [
+    path.join(__dirname, "..", "static", "auth.html"),
+    path.join(__dirname, "..", "static", "sections.html"),
+    path.join(__dirname, "..", "templates", "index.html"),
+    path.join(__dirname, "..", "templates", "landing.html"),
+    path.join(__dirname, "..", "templates", "management.html"),
+  ];
+
+  for (const page of pages) {
+    const source = fs.readFileSync(page, "utf8");
+    assert.ok(source.indexOf("number-format.js") < source.indexOf("i18n.js"), page);
+  }
+});
+
+test("missing local translations stay in the selected language and are reported by the audit", async () => {
   let requests = 0;
   const harness = createI18nHarness(async () => {
     requests += 1;
     return { translations: [] };
   });
 
+  const missingTranslations = {
+    en: REMOTE_TEST_PHRASE,
+    te: "అనువాదం అందుబాటులో లేదు",
+    hi: "अनुवाद उपलब्ध नहीं है",
+    kn: "ಅನುವಾದ ಲಭ್ಯವಿಲ್ಲ",
+    ta: "மொழிபெயர்ப்பு கிடைக்கவில்லை",
+    ml: "വിവർത്തനം ലഭ്യമല്ല",
+  };
+  assert.equal(harness.api.t("common.translationMissing", "te"), missingTranslations.te);
+  assert.equal(harness.api.t(REMOTE_TEST_PHRASE, "te"), missingTranslations.te);
+  for (const [code, fallback] of Object.entries(missingTranslations)) {
+    harness.api.setLanguage(code);
+    assert.equal(harness.api.getLanguage(), code);
+    assert.equal(harness.api.t(REMOTE_TEST_PHRASE, code), fallback);
+    assert.equal(harness.nodes[0].nodeValue, fallback);
+  }
+
   harness.api.setLanguage("te");
   await new Promise((resolve) => setTimeout(resolve, 120));
 
   assert.equal(requests, 0);
-  assert.equal(harness.nodes[0].nodeValue, "Green water advice");
-  assert.ok(harness.api.audit().missingKeys.includes("unkeyed: Green water advice"));
+  assert.equal(harness.nodes[0].nodeValue, "అనువాదం అందుబాటులో లేదు");
+  assert.ok(harness.api.audit().missingKeys.includes(`unkeyed: ${REMOTE_TEST_PHRASE}`));
 });
 
 test("weather labels have local translations in all six languages", () => {
   const { api } = createI18nHarness(async () => ({ translations: [] }));
   assert.deepEqual(Object.keys(api.dictionaries).sort(), ["en", "hi", "kn", "ml", "ta", "te"]);
   const expected = {
-    en: ["Feels like", "Rain probability"],
-    te: ["అనిపించే ఉష్ణోగ్రత", "వర్షం పడే అవకాశం"],
-    hi: ["महसूस होने वाला तापमान", "बारिश की संभावना"],
-    kn: ["ಅನಿಸುವ ತಾಪಮಾನ", "ಮಳೆಯ ಸಾಧ್ಯತೆ"],
-    ta: ["உணரப்படும் வெப்பநிலை", "மழை வாய்ப்பு"],
-    ml: ["അനുഭവപ്പെടുന്ന താപനില", "മഴയ്ക്ക് സാധ്യത"],
+    en: ["Feels like", "Rain probability", "24 hourly periods", "7 daily periods", "Not provided"],
+    te: ["అనిపించే ఉష్ణోగ్రత", "వర్షం పడే అవకాశం", "24 గంటల అంచనాలు", "7 రోజువారీ అంచనాలు", "అందించలేదు"],
+    hi: ["महसूस होने वाला तापमान", "बारिश की संभावना", "24 घंटे के पूर्वानुमान", "7 दिन के पूर्वानुमान", "प्रदान नहीं किया गया"],
+    kn: ["ಅನಿಸುವ ತಾಪಮಾನ", "ಮಳೆಯ ಸಾಧ್ಯತೆ", "24 ಗಂಟೆಗಳ ಮುನ್ಸೂಚನೆಗಳು", "7 ದಿನಗಳ ಮುನ್ಸೂಚನೆಗಳು", "ಒದಗಿಸಿಲ್ಲ"],
+    ta: ["உணரப்படும் வெப்பநிலை", "மழை வாய்ப்பு", "24 மணிநேர முன்னறிவிப்புகள்", "7 நாள் முன்னறிவிப்புகள்", "வழங்கப்படவில்லை"],
+    ml: ["അനുഭവപ്പെടുന്ന താപനില", "മഴയ്ക്ക് സാധ്യത", "24 മണിക്കൂർ പ്രവചനങ്ങൾ", "7 ദിവസത്തെ പ്രവചനങ്ങൾ", "നൽകിയിട്ടില്ല"],
   };
 
   Object.entries(expected).forEach(([code, labels]) => {
     assert.deepEqual([
       api.t("weather.feelsLike", code),
       api.t("weather.rainProbability", code),
+      api.t("weather.hourlyPeriods", code, { value: "24" }),
+      api.t("weather.dailyPeriods", code, { value: "7" }),
+      api.t("legacy.not.provided.20a04182", code),
     ], labels);
   });
 });
@@ -357,6 +602,17 @@ test("translation lookup supports semantic keys and named interpolation paramete
 
   assert.equal(api.t("fields.title"), "నా పొలాలు");
   assert.equal(api.t("Hello {name}", { name: "Ravi" }), "హలో Ravi");
+  assert.equal(api.t("legacy.audit.value-value.fde95b8c"), "· {value} – {value}");
+});
+
+test("non-text markers remain unchanged and unknown phrases use the localized unavailable message", () => {
+  const { api } = createI18nHarness(async () => ({ translations: [] }));
+  api.setLanguage("te");
+
+  assert.equal(api.t("01", "te"), "01");
+  assert.equal(api.t("✦", "te"), "✦");
+  assert.equal(api.t("J", "te"), "J");
+  assert.equal(api.t("Untranslated test sentinel", "te"), "అనువాదం అందుబాటులో లేదు");
 });
 
 test("shared header labels have local translations in all six languages", () => {
@@ -380,6 +636,31 @@ test("shared header labels have local translations in all six languages", () => 
       api.t("AI Model Predictions", code),
     ], labels);
   });
+});
+
+test("farmer assistant status and model explanation text use all six local dictionaries", () => {
+  const { api } = createI18nHarness(async () => ({ translations: [] }));
+  const expectedUnavailable = {
+    en: "The assistant is unavailable. Please try again later.",
+    te: "సహాయకుడు ప్రస్తుతం అందుబాటులో లేడు. దయచేసి మళ్లీ ప్రయత్నించండి.",
+    hi: "सहायक अभी उपलब्ध नहीं है। कृपया फिर से प्रयास करें।",
+    kn: "ಸಹಾಯಕ ಲಭ್ಯವಿಲ್ಲ. ದಯವಿಟ್ಟು ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.",
+    ta: "உதவியாளர் தற்போது கிடைக்கவில்லை. மீண்டும் முயற்சிக்கவும்.",
+    ml: "സഹായി ഇപ്പോൾ ലഭ്യമല്ല. ദയവായി വീണ്ടും ശ്രമിക്കുക.",
+  };
+  Object.entries(expectedUnavailable).forEach(([code, value]) => {
+    assert.equal(api.t("assistant.error.unavailable", code), value);
+  });
+
+  api.setLanguage("te");
+  assert.equal(
+    api.t("assistant.model2.estimatePrefix", {
+      amount: "123.5",
+      unit: api.t("assistant.model2.unit"),
+      hours: 24,
+    }),
+    "సహాయకుడు పరిశీలించిన, సర్వర్ ధృవీకరించిన అంచనా: 123.5 ప్రతి పొలానికి 24 గంటలకు లీటర్లు, 24 గంటలకు.",
+  );
 });
 
 test("both authenticated app shells mount the same header and keep sidebar navigation only", () => {
@@ -456,8 +737,17 @@ test("profile API errors preserve the server Retry-After value", async () => {
   await assert.rejects(api.apiRequest("/api/translate"), (error) => {
     assert.equal(error.status, 429);
     assert.equal(error.retryAfterSeconds, 47);
+    assert.equal(error.message, "Too many requests. Please wait a moment and try again.");
     return true;
   });
+  assert.equal(
+    api.apiErrorMessage(401, "Internal authentication diagnostic", "/api/auth/login"),
+    "Email or password is incorrect.",
+  );
+  assert.equal(
+    api.apiErrorMessage(503, "Sensitive provider response", "/api/translate"),
+    "The service is temporarily unavailable. Please try again later.",
+  );
 });
 
 test("Sarvam translates only explicitly marked dynamic text and avoids duplicate requests", async () => {
@@ -473,7 +763,7 @@ test("Sarvam translates only explicitly marked dynamic text and avoids duplicate
 
   assert.equal(requests.length, 1);
   assert.equal(requests[0].target_language_code, "ml-IN");
-  assert.deepEqual(requests[0].texts, ["Green water advice"]);
+  assert.deepEqual(requests[0].texts, [REMOTE_TEST_PHRASE]);
   assert.deepEqual(
     harness.languageSelect.childNodes.map((option) => option.textContent),
     ["English", "తెలుగు", "हिन्दी", "ಕನ್ನಡ", "தமிழ்", "മലയാളം"],
@@ -527,10 +817,10 @@ test("successful remote translations persist in the shared session cache", async
 
   assert.ok(afterFirstLoad > 0);
   assert.equal(requests, afterFirstLoad);
-  assert.equal(restored.nodes[0].nodeValue, "T:Green water advice");
+  assert.equal(restored.nodes[0].nodeValue, `T:${REMOTE_TEST_PHRASE}`);
 });
 
-test("local dictionary remains available and HTTP 502 keeps fallback text without retry", async () => {
+test("local dictionary remains available and HTTP 502 keeps the selected-language fallback", async () => {
   let requests = 0;
   const harness = createI18nHarness(async () => {
     requests += 1;
@@ -551,12 +841,12 @@ test("local dictionary remains available and HTTP 502 keeps fallback text withou
 
   assert.equal(requests, 1);
   assert.equal(harness.nodes[2].nodeValue, "डैशबोर्ड");
-  assert.equal(harness.nodes[0].nodeValue, "Green water advice");
-  assert.equal(laterText.nodeValue, "Another approved UI string");
+  assert.equal(harness.nodes[0].nodeValue, "अनुवाद उपलब्ध नहीं है");
+  assert.equal(laterText.nodeValue, "अनुवाद उपलब्ध नहीं है");
   assert.equal(harness.api.t("Current conditions and crop records", "en"), "Current conditions and crop records");
   assert.equal(
     harness.api.t("Experimental result: 73% probability", "hi"),
-    "Experimental result: 73% probability",
+    "अनुवाद उपलब्ध नहीं है",
   );
   assert.equal(harness.status.hidden, true);
   assert.equal(harness.status.textContent, "");
@@ -597,7 +887,7 @@ test("dynamic UI subtrees translate locally while user content stays private", a
   await new Promise((resolve) => setTimeout(resolve, 120));
 
   assert.equal(requests.length, 1);
-  assert.deepEqual(requests[0].texts, ["Green water advice"]);
+  assert.deepEqual(requests[0].texts, [REMOTE_TEST_PHRASE]);
   assert.ok(!requests[0].texts.includes("Only fields saved to your account are shown here."));
   assert.ok(!requests[0].texts.includes("private farmer-entered content"));
   assert.equal(dynamicText.nodeValue, harness.api.t("dashboard.savedFieldsHint", "ml"));
@@ -625,7 +915,7 @@ test("unmarked page text is not automatically approved for Sarvam", async () => 
   harness.api.setLanguage("ml");
   await new Promise((resolve) => setTimeout(resolve, 120));
   const requestCount = requests.length;
-  const unapprovedText = new MockText("This page text is not approved.");
+  const unapprovedText = new MockText(UNAPPROVED_TEST_PHRASE);
   const unapprovedRoot = new MockElement({}, [unapprovedText]);
   harness.documentElement.childNodes.push(unapprovedRoot);
   unapprovedRoot.parentElement = harness.documentElement;
@@ -633,7 +923,7 @@ test("unmarked page text is not automatically approved for Sarvam", async () => 
   await new Promise((resolve) => setTimeout(resolve, 120));
 
   assert.equal(requests.length, requestCount);
-  assert.equal(unapprovedText.nodeValue, "This page text is not approved.");
+  assert.equal(unapprovedText.nodeValue, "വിവർത്തനം ലഭ്യമല്ല");
 });
 
 test("translation batches contain up to sixteen missing strings", async () => {
@@ -733,8 +1023,8 @@ test("429 fallback honors Retry-After and does not send later batches", async ()
   await new Promise((resolve) => setTimeout(resolve, 150));
 
   assert.equal(requests.length, 1);
-  assert.equal(texts[0].nodeValue, "Rate limited one");
-  assert.equal(texts[16].nodeValue, "Rate limited seventeen");
+  assert.equal(texts[0].nodeValue, "అనువాదం అందుబాటులో లేదు");
+  assert.equal(texts[16].nodeValue, "అనువాదం అందుబాటులో లేదు");
 
   const laterText = new MockText("No immediate retry");
   const laterRoot = new MockElement({ "data-i18n-static": "" }, [laterText]);
@@ -744,7 +1034,7 @@ test("429 fallback honors Retry-After and does not send later batches", async ()
   await new Promise((resolve) => setTimeout(resolve, 120));
 
   assert.equal(requests.length, 1);
-  assert.equal(laterText.nodeValue, "No immediate retry");
+  assert.equal(laterText.nodeValue, "అనువాదం అందుబాటులో లేదు");
 
   const restored = createI18nHarness(async (_path, options) => {
     requests.push(JSON.parse(options.body));
@@ -760,12 +1050,12 @@ test("429 fallback honors Retry-After and does not send later batches", async ()
   await new Promise((resolve) => setTimeout(resolve, 120));
 
   assert.equal(requests.length, 1);
-  assert.equal(afterReload.nodeValue, "Still in cooldown");
+  assert.equal(afterReload.nodeValue, "అనువాదం అందుబాటులో లేదు");
   assert.equal(harness.status.hidden, true);
   assert.equal(harness.status.textContent, "");
 });
 
-test("translation audit reports missing keys and static text still untranslated", () => {
+test("translation audit reports missing keys without leaving English text visible", () => {
   const harness = createI18nHarness(async () => {
     const error = new Error("offline");
     error.status = 503;
@@ -775,8 +1065,8 @@ test("translation audit reports missing keys and static text still untranslated"
   harness.api.setLanguage("hi");
   const report = harness.api.audit();
 
-  assert.ok(report.missingKeys.includes("unkeyed: Green water advice"));
-  assert.ok(report.untranslatedStaticStrings.includes("Green water advice"));
+  assert.ok(report.missingKeys.includes(`unkeyed: ${REMOTE_TEST_PHRASE}`));
+  assert.ok(!report.untranslatedStaticStrings.includes(REMOTE_TEST_PHRASE));
   assert.ok(!report.untranslatedStaticStrings.includes(""));
   assert.ok(!report.untranslatedStaticStrings.includes("private field name"));
 });

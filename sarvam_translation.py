@@ -17,6 +17,7 @@ CACHE_MAX_ENTRIES = 2048
 TRANSIENT_RETRY_COUNT = 1
 TRANSIENT_RETRY_DELAY_SECONDS = 0.25
 PROVIDER_FAILURE_COOLDOWN_SECONDS = 30
+PROVIDER_ENTITLEMENT_COOLDOWN_SECONDS = 3600
 _NUMBER_PATTERN = re.compile(
     r"(?<![\w.])\d+(?:[.,]\d+)*(?:\s*(?:%|°[CF]|mm|cm|km|ha|acres?|hectares?|liters?|litres?|L|kg|g|m/s|km/h))?",
     re.IGNORECASE,
@@ -25,6 +26,7 @@ _OPAQUE_MARKER_PATTERN = re.compile(r"Q[XY][0-9A-F]{32}XZ", re.IGNORECASE)
 _cache: OrderedDict[tuple[str, str, str], str] = OrderedDict()
 _failure_cache: dict[tuple[str, str, tuple[str, ...]], tuple[float, str, int | None]] = {}
 _cache_lock = threading.Lock()
+_provider_entitlement_failure_until = 0.0
 
 
 def _remember_failure(
@@ -57,6 +59,11 @@ class TranslationProviderError(Exception):
         super().__init__()
         self.category = category
         self.status_code = status_code
+
+
+class TranslationEntitlementError(TranslationProviderError):
+    def __init__(self, category: str = "account_entitlement_error"):
+        super().__init__(category=category, status_code=402)
 
 
 def _new_marker(prefix: str) -> str:
@@ -183,6 +190,14 @@ def _translate_uncached(
             duration_ms,
         )
         raise TranslationConfigurationError
+    if response.status_code == 402:
+        logger.warning(
+            "Sarvam translation provider entitlement failure: category=%s status=%s duration_ms=%s",
+            "account_entitlement_error",
+            response.status_code,
+            duration_ms,
+        )
+        raise TranslationEntitlementError
     if not response.ok:
         logger.warning(
             "Sarvam translation provider response failed: category=%s status=%s duration_ms=%s",
@@ -235,11 +250,16 @@ def translate_texts(
     source_language_code: str,
     target_language_code: str,
 ) -> list[str]:
+    global _provider_entitlement_failure_until
+
     if source_language_code == target_language_code:
         return list(texts)
 
     keys = [(source_language_code, target_language_code, text) for text in texts]
     with _cache_lock:
+        if _provider_entitlement_failure_until > time.monotonic():
+            raise TranslationEntitlementError(category="account_entitlement_cooldown")
+
         results: dict[tuple[str, str, str], str] = {}
         missing_keys = []
         missing_texts = []
@@ -270,6 +290,11 @@ def translate_texts(
                     source_language_code,
                     target_language_code,
                 )
+            except TranslationEntitlementError as error:
+                _provider_entitlement_failure_until = (
+                    time.monotonic() + PROVIDER_ENTITLEMENT_COOLDOWN_SECONDS
+                )
+                raise error
             except TranslationProviderError as error:
                 _remember_failure(
                     batch_key,
@@ -297,6 +322,9 @@ def translate_texts(
 
 
 def clear_translation_cache() -> None:
+    global _provider_entitlement_failure_until
+
     with _cache_lock:
         _cache.clear()
         _failure_cache.clear()
+        _provider_entitlement_failure_until = 0.0

@@ -1,0 +1,33 @@
+{
+  "architecture": "MobileNetV3Small",
+  "dataset_dir": "C:\\Users\\sudha\\OneDrive\\Desktop\\irrigation-feature\\plant data\\evaluation\\final_dataset_resolved_20261112",
+  "training_config": {
+    "architecture": "MobileNetV3Small",
+    "dataset_dir": "C:\\Users\\sudha\\OneDrive\\Desktop\\irrigation-feature\\plant data\\evaluation\\final_dataset_resolved_20261112",
+    "batch_size": 8,
+    "image_size": 224,
+    "phase1_epochs": 10,
+    "phase2_epochs": 10,
+    "seed": 1337,
+    "pretrained_weights": "imagenet",
+    "fine_tuning_fraction": 0.2
+  },
+  "selected_phase": "fine_tuning",
+  "selected_checkpoint": "C:\\Users\\sudha\\OneDrive\\Desktop\\irrigation-feature\\models\\crop_disease\\runs\\20261112T142746Z\\MobileNetV3Small\\fine_tuning_best.keras",
+  "validation_image_count": 7639,
+  "validation_metrics": {
+    "accuracy": 0.8383296242963739,
+    "macro_f1": 0.8273988454798069,
+    "weighted_f1": 0.8401410652385795
+  },
+  "cpu_inference_ms_per_image": 226.5616000004229,
+  "validation_classification_report": "C:\\Users\\sudha\\OneDrive\\Desktop\\irrigation-feature\\models\\crop_disease\\runs\\20261112T142746Z\\MobileNetV3Small\\validation_classification_report.csv",
+  "test_set_used": false,
+  "runtime": {
+    "tensorflow": "2.20.0",
+    "onednn_enabled": false,
+    "intra_op_threads": 4,
+    "inter_op_threads": 2,
+    "tf_data_private_threadpool_size": 4
+  }
+}

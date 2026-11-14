@@ -100,6 +100,29 @@
     return item ? decodeURIComponent(item.slice(prefix.length)) : "";
   };
 
+  const apiErrorMessage = (status, detail = "", requestPath = "") => {
+    const translations = window.JalSaathiI18n?.translationKeys || {};
+    const knownSources = Object.values(translations);
+    if (typeof detail === "string" && knownSources.includes(detail)) return detail;
+    if (status === 401 && requestPath.endsWith("/api/auth/login")) {
+      return translations["api.error.loginFailed"] || "Email or password is incorrect.";
+    }
+    if (status === 409 && requestPath.endsWith("/api/auth/register")) {
+      return translations["api.error.accountExists"] || "An account with this email address already exists.";
+    }
+    if (requestPath.startsWith("/weather/") && status >= 500) {
+      return translations["api.error.unavailable"] || "The service is temporarily unavailable. Please try again later.";
+    }
+    if (status === 401) return translations["api.error.sessionExpired"] || "Your session has expired. Please sign in again.";
+    if (status === 403) return translations["api.error.permissionDenied"] || "You do not have permission to complete this request.";
+    if (status === 404) return translations["api.error.notFound"] || "The requested record could not be found.";
+    if (status === 409) return translations["api.error.conflict"] || "The data changed. Refresh and try again.";
+    if (status === 422) return translations["api.error.invalidInput"] || "Some information is missing or invalid. Check the form and try again.";
+    if (status === 429) return translations["api.error.rateLimited"] || "Too many requests. Please wait a moment and try again.";
+    if (status >= 500 || status === 0) return translations["api.error.unavailable"] || "The service is temporarily unavailable. Please try again later.";
+    return translations["api.error.requestFailed"] || "The request could not be completed.";
+  };
+
   const apiRequest = async (path, options = {}) => {
     const headers = new Headers(options.headers || {});
     const method = (options.method || "GET").toUpperCase();
@@ -107,19 +130,37 @@
       const csrfToken = getCsrfToken();
       if (csrfToken) headers.set("X-CSRF-Token", csrfToken);
     }
-    const response = await fetch(path, {
-      ...options,
-      method,
-      headers,
-      credentials: "same-origin",
-    });
+    let response;
+    try {
+      response = await fetch(path, {
+        ...options,
+        method,
+        headers,
+        credentials: "same-origin",
+      });
+    } catch (error) {
+      if (!(error instanceof TypeError)) throw error;
+      console.warn("JalSaathi API request could not reach the server.");
+      const requestError = new Error(apiErrorMessage(0, "", path));
+      requestError.status = 0;
+      throw requestError;
+    }
     const contentType = response.headers.get("content-type") || "";
-    const payload = contentType.includes("application/json") ? await response.json() : null;
+    let payload = null;
+    if (contentType.includes("application/json")) {
+      try {
+        payload = await response.json();
+      } catch (error) {
+        console.error("JalSaathi API returned an invalid JSON response.", error);
+        const responseError = new Error(window.JalSaathiI18n?.translationKeys?.["api.error.invalidResponse"] ||
+          "The service returned an invalid response. Please try again.");
+        responseError.status = response.status;
+        throw responseError;
+      }
+    }
     if (!response.ok) {
-      const detail = payload && typeof payload.detail === "string"
-        ? payload.detail
-        : "The request could not be completed.";
-      const error = new Error(detail);
+      const detail = payload && typeof payload.detail === "string" ? payload.detail : "";
+      const error = new Error(apiErrorMessage(response.status, detail, path));
       error.status = response.status;
       const retryAfter = response.headers.get("retry-after");
       if (retryAfter) {
@@ -162,13 +203,31 @@
   };
 
   const refreshProfile = async () => {
-    const response = await fetch("/api/auth/me", { credentials: "same-origin" });
+    let response;
+    try {
+      response = await fetch("/api/auth/me", { credentials: "same-origin" });
+    } catch (error) {
+      if (!(error instanceof TypeError)) throw error;
+      throw new Error(apiErrorMessage(0, "", "/api/auth/me"));
+    }
     if (response.status === 401) {
       setCurrentProfile(null);
       return null;
     }
-    if (!response.ok) throw new Error("Your account profile could not be loaded.");
-    return setCurrentProfile(await response.json());
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      const detail = payload && typeof payload.detail === "string" ? payload.detail : "";
+      throw new Error(apiErrorMessage(response.status, detail, "/api/auth/me"));
+    }
+    try {
+      return setCurrentProfile(await response.json());
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        throw new Error(window.JalSaathiI18n?.translationKeys?.["api.error.invalidResponse"] ||
+          "The service returned an invalid response. Please try again.");
+      }
+      throw error;
+    }
   };
 
   const logoutSession = async () => {
@@ -187,7 +246,9 @@
   };
 
   const setLanguage = (code) => {
-    if (!languages.some((language) => language.code === code)) throw new Error("Choose a supported language.");
+    if (!languages.some((language) => language.code === code)) {
+      throw new Error(message("Choose a supported language."));
+    }
     try {
       localStorage.setItem(languageKeyFor(currentProfile), code);
     } catch (error) {
@@ -234,6 +295,7 @@
     getLanguages: () => languages.map((language) => ({ ...language })),
     getLanguage,
     setLanguage,
+    apiErrorMessage,
   };
   refreshProfile().catch((error) => {
     console.error("JalSaathi account profile could not be loaded:", error);

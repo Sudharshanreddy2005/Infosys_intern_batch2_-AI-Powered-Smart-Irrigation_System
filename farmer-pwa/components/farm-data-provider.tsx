@@ -37,13 +37,14 @@ import type {
   FieldPatchPayload,
   ScheduleAction,
 } from "@/lib/types";
+import type { TranslationSource } from "@/components/i18n-provider";
 
 type FarmDataContextValue = {
   data: FarmSnapshot | null;
   loading: boolean;
   refreshing: boolean;
   online: boolean;
-  error: string;
+  error: TranslationSource | "";
   refreshCooling: boolean;
   refresh: () => Promise<void>;
   updateProfile: (payload: FarmerProfileUpdate) => Promise<void>;
@@ -79,8 +80,14 @@ function locationFor(profile: FarmerProfile): string | undefined {
   return location || undefined;
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Something went wrong. Please try again.";
+function errorMessage(error: unknown): TranslationSource {
+  const status = (error as ApiError)?.status;
+  if (status === 401) return "Your session has expired. Sign in again to reload your farm.";
+  if (status === 403) return "You do not have permission to change this farm information.";
+  if (status === 409) return "This change conflicts with existing farm information. Refresh and try again.";
+  if (status === 429) return "Too many requests. Wait a moment and try again.";
+  if (typeof status === "number" && status >= 500) return "The service is temporarily unavailable. Try again later.";
+  return "Farm information could not be loaded. Check your connection and try again.";
 }
 
 function isNetworkFailure(error: unknown): boolean {
@@ -112,7 +119,7 @@ export function FarmDataProvider({ children }: Readonly<{ children: React.ReactN
   const [refreshing, setRefreshing] = useState(false);
   const [online, setOnline] = useState(true);
   const [verifiedAccountId, setVerifiedAccountId] = useState<number | null>(null);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<TranslationSource | "">("");
   const [refreshCooling, setRefreshCooling] = useState(false);
   const dataRef = useRef<FarmSnapshot | null>(null);
   const refreshCooldownUntil = useRef(0);
@@ -263,7 +270,8 @@ export function FarmDataProvider({ children }: Readonly<{ children: React.ReactN
             await discardLocalAccount();
             setError("Your session has expired. Sign in again to reload your farm.");
           } catch (cleanupError) {
-            setError(`Your session expired, but local data cleanup failed: ${errorMessage(cleanupError)}`);
+            console.error("JalSaathi expired-session data cleanup failed:", cleanupError);
+            setError("Your session expired, but offline data cleanup could not be completed.");
           }
         } else if (!hasSnapshot) {
           if (isNetworkFailure(reason)) setOnline(false);
@@ -359,7 +367,8 @@ export function FarmDataProvider({ children }: Readonly<{ children: React.ReactN
             await discardLocalAccount();
             setError("Your session has expired. Sign in again to reload your farm.");
           } catch (cleanupError) {
-            setError(`Your session expired, but local data cleanup failed: ${errorMessage(cleanupError)}`);
+            console.error("JalSaathi expired-session data cleanup failed:", cleanupError);
+            setError("Your session expired, but offline data cleanup could not be completed.");
           }
         } else {
           if (isNetworkFailure(reason) && dataRef.current) {
@@ -498,10 +507,11 @@ export function FarmDataProvider({ children }: Readonly<{ children: React.ReactN
     try {
       await discardLocalAccount();
       setError(requestError
-        ? `Local data was cleared, but the server could not end the session: ${errorMessage(requestError)}`
+        ? "Local data was cleared, but the server could not end the session."
         : "");
     } catch (reason) {
-      setError(`Sign-out cleanup failed: ${errorMessage(reason)}`);
+      console.error("JalSaathi sign-out cleanup failed:", reason);
+      setError("Sign-out could not be completed. Try again.");
     }
     router.replace("/login");
   }, [discardLocalAccount, router]);
@@ -524,7 +534,8 @@ export function FarmDataProvider({ children }: Readonly<{ children: React.ReactN
             await discardLocalAccount();
             setError("Your session has expired. Sign in again to reload your farm.");
           } catch (cleanupError) {
-            setError(`Your session expired, but local data cleanup failed: ${errorMessage(cleanupError)}`);
+            console.error("JalSaathi expired-session data cleanup failed:", cleanupError);
+            setError("Your session expired, but offline data cleanup could not be completed.");
           }
         } else {
           if (isNetworkFailure(reason) && dataRef.current) {

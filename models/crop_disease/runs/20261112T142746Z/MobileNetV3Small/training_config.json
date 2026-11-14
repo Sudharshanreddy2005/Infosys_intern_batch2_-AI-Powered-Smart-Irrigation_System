@@ -1,0 +1,11 @@
+{
+  "architecture": "MobileNetV3Small",
+  "dataset_dir": "C:\\Users\\sudha\\OneDrive\\Desktop\\irrigation-feature\\plant data\\evaluation\\final_dataset_resolved_20261112",
+  "batch_size": 8,
+  "image_size": 224,
+  "phase1_epochs": 10,
+  "phase2_epochs": 10,
+  "seed": 1337,
+  "pretrained_weights": "imagenet",
+  "fine_tuning_fraction": 0.2
+}

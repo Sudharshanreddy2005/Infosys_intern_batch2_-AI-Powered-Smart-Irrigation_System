@@ -1,0 +1,8 @@
+{
+  "phase": "validation_complete",
+  "completed_epochs": 10,
+  "latest_checkpoint": "C:\\Users\\sudha\\OneDrive\\Desktop\\irrigation-feature\\models\\crop_disease\\runs\\20261112T142746Z\\MobileNetV3Small\\fine_tuning_best.keras",
+  "updated_at_utc": "2026-11-13T05:39:32+00:00",
+  "selected_checkpoint": "C:\\Users\\sudha\\OneDrive\\Desktop\\irrigation-feature\\models\\crop_disease\\runs\\20261112T142746Z\\MobileNetV3Small\\fine_tuning_best.keras",
+  "test_evaluation_started": false
+}

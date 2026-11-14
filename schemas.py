@@ -294,6 +294,111 @@ class CropResponse(BaseModel):
     updated_at: datetime
 
 
+class DailyFarmTaskCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=200)
+    field_name: str | None = Field(default=None, max_length=100)
+
+    @field_validator("title", "field_name", mode="before")
+    @classmethod
+    def normalize_text(cls, value):
+        if value is None or not isinstance(value, str):
+            return value
+        normalized = " ".join(value.split())
+        return normalized or None
+
+    @model_validator(mode="after")
+    def validate_title(self):
+        if self.title is None or not self.title.strip():
+            raise ValueError("Task title is required.")
+        return self
+
+
+class DailyFarmTaskUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    field_name: str | None = Field(default=None, max_length=100)
+    completed: bool | None = None
+
+    @field_validator("title", "field_name", mode="before")
+    @classmethod
+    def normalize_text(cls, value):
+        if value is None or not isinstance(value, str):
+            return value
+        normalized = " ".join(value.split())
+        return normalized or None
+
+    @model_validator(mode="after")
+    def validate_changes(self):
+        if self.title is not None and not self.title.strip():
+            raise ValueError("Task title cannot be empty.")
+        return self
+
+
+class DailyFarmTaskResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    farmer_id: int
+    title: str
+    field_name: str | None
+    completed_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+    @property
+    def completed(self) -> bool:
+        return self.completed_at is not None
+
+
+class DailyFarmReminderSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    interval_hours: int = Field(default=2, ge=1, le=24)
+    custom_interval_hours: int | None = Field(default=None, ge=1, le=24)
+    next_reminder_at: datetime | None = None
+
+
+class DailyFarmReminderSettingsResponse(DailyFarmReminderSettings):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int | None = None
+    farmer_id: int | None = None
+    last_notification_at: datetime | None = None
+
+
+class NotificationSubscriptionPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    endpoint: str = Field(min_length=1, max_length=500)
+    p256dh: str | None = Field(default=None, max_length=255)
+    auth: str | None = Field(default=None, max_length=255)
+    expires_at: datetime | None = None
+
+    @field_validator("endpoint")
+    @classmethod
+    def validate_endpoint(cls, value):
+        if value.startswith("http://") or value.startswith("https://"):
+            return value
+        raise ValueError("A valid web push endpoint URL is required.")
+
+
+class NotificationSubscriptionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    endpoint: str
+    p256dh: str | None
+    auth: str | None
+    expires_at: datetime | None
+    revoked_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
 class WeatherCoordinates(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -444,10 +549,14 @@ class ReducedWeatherPredictionResponse(BaseModel):
     observation_time: datetime
 
 
+AssistantLanguageCode = Literal["en-IN", "te-IN", "hi-IN", "kn-IN", "ta-IN", "ml-IN"]
+
+
 class FarmerAssistantRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     question: str = Field(min_length=1, max_length=1500)
+    language_code: AssistantLanguageCode = "en-IN"
 
     @field_validator("question", mode="before")
     @classmethod

@@ -64,7 +64,14 @@ function createDashboard(apiRequest) {
     "[data-model2-explain]": explain,
     "[data-model2-explanation-result]": new Element(),
   };
-  const window = { JalSaathiProfile: { apiRequest } };
+  const window = {
+    JalSaathiProfile: { apiRequest },
+    JalSaathiI18n: {
+      setNumber(element, value, options = {}, suffix = "") {
+        element.textContent = `${new Intl.NumberFormat("en-IN", options).format(value)}${suffix}`;
+      },
+    },
+  };
   vm.runInNewContext(source, {
     window,
     document: { querySelector: (selector) => elements[selector] },
@@ -73,6 +80,7 @@ function createDashboard(apiRequest) {
     HTMLFormElement: Form,
     HTMLSelectElement: Select,
     HTMLButtonElement: Element,
+    Intl,
   });
   window.JalSaathiWaterRequirement.initialize();
   return { elements, field, crop };

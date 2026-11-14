@@ -12,7 +12,7 @@ import { ScheduleItem } from "@/components/schedule-item";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { WeatherCard } from "@/components/weather-card";
 import { isThemeChoice, useTheme } from "@/components/theme-provider";
-import { isLanguageCode, languageOptions, useI18n } from "@/components/i18n-provider";
+import { isLanguageCode, languageOptions, useI18n, type TranslationSource } from "@/components/i18n-provider";
 import { login, registerFarmer } from "@/lib/api";
 import type { ApiError, FarmerProfileUpdate, ForecastPeriod } from "@/lib/types";
 
@@ -47,7 +47,7 @@ export function DashboardPage() {
   </ProtectedContent>;
 }
 
-function StatCard({ icon, label, value, foot }: { icon: string; label: string; value: string; foot: string }) {
+function StatCard({ icon, label, value, foot }: { icon: string; label: TranslationSource; value: string; foot: TranslationSource }) {
   const { t } = useI18n();
   return <article className="stat-card"><span className="stat-icon" aria-hidden="true">{icon}</span><span className="stat-label">{t(label)}</span><strong className="stat-value">{value}</strong><span className="stat-foot">{t(foot)}</span></article>;
 }
@@ -91,8 +91,8 @@ export function WeatherPage() {
 }
 
 function ForecastSection({ title, periods, mode }: { title: string; periods: ForecastPeriod[]; mode: "hourly" | "daily" }) {
-  const { t, formatDateTime, formatNumber } = useI18n();
-  return <section className="forecast-section"><h2>{title}</h2>{periods.length ? <div className="forecast-list">{periods.map((period) => <article className="forecast-item" key={period.time}><strong>{formatDateTime(period.time, mode === "hourly" ? { weekday: "short", hour: "numeric" } : { weekday: "short", month: "short", day: "numeric" })}</strong><span>{mode === "daily" ? `${period.temperature_low_c == null ? "—" : formatNumber(period.temperature_low_c)}° / ${period.temperature_high_c == null ? "—" : formatNumber(period.temperature_high_c)}°C` : `${period.temperature_c == null ? "—" : formatNumber(period.temperature_c)}°C`}</span><span>{period.rain_probability_percent == null ? "—" : formatNumber(period.rain_probability_percent)}% {t("rain probability")}</span>{period.is_stale && <small>{t("Cached weather")}</small>}</article>)}</div> : <EmptyState title={t("{title} not available", { title })}>{t("No forecast data is currently available from the weather provider.")}</EmptyState>}</section>;
+  const { t, formatDateTime, formatNumber, formatTemperature } = useI18n();
+  return <section className="forecast-section"><h2>{title}</h2>{periods.length ? <div className="forecast-list">{periods.map((period) => <article className="forecast-item" key={period.time}><strong>{formatDateTime(period.time, mode === "hourly" ? { weekday: "short", hour: "numeric" } : { weekday: "short", month: "short", day: "numeric" })}</strong><span>{mode === "daily" ? `${formatTemperature(period.temperature_low_c)} / ${formatTemperature(period.temperature_high_c)}` : formatTemperature(period.temperature_c)}</span><span>{period.rain_probability_percent == null ? "—" : formatNumber(period.rain_probability_percent)}% {t("rain probability")}</span>{period.is_stale && <small>{t("Cached weather")}</small>}</article>)}</div> : <EmptyState title={t("{title} not available", { title })}>{t("No forecast data is currently available from the weather provider.")}</EmptyState>}</section>;
 }
 
 export function AlertsPage() {
@@ -183,7 +183,7 @@ function AuthPage({ mode }: { mode: "login" | "register" }) {
   const { error: accountError, prepareForAccount } = useFarmData();
   const { t } = useI18n();
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<TranslationSource | "">("");
   const [online, setOnline] = useState(true);
 
   useEffect(() => {
@@ -216,13 +216,23 @@ function AuthPage({ mode }: { mode: "login" | "register" }) {
       await prepareForAccount(profile);
       router.replace("/dashboard");
     })
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : t("Sign-in failed. Please try again.")))
+      .catch((reason: unknown) => {
+        const status = (reason as ApiError).status;
+        const message: TranslationSource = status === 401
+          ? "Email or password is incorrect."
+          : status === 409
+            ? "An account with this email already exists."
+            : status === 429
+              ? "Too many sign-in attempts. Try again later."
+              : "Sign-in failed. Please try again.";
+        setError(message);
+      })
       .finally(() => setBusy(false));
   }
 
   return <main className="auth-page"><Link className="auth-brand" href="/dashboard"><span className="brand-mark" aria-hidden="true">J</span>JalSaathi</Link><section className="auth-card" aria-labelledby="auth-title">
     <p className="eyebrow">{t("YOUR FARM, AT A GLANCE")}</p><h1 id="auth-title">{t(mode === "login" ? "Welcome back" : "Create your farmer account")}</h1><p className="muted">{t(mode === "login" ? "Sign in to see your fields and irrigation schedule." : "Create an account to save your farm information.")}</p>
-    {(error || accountError) && <ErrorState>{t(error || accountError)}</ErrorState>}
+    {error ? <ErrorState>{t(error)}</ErrorState> : accountError ? <ErrorState>{t(accountError)}</ErrorState> : null}
     <form className="profile-form" onSubmit={submit}>
       {mode === "register" && <><label htmlFor="auth-name">{t("Your name")}</label><input id="auth-name" name="name" autoComplete="name" required maxLength={100} /><label htmlFor="auth-village">{t("Village (optional)")}</label><input id="auth-village" name="village" autoComplete="address-level2" maxLength={120} /></>}
       <label htmlFor="auth-email">{t("Email address")}</label><input id="auth-email" name="email" type="email" autoComplete="email" required maxLength={254} />

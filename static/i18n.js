@@ -2,6 +2,10 @@
   "use strict";
 
   const profileApi = window.JalSaathiProfile;
+  const numberFormatting = window.JalSaathiNumberFormat;
+  if (!numberFormatting) {
+    throw new Error("The shared JalSaathi number formatter must load before i18n.js.");
+  }
   const languageCatalog = profileApi?.getLanguages?.() || [{ code: "en", locale: "en-IN", label: "English" }];
   const languages = languageCatalog.map((language) => language.code);
   const localeFor = Object.fromEntries(languageCatalog.map(({ code, locale }) => [code, locale]));
@@ -42,6 +46,31 @@
       source, keyedDictionaries[code][key],
     ])),
   ]));
+  const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const dynamicTemplates = Object.entries(translationKeys)
+    .filter(([, source]) =>
+      /\{[A-Za-z0-9_]+\}/.test(source) &&
+      source.replace(/\{[A-Za-z0-9_]+\}/g, "").trim().length > 0,
+    )
+    .map(([key, source]) => {
+      const placeholders = [...source.matchAll(/\{([A-Za-z0-9_]+)\}/g)];
+      let offset = 0;
+      let pattern = "^";
+      placeholders.forEach((match) => {
+        pattern += escapeRegExp(source.slice(offset, match.index)) + "([\\s\\S]*?)";
+        offset = match.index + match[0].length;
+      });
+      pattern += `${escapeRegExp(source.slice(offset))}$`;
+      return {
+        key,
+        pattern: new RegExp(pattern),
+        placeholders,
+      };
+    })
+    .sort((left, right) => right.pattern.source.length - left.pattern.source.length);
+  const hasLocalTranslation = (source, code) =>
+    Object.hasOwn(dictionaries[code] || {}, source) ||
+    dynamicTemplates.some((template) => template.pattern.test(source));
   const getLanguage = () => profileApi?.getLanguage?.() || "en";
   const sourceValues = new WeakMap();
   const translatedValues = new WeakMap();
@@ -115,10 +144,19 @@
 
   const lookup = (source, code = getLanguage()) => {
     if (code === "en") return source;
+    if (!/[A-Za-z]/.test(source) || /^[A-Za-z0-9]{1,3}$/.test(source)) return source;
     const dictionary = dictionaries[code];
     if (dictionary && Object.hasOwn(dictionary, source)) return dictionary[source];
+    for (const template of dynamicTemplates) {
+      const match = template.pattern.exec(source);
+      if (!match) continue;
+      const translated = keyedDictionaries[code]?.[template.key];
+      if (typeof translated !== "string") continue;
+      let placeholderIndex = 0;
+      return translated.replace(/\{[A-Za-z0-9_]+\}/g, () => match[++placeholderIndex] || "");
+    }
     missing.add(source);
-    return source;
+    return keyedDictionaries[code]?.["common.translationMissing"] || source;
   };
 
   const applyRemoteTranslation = (source, code, translated) => {
@@ -147,7 +185,7 @@
         if (unavailableFor > 0) {
           queuedTranslations.forEach((item, key) => {
             queuedTranslations.delete(key);
-            applyRemoteTranslation(item.source, item.code, item.source);
+            applyRemoteTranslation(item.source, item.code, lookup(item.source, item.code));
           });
           break;
         }
@@ -157,7 +195,7 @@
         for (const [key, item] of queuedTranslations) {
           if (item.code !== code) {
             queuedTranslations.delete(key);
-            applyRemoteTranslation(item.source, item.code, item.source);
+            applyRemoteTranslation(item.source, item.code, lookup(item.source, item.code));
             continue;
           }
           const cost = item.source.length + 40;
@@ -167,7 +205,7 @@
           )) continue;
           if (cost > MAX_BATCH_CHARACTERS) {
             queuedTranslations.delete(key);
-            applyRemoteTranslation(item.source, item.code, item.source);
+            applyRemoteTranslation(item.source, item.code, lookup(item.source, item.code));
             continue;
           }
           batch.push([key, item]);
@@ -206,10 +244,10 @@
             : DEFAULT_FAILURE_COOLDOWN_MS;
           remoteFailureUntil.set(code, Date.now() + retryAfterMs);
           persistRemoteCooldowns();
-          batch.forEach(([, item]) => applyRemoteTranslation(item.source, item.code, item.source));
+          batch.forEach(([, item]) => applyRemoteTranslation(item.source, item.code, lookup(item.source, item.code)));
           queuedTranslations.forEach((item, key) => {
             queuedTranslations.delete(key);
-            applyRemoteTranslation(item.source, item.code, item.source);
+            applyRemoteTranslation(item.source, item.code, lookup(item.source, item.code));
           });
           hideTranslationStatus();
           break;
@@ -264,7 +302,7 @@
       if (observerReady) ignoredMutations.add(node);
       node.nodeValue = value;
     }
-    if (Object.hasOwn(dictionaries[code] || {}, content)) return;
+    if (hasLocalTranslation(content, code)) return;
     queueTranslation(content, code, (translated) => {
       if (sourceValues.get(node) !== source || getLanguage() !== code) return;
       const updated = `${leading}${translated}${trailing}`;
@@ -293,7 +331,7 @@
           !element.closest("[data-user-content], [data-i18n-ignore]")) {
         remotelyTranslatable.add(source);
       }
-      if (!Object.hasOwn(dictionaries[code] || {}, source)) {
+      if (!hasLocalTranslation(source, code)) {
         queueTranslation(source, code, (translated) => {
           if (translatedValues.get(element)?.[name] !== source || getLanguage() !== code) return;
           element.setAttribute(name, translated);
@@ -303,7 +341,7 @@
   };
 
   const excluded = (node) => node.parentElement?.closest(
-    "script, style, noscript, code, pre, input, textarea, [contenteditable='true'], [data-user-content], [data-user-name], [data-recommendation-name], [data-i18n-ignore]",
+    "script, style, noscript, code, pre, input, textarea, [contenteditable='true'], [data-user-content], [data-user-name], [data-recommendation-name], [data-i18n-ignore], [data-i18n-number], [data-i18n-date]",
   );
   const isUserContent = (node) => node.parentElement?.closest(
     "[data-user-content], [data-user-name], [data-recommendation-name]",
@@ -343,6 +381,7 @@
       translateAttributes(element);
     });
     document.documentElement.lang = localeFor[getLanguage()] || "en-IN";
+    formatLocalizedElements(root);
   };
 
   const observer = new MutationObserver((records) => {
@@ -404,8 +443,141 @@
     });
   };
 
-  const formatDate = (date, options = {}) => new Intl.DateTimeFormat(localeFor[getLanguage()], options).format(date);
-  const formatNumber = (value, options = {}) => new Intl.NumberFormat(localeFor[getLanguage()], options).format(value);
+  const normalizeDate = (value) => {
+    if (value === null || value === undefined || value === "") return null;
+    if (typeof value === "string") {
+      const dateOnly = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (dateOnly) {
+        const date = new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]));
+        return date.getFullYear() === Number(dateOnly[1]) &&
+          date.getMonth() === Number(dateOnly[2]) - 1 &&
+          date.getDate() === Number(dateOnly[3]) ? date : null;
+      }
+    }
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  };
+  const formatDate = (value, options = {}) => {
+    const date = normalizeDate(value);
+    return date
+      ? new Intl.DateTimeFormat(
+        localeFor[getLanguage()],
+        numberFormatting.dateOptions(options),
+      ).format(date)
+      : "—";
+  };
+  const normalizeNumber = (value) => {
+    if (value === null || value === undefined || value === "" ||
+        (typeof value === "string" && !value.trim())) return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  };
+  const formatNumber = (value, options = {}) => {
+    const number = normalizeNumber(value);
+    return number === null
+      ? "—"
+      : new Intl.NumberFormat("en-IN", numberFormatting.numberOptions(options)).format(number);
+  };
+  const escapeAttribute = (value) => String(value).replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[character]);
+  const numberOptionsFromElement = (element) => {
+    const options = {};
+    for (const [key, attribute] of [
+      ["minimumFractionDigits", "data-i18n-number-minimum-fraction-digits"],
+      ["maximumFractionDigits", "data-i18n-number-maximum-fraction-digits"],
+    ]) {
+      const value = element.getAttribute(attribute);
+      if (value !== null && Number.isInteger(Number(value))) options[key] = Number(value);
+    }
+    const useGrouping = element.getAttribute("data-i18n-number-use-grouping");
+    if (useGrouping === "true" || useGrouping === "false") options.useGrouping = useGrouping === "true";
+    return options;
+  };
+  const dateOptionsByStyle = {
+    date: { dateStyle: "medium" },
+    "date-time": { dateStyle: "medium", timeStyle: "short" },
+    time: { timeStyle: "short" },
+    "month-year": { month: "short", year: "numeric" },
+  };
+  const formatLocalizedElements = (root) => {
+    const elements = root instanceof Element
+      ? [root, ...root.querySelectorAll("[data-i18n-number], [data-i18n-date]")]
+      : root instanceof Document
+        ? [root.documentElement, ...root.documentElement.querySelectorAll("[data-i18n-number], [data-i18n-date]")]
+        : [];
+    elements.forEach((element) => {
+      if (element.hasAttribute("data-i18n-number")) {
+        const value = element.getAttribute("data-i18n-number");
+        const suffix = element.getAttribute("data-i18n-number-suffix") || "";
+        element.textContent = `${formatNumber(value, numberOptionsFromElement(element))}${suffix}`;
+      } else if (element.hasAttribute("data-i18n-date")) {
+        const value = element.getAttribute("data-i18n-date");
+        const style = element.getAttribute("data-i18n-date-style") || "date";
+        element.textContent = formatDate(value, dateOptionsByStyle[style] || {});
+      }
+    });
+  };
+  const numberOptionAttributes = (options) => [
+    ["minimumFractionDigits", "data-i18n-number-minimum-fraction-digits"],
+    ["maximumFractionDigits", "data-i18n-number-maximum-fraction-digits"],
+  ].filter(([key]) => Number.isInteger(options[key]))
+    .map(([key, attribute]) => ` ${attribute}="${options[key]}"`)
+    .join("") + (typeof options.useGrouping === "boolean"
+    ? ` data-i18n-number-use-grouping="${options.useGrouping}"` : "");
+  const numberMarkup = (value, options = {}, suffix = "") => {
+    const number = normalizeNumber(value);
+    if (number === null) return "—";
+    const attributes = `data-i18n-number="${escapeAttribute(number)}"${numberOptionAttributes(options)} data-i18n-number-suffix="${escapeAttribute(suffix)}"`;
+    return `<span ${attributes}>${escapeAttribute(`${formatNumber(number, options)}${suffix}`)}</span>`;
+  };
+  const dateMarkup = (value, style = "date") => {
+    const date = normalizeDate(value);
+    if (!date) return "—";
+    const safeStyle = Object.hasOwn(dateOptionsByStyle, style) ? style : "date";
+    const normalized = value instanceof Date
+      ? safeStyle === "date" || safeStyle === "month-year"
+        ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
+        : date.toISOString()
+      : String(value);
+    return `<span data-i18n-date="${escapeAttribute(normalized)}" data-i18n-date-style="${safeStyle}">${escapeAttribute(formatDate(date, dateOptionsByStyle[safeStyle]))}</span>`;
+  };
+  const setNumber = (element, value, options = {}, suffix = "") => {
+    if (!(element instanceof Element)) throw new TypeError("A numeric display element is required.");
+    const number = normalizeNumber(value);
+    if (number === null) {
+      element.removeAttribute("data-i18n-number-suffix");
+      element.textContent = "—";
+      element.removeAttribute("data-i18n-number");
+      element.removeAttribute("data-i18n-number-minimum-fraction-digits");
+      element.removeAttribute("data-i18n-number-maximum-fraction-digits");
+      element.removeAttribute("data-i18n-number-use-grouping");
+      element.removeAttribute("data-i18n-date");
+      element.removeAttribute("data-i18n-date-style");
+      return;
+    }
+    element.removeAttribute("data-i18n-date");
+    element.removeAttribute("data-i18n-date-style");
+    element.setAttribute("data-i18n-number", String(number));
+    element.setAttribute("data-i18n-number-suffix", suffix);
+    for (const [key, attribute] of [
+      ["minimumFractionDigits", "data-i18n-number-minimum-fraction-digits"],
+      ["maximumFractionDigits", "data-i18n-number-maximum-fraction-digits"],
+    ]) {
+      if (Number.isInteger(options[key])) element.setAttribute(attribute, String(options[key]));
+      else element.removeAttribute(attribute);
+    }
+    if (typeof options.useGrouping === "boolean") {
+      element.setAttribute("data-i18n-number-use-grouping", String(options.useGrouping));
+    } else {
+      element.removeAttribute("data-i18n-number-use-grouping");
+    }
+    formatLocalizedElements(element);
+  };
   const translateKey = (keyOrText, codeOrParameters = getLanguage(), maybeParameters = {}) => {
     const code = typeof codeOrParameters === "string" ? codeOrParameters : getLanguage();
     const parameters = typeof codeOrParameters === "string" ? maybeParameters : codeOrParameters;
@@ -415,6 +587,9 @@
     return translated.replace(/\{([A-Za-z0-9_]+)\}/g, (placeholder, name) =>
       Object.hasOwn(parameters, name) ? String(parameters[name]) : placeholder,
     );
+  };
+  const formatTemperature = (value) => {
+    return numberFormatting.formatTemperature(value, translateKey("legacy.unavailable.2c9c1f79"));
   };
   const audit = () => {
     missing.clear();
@@ -457,6 +632,10 @@
     setLanguage,
     formatDate,
     formatNumber,
+    formatTemperature,
+    numberMarkup,
+    dateMarkup,
+    setNumber,
     translate: (root = document) => translateTree(root),
     audit,
     dictionaries,

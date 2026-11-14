@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "i18n:audit": "node ../scripts/i18n-check.cjs",
+    "test:i18n": "npm run typecheck && node --test ../tests_js/i18n.test.cjs && npm run i18n:audit"
   },
   "dependencies": {
     "next": "^16.4.5",

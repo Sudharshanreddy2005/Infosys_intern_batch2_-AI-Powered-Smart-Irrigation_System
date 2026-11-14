@@ -3,6 +3,7 @@ const { readFileSync } = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
+const numberFormatting = require("../static/number-format.js");
 
 const source = readFileSync(
   path.join(__dirname, "..", "static", "farmer-assistant.js"),
@@ -22,6 +23,10 @@ class Element {
 
   setAttribute(name, value) {
     this.attributes.set(name, value);
+  }
+
+  removeAttribute(name) {
+    this.attributes.delete(name);
   }
 
   addEventListener(name, callback) {
@@ -99,15 +104,45 @@ function createAssistant(questionText = "Explain rainfall.") {
   };
 }
 
+function createI18n() {
+  const translationKeys = {
+    "assistant.status.preparing": "The assistant is preparing a response…",
+    "assistant.notice.educational": "Assistant responses are educational and may be incorrect.",
+    "assistant.error.busy": "The assistant is busy. Please try again later.",
+    "assistant.error.unavailable": "The assistant is unavailable. Please try again later.",
+    "assistant.model2.selectFieldCrop": "Choose an owned field and crop before requesting an explanation.",
+    "assistant.model2.checking": "Checking for a server-validated Model 2 estimate…",
+    "assistant.model2.invalidExplanation": "The server returned an invalid or unverified Model 2 explanation.",
+    "assistant.model2.unavailable": "A validated Model 2 estimate is unavailable.",
+    "assistant.model2.unit": "liters per field per 24 hours",
+    "assistant.model2.estimatePrefix": "Server-validated estimate: {amount} {unit} for {hours} hours.",
+    "common.translationMissing": "Translation unavailable",
+  };
+  return {
+    languages: [{ code: "en", locale: "en-IN" }],
+    getLanguage: () => "en",
+    translationKeys,
+    translate() {},
+    t(key, parameters = {}) {
+      return (translationKeys[key] || key).replace(/\{([A-Za-z0-9_]+)\}/g, (placeholder, name) =>
+        Object.hasOwn(parameters, name) ? String(parameters[name]) : placeholder);
+    },
+  };
+}
+
 test("assistant chat renders provider text as text and uses authenticated API helper", async () => {
   const unsafeLookingText = "<img src=x onerror=alert(1)>";
   let request;
   const assistant = createAssistant();
   const context = {
-    window: { JalSaathiProfile: { apiRequest: async (url, options) => {
-      request = { url, options };
-      return { answer: unsafeLookingText };
-    } } },
+    window: {
+      JalSaathiProfile: { apiRequest: async (url, options) => {
+        request = { url, options };
+        return { answer: unsafeLookingText };
+      } },
+      JalSaathiI18n: createI18n(),
+      JalSaathiNumberFormat: numberFormatting,
+    },
     document: {
       querySelector: (selector) => assistant.elements[selector],
       createElement: () => new Element(),
@@ -124,7 +159,10 @@ test("assistant chat renders provider text as text and uses authenticated API he
   await assistant.form.dispatch("submit");
 
   assert.equal(request.url, "/api/assistant/chat");
-  assert.deepEqual(JSON.parse(request.options.body), { question: "Explain rainfall." });
+  assert.deepEqual(JSON.parse(request.options.body), {
+    question: "Explain rainfall.",
+    language_code: "en-IN",
+  });
   assert.equal(assistant.log.children.length, 2);
   assert.equal(assistant.log.children[1].textContent, unsafeLookingText);
   assert.equal(assistant.log.children[1].innerHTML, undefined);
@@ -132,7 +170,7 @@ test("assistant chat renders provider text as text and uses authenticated API he
   assert.equal(assistant.question.value, "");
 });
 
-test("Model 2 explanation sends only owned IDs and displays the server value unchanged", async () => {
+test("Model 2 explanation uses owned IDs and normalizes generated numeric text", async () => {
   let request;
   const prediction = {
     estimated_water_liters: 123.5,
@@ -145,10 +183,14 @@ test("Model 2 explanation sends only owned IDs and displays the server value unc
   };
   const assistant = createAssistant("");
   const context = {
-    window: { JalSaathiProfile: { apiRequest: async (url, options) => {
-      request = { url, options };
-      return { prediction, explanation: "<strong>Limitations</strong>" };
-    } } },
+    window: {
+      JalSaathiProfile: { apiRequest: async (url, options) => {
+        request = { url, options };
+        return { prediction, explanation: "<strong>Limitations ೨೦.೮°C</strong>" };
+      } },
+      JalSaathiI18n: createI18n(),
+      JalSaathiNumberFormat: numberFormatting,
+    },
     document: {
       querySelector: (selector) => assistant.elements[selector],
       createElement: () => new Element(),
@@ -166,23 +208,28 @@ test("Model 2 explanation sends only owned IDs and displays the server value unc
 
   assert.equal(request.url, "/api/assistant/model2-explanation");
   const payload = JSON.parse(request.options.body);
-  assert.deepEqual(Object.keys(payload).sort(), ["crop_id", "field_id", "question"]);
+  assert.deepEqual(Object.keys(payload).sort(), ["crop_id", "field_id", "language_code", "question"]);
   assert.equal(payload.field_id, 7);
   assert.equal(payload.crop_id, 12);
-  assert.match(assistant.explainStatus.textContent, /123\.5 liters_per_field_per_24_hours/);
+  assert.equal(payload.language_code, "en-IN");
+  assert.match(assistant.explainStatus.textContent, /123\.5 liters per field per 24 hours/);
   assert.equal(assistant.explainStatus.textContent.includes("<strong>"), true);
-  assert.equal(assistant.log.children[0].textContent, "<strong>Limitations</strong>");
+  assert.equal(assistant.log.children[0].textContent, "<strong>Limitations 21°C</strong>");
   assert.equal(assistant.log.children[0].innerHTML, undefined);
 });
 
 test("assistant reports unavailable errors without fabricating a response", async () => {
   const assistant = createAssistant();
   const context = {
-    window: { JalSaathiProfile: { apiRequest: async () => {
-      const error = new Error("The farmer assistant is unavailable.");
-      error.status = 503;
-      throw error;
-    } } },
+    window: {
+      JalSaathiProfile: { apiRequest: async () => {
+        const error = new Error("The farmer assistant is unavailable.");
+        error.status = 503;
+        throw error;
+      } },
+      JalSaathiI18n: createI18n(),
+      JalSaathiNumberFormat: numberFormatting,
+    },
     document: {
       querySelector: (selector) => assistant.elements[selector],
       createElement: () => new Element(),

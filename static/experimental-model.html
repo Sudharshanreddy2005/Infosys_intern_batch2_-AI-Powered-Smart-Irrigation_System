@@ -37,12 +37,12 @@
                 <div class="farmer-assistant-log" data-assistant-log role="log" aria-live="polite" aria-relevant="additions"></div>
                 <form data-assistant-form>
                   <label class="experimental-field" for="farmer-assistant-question">
-                    <span>Your question</span>
+                    <span data-i18n-key="assistant.questionLabel">Your question</span>
                     <textarea id="farmer-assistant-question" name="question" maxlength="1500" rows="3" required></textarea>
                   </label>
                   <div class="farmer-assistant-actions">
-                    <p data-assistant-status role="status" aria-live="polite">Assistant responses are educational and may be incorrect.</p>
-                    <button class="experimental-submit" type="submit" data-assistant-submit>Ask assistant</button>
+                    <p data-assistant-status data-i18n-key="assistant.notice.educational" role="status" aria-live="polite">Assistant responses are educational and may be incorrect.</p>
+                    <button class="experimental-submit" type="submit" data-assistant-submit data-i18n-key="assistant.askButton">Ask assistant</button>
                   </div>
                 </form>
               </section>

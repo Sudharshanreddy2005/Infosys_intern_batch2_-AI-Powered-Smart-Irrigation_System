@@ -10,7 +10,7 @@
 
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
-body { margin: 0; background: #fbfaf5; color: var(--landing-text); font-family: Inter, "Noto Sans Devanagari", "Noto Sans Telugu", "Noto Sans Kannada", "Noto Sans Tamil", "Noto Sans Malayalam", "Noto Sans Bengali", "Noto Sans Gujarati", "Noto Sans Gurmukhi", "Noto Sans Oriya", "Noto Sans Assamese", "Noto Nastaliq Urdu", sans-serif; }
+body { margin: 0; overflow-wrap: anywhere; background: #fbfaf5; color: var(--landing-text); font-family: Inter, "Noto Sans Devanagari", "Noto Sans Telugu", "Noto Sans Kannada", "Noto Sans Tamil", "Noto Sans Malayalam", "Noto Sans Bengali", "Noto Sans Gujarati", "Noto Sans Gurmukhi", "Noto Sans Oriya", "Noto Sans Assamese", "Noto Nastaliq Urdu", sans-serif; }
 a { color: inherit; }
 .landing-header { position: relative; z-index: 2; display: flex; min-height: 82px; align-items: center; justify-content: space-between; gap: 24px; padding: 12px clamp(20px, 5vw, 84px); background: #fffefa; }
 .landing-brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; color: var(--landing-green); }

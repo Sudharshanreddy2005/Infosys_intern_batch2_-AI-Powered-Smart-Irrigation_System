@@ -144,11 +144,14 @@
         "Probability:",
         "model.probabilityLabel",
       );
-      appendText(
-        probability,
-        "span",
-        "",
-        ` ${(prediction.proxy_positive_probability * 100).toFixed(1)}%`,
+      appendText(probability, "span", "", " ");
+      const probabilityValue = document.createElement("span");
+      probability.append(probabilityValue);
+      window.JalSaathiI18n.setNumber(
+        probabilityValue,
+        prediction.proxy_positive_probability * 100,
+        {},
+        "%",
       );
       content.append(probability);
       status.append(content);

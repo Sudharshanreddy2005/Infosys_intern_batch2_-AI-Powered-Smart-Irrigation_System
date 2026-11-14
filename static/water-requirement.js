@@ -72,7 +72,12 @@
         ) {
           throw new Error("The water-requirement service returned an invalid estimate.");
         }
-        estimateOutput.textContent = `${result.estimated_water_liters} ${result.unit}`;
+        window.JalSaathiI18n.setNumber(
+          estimateOutput,
+          result.estimated_water_liters,
+          {},
+          ` ${result.unit}`,
+        );
         statusOutput.textContent = `Model ${result.model_version || "unknown"} · ${result.dataset_provenance || "provenance unavailable"}`;
         message.textContent = Array.isArray(result.limitations)
           ? result.limitations.join(" ")

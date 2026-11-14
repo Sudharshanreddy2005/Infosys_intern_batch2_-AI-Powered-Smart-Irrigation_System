@@ -66,19 +66,21 @@ measured preceding-24-hour rainfall inputs in the application. See the
 The endpoint therefore remains fail-closed with HTTP 503 until eligible labels
 and prediction-time inputs are collected and validated.
 
-## Multilingual interface and Sarvam AI
+## Multilingual interface
 
-The interface uses a shared translation registry with local translations for common labels in Telugu, Hindi, Kannada, Tamil, Malayalam, Marathi, and Bengali. Approved static UI strings without a local translation can use [Sarvam Translate](https://docs.sarvam.ai/api-reference/text/translate-text) (`sarvam-translate:v1`) when configured. The language selector lists only language codes documented by Sarvam, including Assamese, Bodo, Dogri, Gujarati, Kashmiri, Konkani, Maithili, Manipuri, Nepali, Odia, Punjabi, Sanskrit, Santali, Sindhi, and Urdu. If the provider is unavailable, verified local translations remain available and other text falls back to English.
+The website supports English, Telugu, Hindi, Kannada, Tamil, and Malayalam through its existing shared localization systems. User-interface text must have reviewed local entries in all six languages; the interface must not depend on remote machine translation or an English fallback. If a translation is missing at runtime, the selected language's localized “Translation unavailable” message is shown, and the localization audit fails so the gap can be fixed before release.
 
-Set `SARVAM_API_KEY` in the backend environment (or `.env` used by Docker Compose) and rebuild/restart the backend to enable remote translation. The key is only read by the backend and is never placed in browser assets. Leave it empty to retain local translations and English fallback. The public `POST /api/translate` endpoint validates documented language codes and text limits, enforces a limit of 20 requests per client IP per 60 seconds, and accepts up to 16 strings per request. The shared frontend service batches approved UI text (up to 16 strings and 1,800 estimated characters per batch), deduplicates concurrent translations, and keeps up to 512 successful translations in the browser tab's session cache. This request limit permits up to 320 short strings per minute while retaining a per-client guard; the frontend uses local dictionaries first and stops sending translation requests during the `Retry-After` period after a provider rate limit. Only authored UI strings are eligible for remote translation; farmer-entered content, credentials, field/crop identifiers, and weather/model values are excluded. Numeric values are kept intact. Important model and safety labels use local dictionary entries. Provider failures preserve local/English fallback text without triggering immediate retries. Backend translation caching and rate limits are per process; use an API gateway/shared rate limiter for multi-worker or replicated deployments.
+Legacy pages use `static/i18n/{en,te,hi,kn,ta,ml}.js`; use a stable semantic key with `data-i18n-key` or `JalSaathiI18n.t()`. React PWA pages use `farmer-pwa/locales/{en,te,hi,kn,ta,ml}.json` and `useI18n().t()`. PWA-only phrases belong in `farmer-pwa/locales/pwa.json`, whose translations are ordered English, Hindi, Telugu, Kannada, Tamil, Malayalam. Add every new key to all six language resources and do not pass arbitrary server errors or farmer-entered content to `t()`.
 
-### Adding translation-ready UI
+Mark farmer-entered values with `data-user-content` in legacy pages and render account data separately from translated labels. Map known API failures to reviewed translation keys; do not show raw server error text. Keep numeric, date, measurement, model, and API values separate from translated UI labels, and use the locale-aware number/date helpers.
 
-- Add a stable key to `translationKeys` in `static/i18n.js`, such as `fields.title` or `actions.save`, and use `data-i18n-key="fields.title"` in markup or `JalSaathiI18n.t("fields.title")` in JavaScript. Keep the English source and local dictionary entries in sync.
-- For dynamically rendered UI, put `data-i18n-static` on the trusted UI container and call `JalSaathiI18n.translate(container)` after rendering. The shared observer also translates later child insertions and reapplies the selected language on language changes. Only strings under an explicitly trusted static UI container or registered by a stable translation key may use Sarvam; do not approve an entire page or a container with user-provided text.
-- Mark farmer/user-supplied values with `data-user-content`; do not mark a parent containing such values as trusted static UI unless those values are individually excluded. Use `data-i18n-crop` only for exact, known crop names so the local dictionary can translate the display without changing stored names or API values.
-- Keep labels and numeric/weather/model values in separate elements. Add `data-i18n-ignore` to live values that must remain unchanged.
-- To audit a rendered page in development, open it with `?i18nCheck=1` and inspect the console report, or run `JalSaathiI18n.audit()`; it reports missing local keys and static UI text still unchanged in the selected locale.
+Run the localization gate from `farmer-pwa` after installing its development dependencies:
+
+```powershell
+npm run test:i18n
+```
+
+The gate type-checks translation-key usage, runs the legacy language-switch tests, validates all six catalogs, and fails on untranslated HTML/template phrases, unknown/missing keys, or hardcoded visible JSX text. For an in-browser legacy audit, use `?i18nCheck=1` or `JalSaathiI18n.audit()`.
 
 ## Tests and development
 

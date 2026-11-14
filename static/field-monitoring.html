@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Field Monitoring</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f4f8f3;
+        --panel: #ffffff;
+        --text: #1f2a37;
+        --muted: #536270;
+        --accent: #246b4d;
+        --accent-soft: #eaf6ef;
+        --border: #dfe7e2;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+      .page {
+        max-width: 980px;
+        margin: 32px auto;
+        padding: 20px;
+      }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 24px;
+        box-shadow: 0 10px 30px rgba(12, 40, 24, 0.06);
+      }
+      .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 20px;
+      }
+      h1 {
+        margin: 0;
+        font-size: clamp(1.75rem, 2vw, 2.4rem);
+      }
+      .action-row {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      button {
+        border: none;
+        border-radius: 10px;
+        padding: 10px 16px;
+        cursor: pointer;
+        font: inherit;
+      }
+      .primary {
+        background: var(--accent);
+        color: white;
+      }
+      .secondary {
+        background: var(--accent-soft);
+        color: var(--accent);
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 16px;
+        margin-top: 20px;
+      }
+      .metric-card {
+        background: #f9fbfa;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 18px;
+      }
+      .metric-card h2 {
+        margin: 0 0 10px;
+        font-size: 0.9rem;
+        color: var(--muted);
+      }
+      .metric-value {
+        font-size: clamp(1.6rem, 2vw, 2.2rem);
+        font-weight: 700;
+      }
+      .meta {
+        color: var(--muted);
+        margin-top: 8px;
+        font-size: 0.95rem;
+      }
+      @media (max-width: 640px) {
+        .header {
+          display: block;
+        }
+        .action-row {
+          margin-top: 16px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="panel">
+        <div class="header">
+          <div>
+            <p class="meta">Field Monitoring</p>
+            <h1>Field status overview</h1>
+          </div>
+          <div class="action-row">
+            <button id="download-report" type="button" class="secondary">Download CSV</button>
+            <button id="print-report" type="button" class="primary">Print / Save PDF Report</button>
+          </div>
+        </div>
+
+        <div id="monitoring-summary" class="meta">No sensor data has been saved yet.</div>
+
+        <div class="grid" id="metric-grid" aria-live="polite"></div>
+      </section>
+    </main>
+
+    <script src="/static/monitoring.js"></script>
+  </body>
+</html>

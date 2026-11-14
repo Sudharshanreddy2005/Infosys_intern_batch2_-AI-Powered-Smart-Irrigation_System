@@ -14,7 +14,7 @@
 * { box-sizing: border-box; scrollbar-width: none; -ms-overflow-style: none; }
 *::-webkit-scrollbar { display: none; }
 html, body { min-width: 320px; min-height: 100%; margin: 0; }
-body.portal-body { height: 100dvh; overflow: hidden; background: radial-gradient(ellipse at 69% 0%, rgb(246 213 166 / 42%), transparent 42%), radial-gradient(ellipse at 8% 8%, rgb(183 214 181 / 38%), transparent 38%), linear-gradient(110deg, #eef3e9, #f4f0e4 56%, #eaf0e5); color: var(--portal-text); font-family: Inter, "Noto Sans Devanagari", "Noto Sans Telugu", "Noto Sans Kannada", "Noto Sans Tamil", "Noto Sans Malayalam", "Noto Sans Bengali", "Noto Sans Gujarati", "Noto Sans Gurmukhi", "Noto Sans Oriya", "Noto Sans Assamese", "Noto Nastaliq Urdu", "Segoe UI", Arial, sans-serif; }
+body.portal-body { height: 100dvh; overflow: hidden; overflow-wrap: anywhere; background: radial-gradient(ellipse at 69% 0%, rgb(246 213 166 / 42%), transparent 42%), radial-gradient(ellipse at 8% 8%, rgb(183 214 181 / 38%), transparent 38%), linear-gradient(110deg, #eef3e9, #f4f0e4 56%, #eaf0e5); color: var(--portal-text); font-family: Inter, "Noto Sans Devanagari", "Noto Sans Telugu", "Noto Sans Kannada", "Noto Sans Tamil", "Noto Sans Malayalam", "Noto Sans Bengali", "Noto Sans Gujarati", "Noto Sans Gurmukhi", "Noto Sans Oriya", "Noto Sans Assamese", "Noto Nastaliq Urdu", "Segoe UI", Arial, sans-serif; }
 a { color: inherit; text-decoration: none; }
 button { font: inherit; }
 
@@ -330,6 +330,7 @@ body.sidebar-open .portal-menu-toggle .menu-close-icon { display: block; }
 .portal-weather-hero { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 16px; padding: 23px; background: linear-gradient(120deg, #f5f8ed, #fff 65%); }
 .portal-weather-place { color: #65776a; font-size: 11px; }
 .portal-temperature { margin: 13px 0 4px; color: #1d3c2e; font-size: 53px; font-weight: 800; letter-spacing: -3px; }
+.portal-temperature.is-unavailable { font-size: 1rem; line-height: 1.3; letter-spacing: 0; overflow-wrap: anywhere; }
 .portal-temperature-indicator { display: block; width: 14px; height: 14px; margin-top: 8px; border: 2px solid #5f9a67; border-radius: 50%; background: radial-gradient(circle, #8bbd72 0 3px, #e9f1df 3.5px 100%); }
 .portal-weather-condition { color: #718074; font-size: 12px; }
 .portal-weather-icon { display: grid; width: 100%; min-height: 125px; place-items: center; border-radius: 15px; background: #edf5f8; font-size: 54px; }

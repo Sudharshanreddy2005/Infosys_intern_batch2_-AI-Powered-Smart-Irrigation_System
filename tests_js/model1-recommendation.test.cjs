@@ -3,6 +3,7 @@ const { readFileSync } = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
+const numberFormatting = require("../static/number-format.js");
 
 const source = readFileSync(
   path.join(__dirname, "..", "static", "model1-recommendation.js"),
@@ -33,7 +34,16 @@ class Element {
 }
 
 function createModel(rendererOptions) {
-  const window = {};
+  const window = {
+    JalSaathiI18n: {
+      setNumber(element, value, options = {}, suffix = "") {
+        element.textContent = `${new Intl.NumberFormat(
+          "en-IN",
+          numberFormatting.numberOptions(options),
+        ).format(value)}${suffix}`;
+      },
+    },
+  };
   vm.runInNewContext(source, {
     window,
     document: { createElement: (tag) => new Element(tag) },
@@ -42,6 +52,7 @@ function createModel(rendererOptions) {
     Number,
     Object,
     String,
+    Intl,
     encodeURIComponent,
     setTimeout,
     clearTimeout,
@@ -141,7 +152,7 @@ test("dashboard requests only a server-side prediction for the selected field", 
   const text = textContent(status);
   assert.match(text, /Irrigation Needed/);
   assert.match(text, /Experimental result/);
-  assert.match(text, /Probability:\s+75\.0%/);
+  assert.match(text, /Probability:\s+75%/);
   assert.doesNotMatch(text, /soil_moisture|synthetic dataset|temperature_c|humidity_percent|not validated irrigation/);
   assert.equal(status.dataset.fieldId, "17");
   assert.equal(status.classList.contains("recommendation-data-status--model1"), true);
@@ -193,7 +204,7 @@ test("reported field 7 class-0 response renders concise experimental result", as
   const text = textContent(status);
   assert.equal(model.validatePrediction(response), true);
   assert.match(text, /Irrigation Not Needed/);
-  assert.match(text, /21\.5%/);
+  assert.match(text, /21\.542857142857137%/);
   assert.match(text, /Experimental result/);
   assert.doesNotMatch(text, /soil_moisture|synthetic_or_synthetic_augmented|temperature_c|humidity_percent|Synthetic proxy demonstration only|real-world recommendation/);
   assert.equal(status.dataset.fieldId, "7");
@@ -268,9 +279,9 @@ test("multiple saved fields request predictions with their own field IDs", async
 
   assert.deepEqual(requestBodies, [{ field_id: 31 }, { field_id: 47 }]);
   assert.match(textContent(statuses[0]), /Irrigation Needed/);
-  assert.match(textContent(statuses[0]), /80\.0%/);
+  assert.match(textContent(statuses[0]), /80%/);
   assert.match(textContent(statuses[1]), /Irrigation Not Needed/);
-  assert.match(textContent(statuses[1]), /20\.0%/);
+  assert.match(textContent(statuses[1]), /20%/);
   renderer.reconcile(fields);
   await renderer.update(statuses[1], fields[1], [], apiRequest);
   assert.equal(requestBodies.length, 2);

@@ -118,18 +118,37 @@
   }
 
   async function submitAccountForm(path, payload) {
-    const response = await fetch(path, {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const result = response.status === 204 ? null : await response.json();
+    let response;
+    try {
+      response = await fetch(path, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    } catch (error) {
+      if (error instanceof TypeError) {
+        throw new Error(window.JalSaathiProfile?.apiErrorMessage?.(0, "", path) ||
+          "The service is temporarily unavailable. Please try again later.");
+      }
+      throw error;
+    }
+    let result = null;
+    if (response.status !== 204) {
+      try {
+        result = await response.json();
+      } catch {
+        if (response.ok) {
+          throw new Error(window.JalSaathiI18n?.translationKeys?.["api.error.invalidResponse"] ||
+            "The service returned an invalid response. Please try again.");
+        }
+      }
+    }
     if (!response.ok) {
-      const detail = result && typeof result.detail === "string"
-        ? result.detail
-        : "Your request could not be completed. Please try again.";
-      throw new Error(detail);
+      const detail = result && typeof result.detail === "string" ? result.detail : "";
+      const message = window.JalSaathiProfile?.apiErrorMessage?.(response.status, detail, path) ||
+        "The request could not be completed.";
+      throw new Error(message);
     }
     return result;
   }
@@ -233,7 +252,7 @@
           } else {
             const countryCode = form.elements.namedItem("countryCode").value;
             const phone = form.elements.namedItem("phone").value.replace(/[^\d]/g, "");
-            await submitAccountForm("/api/auth/register", {
+            const registeredProfile = await submitAccountForm("/api/auth/register", {
               name: getRequiredValue(form, "name"),
               email: getRequiredValue(form, "email"),
               password: form.elements.namedItem("password").value,
@@ -242,6 +261,12 @@
               district: getRequiredValue(form, "district"),
               village: getRequiredValue(form, "village"),
             });
+            const profileApi = window.JalSaathiProfile;
+            profileApi?.setCurrentProfile?.(registeredProfile);
+            const preferredLanguage = getRequiredValue(form, "language");
+            if (profileApi?.getLanguages?.().some((language) => language.code === preferredLanguage)) {
+              profileApi.setLanguage(preferredLanguage);
+            }
           }
           window.location.assign("/dashboard");
         } catch (error) {

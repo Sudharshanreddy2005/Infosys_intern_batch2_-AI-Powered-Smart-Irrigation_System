@@ -19,12 +19,13 @@
     { name: "humidity_percent", unit: "%" },
   ];
 
-  const displayTime = (value) => {
-    if (!value) return "—";
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
-  };
-
+  const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[character]);
   const finiteNumber = (value) =>
     typeof value === "number" && Number.isFinite(value);
 
@@ -93,7 +94,7 @@
       console.error("Saved crop records are unavailable for AI predictions:", error);
     }
 
-    text(page, "[data-ai-total-models]", String(modelNames.length));
+    window.JalSaathiI18n.setNumber(page.querySelector("[data-ai-total-models]"), modelNames.length);
     fieldSelect.replaceChildren();
     fields.forEach((field) => {
       const option = document.createElement("option");
@@ -141,10 +142,14 @@
       const cropName = crop?.name || field?.crop || "";
       text(page, "[data-ai-crop]", crop?.name || field?.crop || "Crop not recorded");
       text(page, "[data-ai-zone-value]", zoneSelect.value ? `Zone ${zoneSelect.value}` : "Select zone");
-      text(page, "[data-ai-area]", field ? `${field.area} ${field.areaUnit}` : "Not selected");
+      markup(page, "[data-ai-area]", field
+        ? window.JalSaathiI18n.numberMarkup(field.area, {}, field.areaUnit ? ` ${field.areaUnit}` : "")
+        : "Not selected");
       text(page, "[data-ai-model2-crop]", crop?.name || field?.crop || "Not recorded");
       text(page, "[data-ai-growth-stage]", crop?.growth_stage || "Not recorded");
-      text(page, "[data-ai-model2-area]", field ? `${field.area} ${field.areaUnit}` : "—");
+      markup(page, "[data-ai-model2-area]", field
+        ? window.JalSaathiI18n.numberMarkup(field.area, {}, field.areaUnit ? ` ${field.areaUnit}` : "")
+        : "—");
       text(page, "[data-ai-field-name]", field?.name || "—");
       text(page, "[data-ai-zone-meta]", zoneSelect.value ? `Zone ${zoneSelect.value}` : "—");
       text(page, "[data-ai-model3-field]", field ? `${field.name} · ${zoneSelect.value ? `Zone ${zoneSelect.value}` : "Zone not selected"}` : "—");
@@ -176,11 +181,13 @@
     const updateSummary = () => {
       const successful = Object.values(states).filter((state) => state.status === "success").length;
       const unavailable = Object.values(states).filter((state) => state.status === "unavailable").length;
-      text(page, "[data-ai-success-count]", String(successful));
-      text(page, "[data-ai-unavailable-count]", String(unavailable));
-      text(page, "[data-ai-last-updated]", `Last updated: ${displayTime(lastSuccessfulAt)}`);
-      text(page, "[data-ai-last-time]", lastSuccessfulAt
-        ? new Date(lastSuccessfulAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      window.JalSaathiI18n.setNumber(page.querySelector("[data-ai-success-count]"), successful);
+      window.JalSaathiI18n.setNumber(page.querySelector("[data-ai-unavailable-count]"), unavailable);
+      markup(page, "[data-ai-last-updated]", `Last updated: ${lastSuccessfulAt
+        ? window.JalSaathiI18n.dateMarkup(lastSuccessfulAt, "date-time")
+        : "—"}`);
+      markup(page, "[data-ai-last-time]", lastSuccessfulAt
+        ? window.JalSaathiI18n.dateMarkup(lastSuccessfulAt, "time")
         : "—");
     };
 
@@ -226,9 +233,12 @@
         const output = result.prediction === 1
           ? "Proxy indicates irrigation needed"
           : "Proxy indicates irrigation not needed";
-        const probability = `${(result.proxy_positive_probability * 100).toFixed(1)}% model-estimated probability`;
-        setTextContent(page.querySelector('[data-ai-result="model1"]'), `${output} · ${probability}. ${result.warning || ""}`);
-        text(page, '[data-ai-timestamp="model1"]', `Prediction time: ${displayTime(result.observation_time)}`);
+        markup(
+          page,
+          '[data-ai-result="model1"]',
+          `${output} · ${window.JalSaathiI18n.numberMarkup(result.proxy_positive_probability * 100, {}, "%")} model-estimated probability. ${escapeHtml(window.JalSaathiNumberFormat.normalizeAssistantText(result.warning || ""))}`,
+        );
+        markup(page, '[data-ai-timestamp="model1"]', `Prediction time: ${window.JalSaathiI18n.dateMarkup(result.observation_time, "date-time")}`);
         setSuccess("model1", new Date().toISOString());
       } catch (error) {
         if (generation !== requestGeneration) return;
@@ -259,11 +269,12 @@
             typeof result.unit !== "string") {
           throw new Error("The validated water-requirement API returned an invalid estimate.");
         }
-        setTextContent(
-          page.querySelector('[data-ai-result="model2"]'),
-          `${result.estimated_water_liters.toLocaleString()} ${result.unit}`,
+        markup(
+          page,
+          '[data-ai-result="model2"]',
+          `${window.JalSaathiI18n.numberMarkup(result.estimated_water_liters)} ${escapeHtml(result.unit)}`,
         );
-        setTextContent(page.querySelector('[data-ai-timestamp="model2"]'), `Last checked: ${new Date().toLocaleString()}`);
+        markup(page, '[data-ai-timestamp="model2"]', `Last checked: ${window.JalSaathiI18n.dateMarkup(new Date(), "date-time")}`);
         setSuccess("model2", new Date().toISOString());
       } catch (error) {
         if (generation !== requestGeneration) return;
@@ -316,19 +327,23 @@
         }
         const current = result.current_moisture_percent;
         const predicted = result.predicted_moisture_24h_percent;
-        text(page, "[data-ai-current-moisture]", `${current}%`);
-        text(page, "[data-ai-predicted-moisture]", `${predicted}%`);
+        window.JalSaathiI18n.setNumber(page.querySelector("[data-ai-current-moisture]"), current, {}, "%");
+        window.JalSaathiI18n.setNumber(page.querySelector("[data-ai-predicted-moisture]"), predicted, {}, "%");
         setBar(page.querySelector("[data-ai-current-bar]"), current);
         setBar(page.querySelector("[data-ai-predicted-bar]"), predicted);
-        text(page, "[data-ai-horizon]", finiteNumber(result.prediction_horizon_hours)
-          ? `${result.prediction_horizon_hours} hours`
-          : "Not returned");
+        const horizon = page.querySelector("[data-ai-horizon]");
+        if (finiteNumber(result.prediction_horizon_hours)) {
+          window.JalSaathiI18n.setNumber(horizon, result.prediction_horizon_hours, {}, " hours");
+        } else if (horizon) {
+          horizon.textContent = "Not returned";
+        }
         text(page, "[data-ai-strategy]", result.strategy || "Not returned");
-        setTextContent(
-          page.querySelector('[data-ai-result="model3"]'),
-          `Future moisture: ${predicted}%. Strategy: ${result.strategy || "not returned"}.${result.warning ? ` ${result.warning}` : ""}`,
+        markup(
+          page,
+          '[data-ai-result="model3"]',
+          `Future moisture: ${window.JalSaathiI18n.numberMarkup(predicted, {}, "%")}. Strategy: ${escapeHtml(window.JalSaathiNumberFormat.normalizeAssistantText(result.strategy || "not returned"))}.${result.warning ? ` ${escapeHtml(window.JalSaathiNumberFormat.normalizeAssistantText(result.warning))}` : ""}`,
         );
-        text(page, '[data-ai-timestamp="model3"]', `Prediction time: ${displayTime(result.prediction_timestamp)}`);
+        markup(page, '[data-ai-timestamp="model3"]', `Prediction time: ${window.JalSaathiI18n.dateMarkup(result.prediction_timestamp, "date-time")}`);
         setSuccess("model3", result.prediction_timestamp || new Date().toISOString());
       } catch (error) {
         if (generation !== requestGeneration) return;
@@ -377,12 +392,12 @@
         }
         text(page, "[data-ai-predicted-class]", `Class ${result.predicted_class}`);
         const confidence = finiteNumber(result.confidence)
-          ? `${(result.confidence * 100).toFixed(1)}%`
+          ? window.JalSaathiI18n.numberMarkup(result.confidence * 100, {}, "%")
           : "Not returned";
-        text(page, "[data-ai-model4-probability]", confidence);
-        text(page, "[data-ai-model4-time]", displayTime(result.prediction_timestamp));
+        markup(page, "[data-ai-model4-probability]", confidence);
+        markup(page, "[data-ai-model4-time]", window.JalSaathiI18n.dateMarkup(result.prediction_timestamp, "date-time"));
         setTextContent(page.querySelector('[data-ai-result="model4"]'), `Predicted numeric class ${result.predicted_class}. Class semantics remain unverified.`);
-        text(page, '[data-ai-timestamp="model4"]', `Prediction time: ${displayTime(result.prediction_timestamp)}`);
+        markup(page, '[data-ai-timestamp="model4"]', `Prediction time: ${window.JalSaathiI18n.dateMarkup(result.prediction_timestamp, "date-time")}`);
         setSuccess("model4", result.prediction_timestamp || new Date().toISOString());
       } catch (error) {
         if (generation !== requestGeneration) return;
@@ -430,6 +445,10 @@
       void refresh();
     });
     refreshButton.addEventListener("click", () => { void refresh(); });
+    window.addEventListener("jalsaathi:language-changed", () => {
+      updateFieldDetails();
+      updateSummary();
+    });
     model3Form.addEventListener("submit", (event) => {
       event.preventDefault();
     if (!model3Form.reportValidity()) return;
@@ -447,7 +466,20 @@
 
   const text = (root, selector, value) => {
     const node = root.querySelector(selector);
-    if (node) node.textContent = value;
+    if (node) {
+      node.removeAttribute("data-i18n-number");
+      node.removeAttribute("data-i18n-date");
+      node.textContent = value;
+    }
+  };
+
+  const markup = (root, selector, value) => {
+    const node = root.querySelector(selector);
+    if (node) {
+      node.removeAttribute("data-i18n-number");
+      node.removeAttribute("data-i18n-date");
+      node.innerHTML = value;
+    }
   };
 
   const setTextContent = (node, value) => {
@@ -530,7 +562,11 @@
       row.className = "ai-input-row";
       const value = document.createElement("strong");
       value.className = "ai-input-value";
-      value.textContent = `${String(result.feature_inputs[name])} ${unit}`;
+      if (unit === "°C") {
+        value.textContent = window.JalSaathiI18n.formatTemperature(result.feature_inputs[name]);
+      } else {
+        value.innerHTML = window.JalSaathiI18n.numberMarkup(result.feature_inputs[name], {}, ` ${unit}`);
+      }
       const feature = document.createElement("span");
       feature.className = "ai-input-feature";
       feature.textContent = name;
@@ -539,7 +575,7 @@
       source.textContent = `Source: ${result.feature_sources[name]}`;
       const timestamp = document.createElement("span");
       timestamp.className = "ai-input-time";
-      timestamp.textContent = `Observed: ${displayTime(result.observation_time)}`;
+      timestamp.innerHTML = `Observed: ${window.JalSaathiI18n.dateMarkup(result.observation_time, "date-time")}`;
       const availability = document.createElement("span");
       availability.className = "ai-input-availability";
       availability.textContent = "Available";

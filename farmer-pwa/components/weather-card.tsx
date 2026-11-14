@@ -10,16 +10,16 @@ export function WeatherCard({
   temporarilyUnavailable?: boolean;
   lastUpdated?: string | null;
 }) {
-  const { t, formatNumber, formatDateTime } = useI18n();
+  const { t, formatNumber, formatTemperature, formatDateTime } = useI18n();
   const temperature = typeof weather?.temperature_c === "number"
-    ? `${formatNumber(Math.round(weather.temperature_c))}°C`
+    ? formatTemperature(weather.temperature_c)
     : t("Not available");
   const location = weather?.locality || weather?.location || t("Weather location not available");
   return (
     <article className="weather-card">
       <div className="weather-card-heading"><span className="weather-icon" aria-hidden="true">☼</span><div><p className="eyebrow">{t("CURRENT WEATHER")}</p><h2>{location}</h2></div></div>
       <strong className="weather-temperature">{temperature}</strong>
-      <p>{weather?.humidity_percent != null ? `${formatNumber(Math.round(weather.humidity_percent))}% ${t("humidity")}` : t("Humidity not available")}</p>
+      <p>{weather?.humidity_percent != null ? `${formatNumber(weather.humidity_percent)}% ${t("humidity")}` : t("Humidity not available")}</p>
       {temporarilyUnavailable && <p className="weather-fallback" role="status">
         {t("Weather temporarily unavailable, showing last data")}
         {lastUpdated && <small>{t("Last weather update {date}", { date: formatDateTime(lastUpdated) })}</small>}
