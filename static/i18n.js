@@ -71,6 +71,7 @@
   const hasLocalTranslation = (source, code) =>
     Object.hasOwn(dictionaries[code] || {}, source) ||
     dynamicTemplates.some((template) => template.pattern.test(source));
+  const numericMeasurement = /^[+-]?\d+(?:[.,]\d+)*\s*(?:%|°[CF]|mm(?:\/h)?|cm|km|ha|acres?|hectares?|liters?|litres?|L|kg|g|m\/s|km\/h)$/i;
   const getLanguage = () => profileApi?.getLanguage?.() || "en";
   const sourceValues = new WeakMap();
   const translatedValues = new WeakMap();
@@ -128,7 +129,7 @@
 
   const rememberRemoteTranslation = (key, translation) => {
     remoteCache.delete(key);
-    remoteCache.set(key, translation);
+    remoteCache.set(key, numberFormatting.normalizeDigits(translation));
     while (remoteCache.size > REMOTE_CACHE_MAX_ENTRIES) {
       remoteCache.delete(remoteCache.keys().next().value);
     }
@@ -144,7 +145,8 @@
 
   const lookup = (source, code = getLanguage()) => {
     if (code === "en") return source;
-    if (!/[A-Za-z]/.test(source) || /^[A-Za-z0-9]{1,3}$/.test(source)) return source;
+    if (!/[A-Za-z]/.test(source) || numericMeasurement.test(source.trim()) ||
+        /^[A-Za-z0-9]{1,3}$/.test(source)) return source;
     const dictionary = dictionaries[code];
     if (dictionary && Object.hasOwn(dictionary, source)) return dictionary[source];
     for (const template of dynamicTemplates) {
@@ -164,7 +166,8 @@
     const callbacks = translationCallbacks.get(key) || [];
     translationCallbacks.delete(key);
     translationsInFlight.delete(key);
-    callbacks.forEach((callback) => callback(translated));
+    const latinDigitTranslation = numberFormatting.normalizeDigits(translated);
+    callbacks.forEach((callback) => callback(latinDigitTranslation));
   };
 
   const hideTranslationStatus = () => {
@@ -279,7 +282,7 @@
         (remoteFailureUntil.get(code) || 0) > Date.now()) return;
     const key = `${code}\u0000${source}`;
     if (remoteCache.has(key)) {
-      callback(remoteCache.get(key));
+      callback(numberFormatting.normalizeDigits(remoteCache.get(key)));
       return;
     }
     const callbacks = translationCallbacks.get(key) || [];

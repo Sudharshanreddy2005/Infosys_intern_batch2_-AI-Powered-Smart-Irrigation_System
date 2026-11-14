@@ -101,7 +101,8 @@ const untranslatedHtml = new Map();
 const htmlPhrases = new Set();
 const englishPhrases = new Set(Object.values(english));
 const addHtmlString = (value, relativePath) => {
-  const phrase = value
+  const sourceValue = Object.hasOwn(english, value.trim()) ? english[value.trim()] : value;
+  const phrase = sourceValue
     .replace(/&amp;/g, "&")
     .replace(/&quot;/g, "\"")
     .replace(/&#39;|&apos;/g, "'")
@@ -246,6 +247,74 @@ if (typescript) {
        typeof pwaEntries[source][languageIndex] === "string" &&
        Boolean(pwaEntries[source][languageIndex].trim()));
   };
+  const visibleHelperNames = new Set([
+    "errorMessage", "setError", "setMessage", "setModelState", "setStatus", "setText", "text",
+  ]);
+  const addExpressionText = (node, relativePath, asMarkup = false) => {
+    if (!node) return;
+    if (typescript.isStringLiteral(node) || typescript.isNoSubstitutionTemplateLiteral(node)) {
+      if (asMarkup) collectHtmlStrings(node.text, relativePath);
+      else addHtmlString(node.text, relativePath);
+      return;
+    }
+    if (typescript.isTemplateExpression(node)) {
+      const templateText = [
+        node.head.text,
+        ...node.templateSpans.map((span) => span.literal.text),
+      ].join("{value}");
+      if (!templateText.replace(/\{value\}/g, "").replace(/[\s\p{P}\p{S}]/gu, "")) return;
+      if (asMarkup) collectHtmlStrings(templateText, relativePath);
+      else addHtmlString(templateText, relativePath);
+      return;
+    }
+    if (typescript.isConditionalExpression(node)) {
+      addExpressionText(node.whenTrue, relativePath, asMarkup);
+      addExpressionText(node.whenFalse, relativePath, asMarkup);
+      return;
+    }
+    if (typescript.isBinaryExpression(node) &&
+        node.operatorToken.kind === typescript.SyntaxKind.PlusToken) {
+      addExpressionText(node.left, relativePath, asMarkup);
+      addExpressionText(node.right, relativePath, asMarkup);
+    }
+  };
+  for (const file of sourceFiles.filter((candidate) => candidate.endsWith(".js") &&
+      candidate !== path.join(root, "static", "i18n.js"))) {
+    const source = fs.readFileSync(file, "utf8");
+    const sourceFile = typescript.createSourceFile(file, source, typescript.ScriptTarget.Latest, true, typescript.ScriptKind.JS);
+    const relativePath = path.relative(root, file);
+    const visit = (node) => {
+      if (typescript.isBinaryExpression(node) &&
+          node.operatorToken.kind === typescript.SyntaxKind.EqualsToken &&
+          typescript.isPropertyAccessExpression(node.left)) {
+        const property = node.left.name.text;
+        if (property === "textContent") addExpressionText(node.right, relativePath);
+        if (property === "innerHTML") addExpressionText(node.right, relativePath, true);
+      }
+      if (typescript.isNewExpression(node) && node.expression.getText(sourceFile) === "Option" &&
+          node.arguments?.[0]) {
+        addExpressionText(node.arguments[0], relativePath);
+      }
+      if (typescript.isCallExpression(node)) {
+        const callee = typescript.isIdentifier(node.expression)
+          ? node.expression.text
+          : typescript.isPropertyAccessExpression(node.expression)
+            ? node.expression.name.text
+            : "";
+        if (callee === "setAttribute" && node.arguments.length >= 2 &&
+            typescript.isStringLiteral(node.arguments[0]) &&
+            ["aria-label", "alt", "placeholder", "title"].includes(node.arguments[0].text)) {
+          addExpressionText(node.arguments[1], relativePath);
+        } else if (visibleHelperNames.has(callee) && node.arguments.length) {
+          addExpressionText(node.arguments[node.arguments.length - 1], relativePath);
+        } else if (callee === "insertAdjacentHTML" && node.arguments.length >= 2) {
+          addExpressionText(node.arguments[1], relativePath, true);
+        }
+      }
+      typescript.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+  }
   for (const file of pwaSourceFiles) {
     const source = fs.readFileSync(file, "utf8");
     const sourceFile = typescript.createSourceFile(
@@ -261,75 +330,6 @@ if (typescript) {
         if (!hasPwaTranslation(code, literal)) {
           const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
           errors.push(`${relativePath}:${line} references "${literal}" without a ${code} translation.`);
-        }
-
-        const visibleHelperNames = new Set([
-          "errorMessage", "setError", "setMessage", "setModelState", "setStatus", "setText", "text",
-        ]);
-        const addExpressionText = (node, relativePath, asMarkup = false) => {
-          if (!node) return;
-          if (typescript.isStringLiteral(node) || typescript.isNoSubstitutionTemplateLiteral(node)) {
-            if (asMarkup) collectHtmlStrings(node.text, relativePath);
-            else addHtmlString(node.text, relativePath);
-            return;
-          }
-          if (typescript.isTemplateExpression(node)) {
-            const templateText = [
-              node.head.text,
-              ...node.templateSpans.map((span) => span.literal.text),
-            ].join("{value}");
-            if (!templateText.replace(/\{value\}/g, "").trim()) return;
-            if (asMarkup) collectHtmlStrings(templateText, relativePath);
-            else addHtmlString(templateText, relativePath);
-            return;
-          }
-          if (typescript.isConditionalExpression(node)) {
-            addExpressionText(node.whenTrue, relativePath, asMarkup);
-            addExpressionText(node.whenFalse, relativePath, asMarkup);
-            return;
-          }
-          if (typescript.isBinaryExpression(node) &&
-              node.operatorToken.kind === typescript.SyntaxKind.PlusToken) {
-            addExpressionText(node.left, relativePath, asMarkup);
-            addExpressionText(node.right, relativePath, asMarkup);
-          }
-        };
-        for (const file of sourceFiles.filter((candidate) => candidate.endsWith(".js") &&
-            candidate !== path.join(root, "static", "i18n.js"))) {
-          const source = fs.readFileSync(file, "utf8");
-          const sourceFile = typescript.createSourceFile(file, source, typescript.ScriptTarget.Latest, true, typescript.ScriptKind.JS);
-          const relativePath = path.relative(root, file);
-          const visit = (node) => {
-            if (typescript.isBinaryExpression(node) &&
-                node.operatorToken.kind === typescript.SyntaxKind.EqualsToken &&
-                typescript.isPropertyAccessExpression(node.left)) {
-              const property = node.left.name.text;
-              if (property === "textContent") addExpressionText(node.right, relativePath);
-              if (property === "innerHTML") addExpressionText(node.right, relativePath, true);
-            }
-            if (typescript.isNewExpression(node) && node.expression.getText(sourceFile) === "Option" &&
-                node.arguments?.[0]) {
-              addExpressionText(node.arguments[0], relativePath);
-            }
-            if (typescript.isCallExpression(node)) {
-              const callee = typescript.isIdentifier(node.expression)
-                ? node.expression.text
-                : typescript.isPropertyAccessExpression(node.expression)
-                  ? node.expression.name.text
-                  : "";
-              if (callee === "setAttribute" && node.arguments.length >= 2 &&
-                  typescript.isStringLiteral(node.arguments[0]) &&
-                  ["aria-label", "alt", "placeholder", "title"].includes(node.arguments[0].text)) {
-                addExpressionText(node.arguments[1], relativePath);
-              } else if (visibleHelperNames.has(callee) && node.arguments.length) {
-                addExpressionText(node.arguments[node.arguments.length - 1], relativePath);
-              } else if (callee === "insertAdjacentHTML" && node.arguments.length >= 2) {
-                addExpressionText(node.arguments[1], relativePath, true);
-              }
-            }
-            typescript.forEachChild(node, visit);
-          };
-          visit(sourceFile);
         }
       }
     };

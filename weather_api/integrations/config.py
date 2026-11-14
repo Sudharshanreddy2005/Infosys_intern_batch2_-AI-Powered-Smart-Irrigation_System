@@ -9,6 +9,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 BASE_URL = "https://api.tomorrow.io/v4"
 REALTIME_ENDPOINT = f"{BASE_URL}/weather/realtime"
 FORECAST_ENDPOINT = f"{BASE_URL}/weather/forecast"
+RECENT_HISTORY_ENDPOINT = f"{BASE_URL}/weather/history/recent"
 UNITS = "metric"
 REQUEST_TIMEOUT = 5
 MAX_RETRIES = 3

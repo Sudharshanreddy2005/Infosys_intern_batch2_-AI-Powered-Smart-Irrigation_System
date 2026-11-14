@@ -497,3 +497,92 @@ body { font-size: 16px; }
   .form-sheet, .confirm-sheet { border-radius: 20px; }
   .management-list { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
 }
+
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; clip-path: inset(50%); }
+.auth-header { display: flex; width: min(460px, 100%); align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+.auth-header .auth-brand { margin: 0; }
+.auth-header-actions { display: flex; align-items: center; gap: 8px; }
+.language-selector { display: inline-flex; min-width: 0; }
+.language-selector select { min-width: 0; min-height: 48px; max-width: 116px; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); cursor: pointer; font: inherit; font-size: .82rem; }
+.header-language-select select { max-width: 104px; }
+.header-action { gap: 8px; padding: 0 12px; color: var(--text-secondary); font-size: .83rem; font-weight: 650; white-space: nowrap; }
+.header-action:hover { border-color: var(--border-soft); background: var(--green-100); color: var(--green-900); }
+.notification-menu { position: relative; }
+.notification-menu > summary { list-style: none; }
+.notification-menu > summary::-webkit-details-marker { display: none; }
+.notification-button { position: relative; width: 48px; min-width: 48px; }
+.notification-button svg { width: 23px; height: 23px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+.notification-menu[open] > summary { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
+.notification-count { position: absolute; top: -5px; right: -5px; display: grid; min-width: 20px; height: 20px; place-items: center; padding: 0 4px; border: 2px solid var(--surface); border-radius: 12px; background: var(--danger); color: #fff; font-size: .65rem; font-weight: 800; }
+.notification-panel { position: absolute; z-index: 12; top: calc(100% + 9px); right: 0; width: min(340px, calc(100vw - 24px)); padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: var(--card-shadow); }
+.notification-panel h2 { margin-bottom: 12px; font-size: 1rem; }
+.notification-panel p { margin: 0 0 12px; }
+.notification-panel ul { display: grid; gap: 8px; margin: 0 0 12px; padding: 0; list-style: none; }
+.notification-panel li { display: grid; gap: 3px; padding: 10px; border-radius: 9px; background: var(--surface-soft); }
+.notification-panel li > span, .notification-panel li > small { color: var(--muted); font-size: .75rem; }
+.notification-panel > a { display: inline-flex; min-height: 44px; align-items: center; color: var(--green-700); font-size: .83rem; font-weight: 700; text-decoration: underline; }
+
+.chart-assistant-backdrop, .install-help-backdrop { position: fixed; z-index: 30; inset: 0; display: flex; align-items: center; justify-content: center; padding: 18px; background: rgb(0 0 0 / 48%); }
+.chart-assistant-dialog, .install-help-dialog { display: flex; width: min(760px, 100%); max-height: min(92dvh, 900px); flex-direction: column; overflow: hidden; padding: 20px; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); color: var(--ink); box-shadow: var(--card-shadow); }
+.chart-assistant-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.chart-assistant-heading .eyebrow { margin-bottom: 5px; }
+.chart-assistant-heading h2 { margin-bottom: 5px; }
+.chart-assistant-heading .muted { margin: 0; font-size: .82rem; }
+.chart-assistant-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.chart-assistant-controls .form-field { min-width: 0; }
+.chart-assistant-controls .form-input { padding-right: 7px; font-size: .82rem; }
+.chart-date-range { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.chart-date-range .form-field-error { grid-column: 1 / -1; margin: 0; }
+.chart-assistant-thread { display: flex; min-height: 130px; flex: 1 1 auto; flex-direction: column; gap: 12px; overflow-y: auto; padding: 14px 2px; overscroll-behavior: contain; }
+.chart-assistant-welcome { margin: auto; color: var(--muted); line-height: 1.5; text-align: center; }
+.chart-assistant-message { max-width: 92%; align-self: flex-start; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px 14px 14px 4px; background: var(--surface-soft); line-height: 1.55; overflow-wrap: anywhere; }
+.chart-assistant-message.user { align-self: flex-end; border-color: var(--surface-green-strong); border-radius: 14px 14px 4px 14px; background: var(--surface-green); }
+.chart-assistant-message > p { margin: 0; white-space: pre-wrap; }
+.chart-assistant-loading { margin: 0; color: var(--muted); font-size: .84rem; }
+.chart-visualizations { display: grid; gap: 9px; margin-top: 12px; }
+.chart-current-weather { display: flex; flex-wrap: wrap; gap: 8px; }
+.chart-current-weather span { display: grid; gap: 3px; min-width: 92px; padding: 9px; border-radius: 9px; background: var(--surface); color: var(--muted); font-size: .7rem; }
+.chart-current-weather strong { color: var(--ink); font-size: .85rem; }
+.assistant-chart { min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.assistant-chart h3 { margin-bottom: 6px; font-size: .82rem; }
+.assistant-chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.assistant-chart polyline { fill: none; stroke: var(--green-700); stroke-linecap: round; stroke-linejoin: round; stroke-width: 2.5; }
+.assistant-chart circle { fill: var(--green-700); }
+.assistant-chart-summary { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: .66rem; }
+.assistant-chart-summary strong { color: var(--ink); text-align: center; }
+.chart-data-note { margin: 0; color: var(--muted); font-size: .73rem; line-height: 1.5; }
+.chart-assistant-form { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.chart-assistant-form textarea { width: 100%; min-height: 70px; resize: vertical; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); font: inherit; }
+.chart-assistant-form textarea:focus { border-color: var(--focus-ring); outline: 3px solid var(--surface-green-strong); }
+.chart-assistant-form textarea:disabled { cursor: not-allowed; opacity: .6; }
+.chart-assistant-form-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.chart-assistant-form-actions .text-button:disabled { cursor: not-allowed; opacity: .55; }
+.install-help-backdrop { z-index: 31; }
+.install-help-dialog { width: min(440px, 100%); gap: 12px; padding: 20px; }
+.install-help-dialog .form-sheet-heading { margin: 0; }
+.install-help-dialog .form-sheet-heading h2 { font-size: 1.1rem; }
+.install-help-dialog p { margin: 0; line-height: 1.55; }
+.install-help-dialog .primary-button { align-self: flex-end; min-width: 100px; }
+
+@media (max-width: 760px) {
+  .topbar-actions { gap: 5px; }
+  .header-action { width: 42px; min-width: 42px; justify-content: center; padding: 0; }
+  .header-action-label { display: none; }
+  .header-language-select select { width: 68px; max-width: 68px; padding: 0 5px; font-size: .72rem; }
+  .notification-button { width: 42px; min-width: 42px; }
+  .chart-assistant-backdrop, .install-help-backdrop { align-items: flex-end; padding: 0; }
+  .chart-assistant-dialog, .install-help-dialog { width: 100%; max-height: 94dvh; padding: 17px 15px calc(16px + env(safe-area-inset-bottom)); border-radius: 20px 20px 0 0; }
+  .chart-assistant-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .chart-assistant-controls > .form-field:nth-child(3) { grid-column: 1 / -1; }
+  .chart-assistant-message { max-width: 100%; }
+  .install-help-dialog { border-radius: 20px 20px 0 0; }
+}
+
+@media (max-width: 390px) {
+  .topbar { overflow-x: auto; }
+  .topbar-actions { gap: 3px; }
+  .brand { flex: 0 0 auto; }
+  .connection { display: none; }
+  .header-action, .notification-button, .refresh-button { width: 38px; min-width: 38px; }
+  .header-language-select select { width: 58px; max-width: 58px; font-size: .68rem; }
+}

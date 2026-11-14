@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 os.environ["DATABASE_URL"] = "sqlite://"
@@ -9,7 +10,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.pool import StaticPool
 
 import main
-from models import AuthSession
+from models import AuthSession, FarmerSensorReading, IrrigationSchedule
 
 
 @pytest.fixture
@@ -121,6 +122,27 @@ def test_authenticated_dashboard_is_available_after_registration(client_pair):
     assert 'data-recommendation-status' in response.text
     assert "model1-recommendation.js?v=20261027-i18n2" in response.text
     assert "mock_development" not in response.text
+
+
+def test_main_application_pwa_assets_are_served_from_the_app_origin(client_pair):
+    client, _ = client_pair
+
+    manifest = client.get("/manifest.webmanifest")
+    assert manifest.status_code == 200
+    assert manifest.headers["content-type"].startswith("application/manifest+json")
+    assert manifest.json()["start_url"] == "/"
+    assert manifest.json()["icons"][0]["src"] == "/pwa-icons/icon-192.png"
+
+    worker = client.get("/service-worker.js")
+    assert worker.status_code == 200
+    assert worker.headers["service-worker-allowed"] == "/"
+    assert "jalsaathi-main-" in worker.text
+
+    offline = client.get("/offline.html")
+    assert offline.status_code == 200
+    assert "Your account data is not available offline." in offline.text
+    assert client.get("/pwa-icons/icon-192.png").headers["content-type"].startswith("image/png")
+    assert client.get("/pwa-icons/not-an-app-icon.png").status_code == 404
 
 
 def test_login_uses_generic_errors_and_sets_session(client_pair):
@@ -1051,6 +1073,23 @@ def test_origin_and_extra_owner_fields_are_rejected(client_pair):
     assert owner_override.status_code == 422
 
 
+def test_configured_pwa_origin_is_allowed_for_reverse_proxy_requests(client_pair, monkeypatch):
+    client, _ = client_pair
+    monkeypatch.setenv("FARMER_PWA_ORIGINS", "http://localhost:8000")
+
+    response = client.post(
+        "/api/auth/register",
+        json={
+            "name": "Asha Rao",
+            "email": "proxied@example.com",
+            "password": "CorrectHorse9!",
+        },
+        headers={"Origin": "http://localhost:8000"},
+    )
+
+    assert response.status_code == 201
+
+
 def test_expired_session_is_rejected(client_pair):
     client, _ = client_pair
     assert register(client).status_code == 201
@@ -1061,3 +1100,454 @@ def test_expired_session_is_rejected(client_pair):
         db.commit()
 
     assert client.get("/api/auth/me").status_code == 401
+
+
+def test_chart_assistant_uses_owned_schedule_weather_and_language(
+    client_pair,
+    monkeypatch,
+):
+    client, other = client_pair
+    assert register(client).status_code == 201
+    field_id = create_prediction_field(client)
+    farmer_id = client.get("/api/auth/me").json()["id"]
+    crop_response = client.post(
+        "/api/crops",
+        json={"name": "Rice", "field_id": field_id},
+        headers=csrf_headers(client),
+    )
+    assert crop_response.status_code == 201
+    with main.Session(main.engine) as db:
+        db.add(
+            IrrigationSchedule(
+                farmer_id=farmer_id,
+                field_id=field_id,
+                reservoir_id=1,
+                field_name="North plot",
+                crop_name="Rice",
+                scheduled_date=main.datetime.now(main.timezone.utc).date(),
+                start_time="06:00",
+                end_time="07:00",
+                water_liters=250,
+                duration_minutes=60,
+                irrigation_method="drip",
+                status="confirmed",
+                plan_snapshot={"status": "confirmed"},
+            )
+        )
+        db.add(
+            IrrigationSchedule(
+                farmer_id=farmer_id,
+                field_id=field_id,
+                reservoir_id=1,
+                field_name="North plot",
+                crop_name="Maize",
+                scheduled_date=main.datetime.now(main.timezone.utc).date(),
+                start_time="07:00",
+                end_time="08:00",
+                water_liters=400,
+                duration_minutes=60,
+                irrigation_method="drip",
+                status="confirmed",
+                plan_snapshot={"status": "confirmed"},
+            )
+        )
+        db.commit()
+    assert register(other, email="other@example.com").status_code == 201
+    monkeypatch.setattr(main, "weather_attempts", main.OrderedDict())
+    weather_locations = []
+    monkeypatch.setattr(
+        main,
+        "get_current_weather",
+        lambda location: (
+            weather_locations.append(location)
+            or {
+                "observation_time": "2026-03-30T12:00:00+00:00",
+                "temperature_c": 24,
+                "humidity_percent": 60,
+                "rainfall_mm_per_hr": 0,
+                "precipitation_probability_percent": 10,
+                "wind_speed_mps": 2,
+                "is_stale": False,
+                "data_age_minutes": 5,
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        main,
+        "get_forecast",
+        lambda *_args, **_kwargs: [
+            {
+                "time": "2026-03-30T13:00:00+00:00",
+                "temperature_c": 25,
+                "humidity_percent": 58,
+                "rainfall_mm_per_hr": 0,
+                "precipitation_probability_percent": 5,
+                "wind_speed_mps": 2,
+                "is_stale": False,
+                "data_age_minutes": 5,
+            }
+        ],
+    )
+    captured = {}
+
+    async def mocked_chart_answer(question, field_data, history, language_code):
+        captured.update(
+            question=question,
+            field_data=field_data,
+            history=history,
+            language_code=language_code,
+        )
+        return "వాతావరణ సూచన అందుబాటులో ఉంది."
+
+    monkeypatch.setattr(main, "answer_chart_question_openai", mocked_chart_answer)
+    response = client.post(
+        "/api/assistant/chat",
+        json={
+            "assistant_mode": "chart",
+            "question": "Explain my field data.",
+            "language_code": "te-IN",
+            "field_id": field_id,
+            "crop_id": crop_response.json()["id"],
+            "chart_period": "7d",
+            "history": [
+                {"role": "user", "content": "What is the forecast?"},
+                {"role": "assistant", "content": "The saved forecast is available."},
+            ],
+        },
+        headers=csrf_headers(client),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["answer"] == "వాతావరణ సూచన అందుబాటులో ఉంది."
+    assert response.json()["context"]["field"]["name"] == "North plot"
+    assert response.json()["context"]["current_weather"]["values"]["temperature_c"] == 24
+    assert response.json()["context"]["weather_forecast"]["data"][0]["temperature_c"] == 25
+    assert response.json()["context"]["weather_forecast"]["range"] == {
+        "start_date": "2026-03-30T13:00:00+00:00",
+        "end_date": "2026-03-30T13:00:00+00:00",
+    }
+    assert response.json()["context"]["planned_irrigation"]["data"][0]["water_liters"] == 250
+    assert len(response.json()["context"]["planned_irrigation"]["data"]) == 1
+    assert response.json()["context"]["actual_water_usage"]["status"] == "unavailable"
+    assert weather_locations == ["12.500000,77.600000"]
+    assert captured["language_code"] == "te-IN"
+    assert captured["history"][-1]["role"] == "assistant"
+    foreign_response = other.post(
+        "/api/assistant/chat",
+        json={
+            "assistant_mode": "chart",
+            "question": "Show this field.",
+            "field_id": field_id,
+        },
+        headers=csrf_headers(other),
+    )
+    assert foreign_response.status_code == 404
+
+
+def test_chart_assistant_validates_custom_ranges(client_pair):
+    client, _ = client_pair
+    assert register(client).status_code == 201
+    field_id = create_prediction_field(client)
+
+    response = client.post(
+        "/api/assistant/chat",
+        json={
+            "assistant_mode": "chart",
+            "question": "Show this range.",
+            "field_id": field_id,
+            "chart_period": "custom",
+            "start_date": "2026-01-01",
+            "end_date": "2026-02-01",
+        },
+        headers=csrf_headers(client),
+    )
+
+    assert response.status_code == 422
+
+
+def test_chart_assistant_conversations_are_persisted_and_farmer_owned(client_pair, monkeypatch):
+    client, other = client_pair
+    assert register(client).status_code == 201
+    assert register(other, email="other@example.com").status_code == 201
+    captured = []
+    answers = iter(["First answer.", "Follow-up answer.", "Regenerated answer."])
+
+    async def mocked_chart_answer(question, field_data, history, language_code):
+        captured.append({
+            "question": question,
+            "history": history,
+            "language_code": language_code,
+        })
+        return next(answers)
+
+    monkeypatch.setattr(main, "answer_chart_question", mocked_chart_answer)
+    headers = csrf_headers(client)
+    first = client.post(
+        "/api/assistant/chat",
+        json={
+            "assistant_mode": "chart",
+            "question": "Summarize my farm.",
+            "persist_conversation": True,
+        },
+        headers=headers,
+    )
+    assert first.status_code == 200
+    conversation_id = first.json()["conversation_id"]
+    assert first.json()["context"]["farmer_profile"]["name"] == "Asha Rao"
+
+    follow_up = client.post(
+        "/api/assistant/chat",
+        json={
+            "assistant_mode": "chart",
+            "question": "Explain the irrigation plan.",
+            "persist_conversation": True,
+            "conversation_id": conversation_id,
+        },
+        headers=headers,
+    )
+    assert follow_up.status_code == 200
+    assert captured[1]["history"] == [
+        {"role": "user", "content": "Summarize my farm."},
+        {"role": "assistant", "content": "First answer."},
+    ]
+
+    regenerated = client.post(
+        "/api/assistant/chat",
+        json={
+            "assistant_mode": "chart",
+            "question": "This client text is ignored.",
+            "persist_conversation": True,
+            "regenerate": True,
+            "conversation_id": conversation_id,
+        },
+        headers=headers,
+    )
+    assert regenerated.status_code == 200
+    assert captured[2]["question"] == "Explain the irrigation plan."
+    assert captured[2]["history"] == [
+        {"role": "user", "content": "Summarize my farm."},
+        {"role": "assistant", "content": "First answer."},
+    ]
+
+    detail = client.get(f"/api/assistant/conversations/{conversation_id}")
+    assert detail.status_code == 200
+    assert [message["role"] for message in detail.json()["messages"]] == [
+        "user", "assistant", "user", "assistant",
+    ]
+    assert detail.json()["messages"][-1]["content"] == "Regenerated answer."
+    assert client.get("/api/assistant/conversations").json()[0]["id"] == conversation_id
+    assert other.get(f"/api/assistant/conversations/{conversation_id}").status_code == 404
+    assert other.patch(
+        f"/api/assistant/conversations/{conversation_id}",
+        json={"title": "Foreign title"},
+        headers=csrf_headers(other),
+    ).status_code == 404
+    assert other.delete(
+        f"/api/assistant/conversations/{conversation_id}",
+        headers=csrf_headers(other),
+    ).status_code == 404
+
+    renamed = client.patch(
+        f"/api/assistant/conversations/{conversation_id}",
+        json={"title": "  Farm notes  "},
+        headers=headers,
+    )
+    assert renamed.status_code == 200
+    assert renamed.json()["title"] == "Farm notes"
+    deleted = client.delete(
+        f"/api/assistant/conversations/{conversation_id}",
+        headers=headers,
+    )
+    assert deleted.status_code == 200
+    assert client.get("/api/assistant/conversations").json() == []
+
+
+def test_chart_assistant_returns_provider_retry_after(client_pair, monkeypatch):
+    client, _ = client_pair
+    assert register(client).status_code == 201
+
+    async def rate_limited(*_args, **_kwargs):
+        raise main.AssistantServiceError(
+            429,
+            "JalSaathi AI is temporarily rate-limited. Please try again later.",
+            retry_after=17,
+        )
+
+    monkeypatch.setattr(main, "answer_chart_question", rate_limited)
+    response = client.post(
+        "/api/assistant/chat",
+        json={
+            "assistant_mode": "chart",
+            "question": "Summarize my farm.",
+            "persist_conversation": True,
+        },
+        headers=csrf_headers(client),
+    )
+
+    assert response.status_code == 429
+    assert response.headers["retry-after"] == "17"
+    assert response.headers["cache-control"] == "no-store"
+    assert response.json()["detail"] == (
+        "JalSaathi AI is temporarily rate-limited. Please try again later."
+    )
+
+
+def test_image_chat_uses_owned_measurements_and_detector_result_for_followups(client_pair, monkeypatch):
+    client, other = client_pair
+    assert register(client).status_code == 201
+    assert register(other, email="other@example.com").status_code == 201
+    field_id = create_prediction_field(client)
+    other_field_id = create_prediction_field(other)
+    crop = client.post(
+        "/api/crops",
+        json={"name": "Paddy", "field_id": field_id},
+        headers=csrf_headers(client),
+    )
+    assert crop.status_code == 201
+    first_farmer_id = client.get("/api/auth/me").json()["id"]
+    other_farmer_id = other.get("/api/auth/me").json()["id"]
+    now = datetime.now(timezone.utc)
+    with main.Session(main.engine) as db:
+        db.add_all([
+            FarmerSensorReading(
+                farmer_id=first_farmer_id,
+                field_id=field_id,
+                recorded_at=now,
+                soil_moisture_percent=31.5,
+                source="test_fixture",
+            ),
+            FarmerSensorReading(
+                farmer_id=other_farmer_id,
+                field_id=other_field_id,
+                recorded_at=now,
+                soil_moisture_percent=88.9,
+                source="test_fixture",
+            ),
+        ])
+        db.commit()
+        farmer_summary = main.farmer_assistant._summarize_farmer_data(
+            db,
+            first_farmer_id,
+            "Show my soil moisture.",
+        )
+    assert "soil_moisture=31.5%" in farmer_summary
+    assert "88.9" not in farmer_summary
+
+    detector_calls = []
+    verified_prediction = {
+        "crop_name": "Rice",
+        "disease_name": "Leaf blight",
+        "confidence": 0.82,
+        "top_three_predictions": [
+            {
+                "class_name": "Rice___Leaf_blight",
+                "crop_name": "Rice",
+                "disease_name": "Leaf blight",
+                "confidence": 0.82,
+            },
+        ],
+        "is_uncertain": False,
+        "uncertainty_status": "confident",
+    }
+
+    async def mocked_detector(image_bytes, content_type):
+        detector_calls.append((image_bytes, content_type))
+        return verified_prediction
+
+    captured = []
+
+    async def mocked_gemini(question, field_data, history, language_code):
+        captured.append({
+            "question": question,
+            "field_data": field_data,
+            "history": history,
+            "language_code": language_code,
+        })
+        return "The detector found leaf blight. Check its confidence and consult local guidance."
+
+    monkeypatch.setattr(main, "predict_crop_disease", mocked_detector)
+    monkeypatch.setattr(main, "answer_chart_question", mocked_gemini)
+    monkeypatch.setattr(main, "_assistant_chart_weather", lambda *_args: {})
+    headers = csrf_headers(client)
+    image_response = client.post(
+        "/api/assistant/image",
+        data={
+            "question": "What does this leaf image show?",
+            "language_code": "en-IN",
+            "field_id": str(field_id),
+            "crop_id": str(crop.json()["id"]),
+            "chart_period": "7d",
+        },
+        files={"image": ("private-farm.jpg", b"private-image-bytes", "image/png")},
+        headers=headers,
+    )
+
+    assert image_response.status_code == 200
+    body = image_response.json()
+    conversation_id = body["conversation_id"]
+    assert detector_calls == [(b"private-image-bytes", "image/png")]
+    assert body["context"]["crop_disease"]["prediction"] == verified_prediction
+    assert body["context"]["soil_moisture_history"]["data"][0]["soil_moisture_percent"] == 31.5
+    assert all(
+        reading["soil_moisture_percent"] != 88.9
+        for reading in body["context"]["soil_moisture_history"]["data"]
+    )
+    assert captured[0]["field_data"]["crop_disease"]["source"] == "crop_disease_model"
+
+    saved = client.get(f"/api/assistant/conversations/{conversation_id}").json()
+    assert saved["messages"][0]["image_attached"] is True
+    assert "private-farm.jpg" not in repr(saved)
+    assert "private-image-bytes" not in repr(saved)
+
+    follow_up = client.post(
+        "/api/assistant/chat",
+        json={
+            "assistant_mode": "chart",
+            "question": "What should I do next?",
+            "persist_conversation": True,
+            "conversation_id": conversation_id,
+        },
+        headers=headers,
+    )
+    assert follow_up.status_code == 200
+    assert captured[-1]["field_data"]["crop_disease"]["prediction"] == verified_prediction
+    assert captured[-1]["history"][-1]["content"] == body["answer"]
+
+    foreign = other.post(
+        "/api/assistant/image",
+        data={
+            "question": "Analyze this image",
+            "field_id": str(field_id),
+        },
+        files={"image": ("leaf.png", b"not-sent-to-detector", "image/png")},
+        headers=csrf_headers(other),
+    )
+    assert foreign.status_code == 404
+    assert len(detector_calls) == 1
+    assert other.get(f"/api/assistant/conversations/{conversation_id}").status_code == 404
+
+
+def test_image_chat_rejects_unsupported_media_and_large_uploads(client_pair, monkeypatch):
+    client, _ = client_pair
+    assert register(client).status_code == 201
+
+    async def detector_must_not_run(*_args):
+        raise AssertionError("Invalid images must be rejected before disease detection.")
+
+    monkeypatch.setattr(main, "predict_crop_disease", detector_must_not_run)
+    headers = csrf_headers(client)
+    unsupported = client.post(
+        "/api/assistant/image",
+        data={"question": "Check this image"},
+        files={"image": ("leaf.svg", b"<svg/>", "image/svg+xml")},
+        headers=headers,
+    )
+    assert unsupported.status_code == 415
+
+    oversized = client.post(
+        "/api/assistant/image",
+        data={"question": "Check this image"},
+        files={"image": ("leaf.png", b"x" * (10 * 1024 * 1024 + 1), "image/png")},
+        headers=headers,
+    )
+    assert oversized.status_code == 413

@@ -1,6 +1,6 @@
 # JalSaathi Smart Irrigation
 
-JalSaathi is a FastAPI service with a browser dashboard, historical PostgreSQL sensor records, and an optional Tomorrow.io weather integration.
+JalSaathi is a Next.js farmer PWA backed by FastAPI and PostgreSQL, with an optional host-run crop disease service and weather integration.
 
 ## Run locally with Docker Compose
 
@@ -9,18 +9,25 @@ JalSaathi is a FastAPI service with a browser dashboard, historical PostgreSQL s
 3. Start the application without removing persistent data:
 
    ```powershell
-   docker compose up --build -d
+   docker compose config --services
+   docker compose build
+   docker compose up -d
+   docker compose ps
    ```
 
    The PostgreSQL data is stored in the `postgres_data` named volume. Do not use `docker compose down -v` if you need to retain it.
 
-4. Open `http://localhost:8000/` for the public JalSaathi landing page. Register or sign in with an email address; successful sign-in opens `/dashboard`, which requires an active farmer session. API health checks are available at `/health` (process liveness), `/ready` (database readiness), and `/db-test`.
+4. Open the Next.js PWA at `http://localhost:8000/`. FastAPI is available at `http://localhost:8002/` (`/health` for liveness and `/ready` for database readiness); PostgreSQL is exposed at `localhost:5433`. The PWA proxies API calls to the Compose service at `http://backend:8000`, and PostgreSQL is reached at `db:5432`. The Compose deployment keeps the existing `postgres_data` volume.
 
-The backend image includes the frontend templates, static assets, ORM models, and weather integration. At startup, SQLAlchemy `create_all` adds missing farmer, session, field, and crop tables without dropping or rewriting existing tables. This is an additive bootstrap only; future schema changes require reviewed migrations. Compose waits for PostgreSQL health before starting the backend and checks backend readiness afterward.
+The PWA includes English, Telugu, Hindi, Kannada, Tamil, and Malayalam. The dedicated legacy JalSaathi AI page uses the authenticated `/api/assistant/chat` endpoint in chart mode with Gemini; its API key remains server-side. Non-persistent chart-assistant requests, including the existing PWA and shared modal, retain the OpenAI provider. The legacy `/api/assistant/image` endpoint sends an uploaded leaf image to the separate crop disease detector on host port `8001`, then sends only its validated prediction and the authenticated farmer context to Gemini. The image is not saved by the application. The backend uses `CROP_DISEASE_API_URL`; keep the service running and set that variable if its host address differs. The legacy backend is available at `http://localhost:8002`.
+
+The backend image includes the frontend templates, static assets, ORM models, and weather integration. At startup, SQLAlchemy `create_all` adds missing farmer, session, field, crop, and assistant-conversation tables without dropping or rewriting existing tables. This is an additive bootstrap only; future schema changes require reviewed migrations. Compose waits for PostgreSQL health before starting the backend and checks backend readiness afterward.
 
 ## Historical sensor data
 
 `GET /sensor-readings?limit=100` returns the newest bounded records from the existing `sensor_readings` table. The response explicitly marks these as historical, not live telemetry, and includes the stored `data_origin` classification. Dataset `field_id` values are not assumed to identify farmer-owned fields.
+
+Farmer-linked measurements use the separate `farmer_sensor_readings` table, whose rows are constrained to the owning farmer and field. The additive SQL migration is `migrations/001_add_farmer_sensor_readings.sql`; review and apply it explicitly to the intended database before starting a backend build that includes the new ORM model. No migration is run automatically by this change. The historical `sensor_readings` dataset is not used as a farmer's sensor history. This repository does not yet include a live sensor-ingestion endpoint for the farmer-owned table, so soil history remains unavailable until trusted, correctly owned readings are supplied. Irrigation schedule volumes remain planned values, not measured water consumption.
 
 ## Farmer accounts and data
 
@@ -45,7 +52,15 @@ The dashboard field carousel and crop timeline use the signed-in farmer's saved 
 
 The Experimental Model Lab includes an optional educational chat assistant. It uses the official OpenAI Python SDK and Responses API on the server; the browser never receives the API key. Configure `OPENAI_API_KEY` and, optionally, `OPENAI_MODEL` (default `gpt-4.1-mini`) in the application environment or local `.env`, then rebuild/restart the backend. `compose.yaml` forwards these values to the backend container. Leave the key unset to keep the assistant safely unavailable; do not commit real credentials.
 
-`POST /api/assistant/chat` requires an authenticated farmer session and the same CSRF token as other mutations. Questions are limited to 1,500 characters and each farmer is limited to 10 requests per minute per backend process. Provider requests have a 20-second timeout and no automatic retries. Questions are sent to OpenAI and are not stored by the application; avoid sending sensitive personal information. Provider/configuration failures return safe error messages without exposing credentials or upstream response details.
+`POST /api/assistant/chat` requires an authenticated farmer session and the same CSRF token as other mutations. Questions are limited to 1,500 characters and each farmer is limited to 10 requests per minute per backend process. Provider requests have a 20-second timeout and no automatic retries. Non-persistent requests are sent to OpenAI and are not stored by the application; avoid sending sensitive personal information. Provider/configuration failures return safe error messages without exposing credentials or upstream response details.
+
+The PWA Chart Assistant reuses this route with `assistant_mode: "chart"` and remains non-persistent. Its server-generated context is limited to the selected farmer-owned field and crop, saved irrigation schedules, and available weather/forecast values. Soil history and actual water usage are explicitly unavailable unless backed by verified sources; chart answers are not fabricated or stored.
+
+## Gemini JalSaathi AI
+
+The dedicated legacy Chart Assistant page uses Google Gemini for persistent conversations. Configure `GEMINI_API_KEY`, optional `GEMINI_API_KEY_BACKUP`, and `GEMINI_MODEL` (default `gemini-2.5-flash`) in the application environment or local `.env`; Compose forwards them only to the backend. Recreate the backend after changing either key so the container receives the updated value. The backup key is attempted only after primary quota or provider availability failures; it must belong to a separately provisioned project to provide independent quota. Transient rate limits use bounded retries and respect provider retry delays; daily quota exhaustion is not retried. If no distinct backup key is configured, the assistant returns a clear provider error. Keys are never sent to the browser or written to logs. Conversation history is stored by the application in farmer-owned records and every conversation API filters by the authenticated farmer. Gemini server-side interaction storage is disabled. The page uses the selected farmer's available profile, fields, crops, irrigation schedules, and weather context; unavailable readings are not invented. Leave the primary key unset to keep the dedicated assistant safely unavailable.
+
+Voice input uses the browser's Web Speech recognition interface after the farmer taps the microphone control. Audio is not stored by the application; browser speech-service processing depends on browser settings. Uploaded JPEG, PNG, and WebP leaf images are sent to the configured crop disease service, limited to 10 MB, and are not persisted. Gemini receives the server-validated disease result and farmer-owned context, never the image bytes, and must explain rather than replace the trained disease model. The saved conversation records that an image was attached plus the result and explanation, not the original photo.
 
 General chat does not receive saved field data, current weather, sensor readings, or Model 2 values. The separate “Check and explain validated estimate” action can only obtain a prediction through the server-side Model 2 path, checks field and crop ownership, and passes the server-generated result—not a browser-supplied number—to the assistant. It preserves the exact prediction separately from generated explanatory text. Model 2 currently has no eligible production model or trusted prediction-time feature source, so this action remains unavailable (HTTP 503); no estimate is fabricated. This assistant is educational and does not control irrigation equipment.
 

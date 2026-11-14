@@ -569,6 +569,74 @@ class FarmerAssistantRequest(BaseModel):
         return question
 
 
+class FarmerAssistantHistoryEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role: Literal["user", "assistant"]
+    content: StrictStr = Field(min_length=1, max_length=1500)
+
+    @field_validator("content", mode="before")
+    @classmethod
+    def normalize_content(cls, value):
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+
+class ChartAssistantRequest(FarmerAssistantRequest):
+    assistant_mode: Literal["chart"]
+    field_id: int | None = Field(default=None, gt=0)
+    crop_id: int | None = Field(default=None, gt=0)
+    conversation_id: int | None = Field(default=None, gt=0)
+    persist_conversation: bool = False
+    regenerate: bool = False
+    history: list[FarmerAssistantHistoryEntry] = Field(default_factory=list, max_length=6)
+    chart_period: Literal["24h", "7d", "30d", "custom"] = "7d"
+    start_date: date | None = None
+    end_date: date | None = None
+
+    @model_validator(mode="after")
+    def validate_chart_request(self):
+        expected_role = "user"
+        for message in self.history:
+            if message.role != expected_role:
+                raise ValueError("Conversation history must alternate user and assistant messages.")
+            expected_role = "assistant" if expected_role == "user" else "user"
+        if self.history and self.history[-1].role != "assistant":
+            raise ValueError("Conversation history must end with an assistant response.")
+        if sum(len(message.content) for message in self.history) > 6000:
+            raise ValueError("Conversation history exceeds the allowed size.")
+        if self.regenerate and (self.conversation_id is None or not self.persist_conversation):
+            raise ValueError("Regenerating a response requires a saved conversation.")
+
+        if self.chart_period == "custom":
+            if self.field_id is None or self.start_date is None or self.end_date is None:
+                raise ValueError("Custom chart ranges require a selected field and both dates.")
+            if self.end_date < self.start_date:
+                raise ValueError("Chart range end_date must not precede start_date.")
+            if (self.end_date - self.start_date).days >= 31:
+                raise ValueError("Custom chart ranges cannot exceed 31 days.")
+        elif self.start_date is not None or self.end_date is not None:
+            raise ValueError("Use start_date and end_date only with a custom chart range.")
+        return self
+
+
+class AssistantConversationRenameRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: StrictStr = Field(min_length=1, max_length=120)
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def normalize_title(cls, value):
+        if isinstance(value, str):
+            title = value.strip()
+            if not title:
+                raise ValueError("Enter a conversation title.")
+            return title
+        return value
+
+
 class Model2ExplanationRequest(FarmerAssistantRequest):
     field_id: int = Field(gt=0)
     crop_id: int = Field(gt=0)

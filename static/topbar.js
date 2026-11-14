@@ -6,7 +6,7 @@
     if (!(mount instanceof HTMLElement)) return;
 
     try {
-      const response = await fetch("/static/topbar.html?v=20261104-sidebar-toggle-fix1", {
+      const response = await fetch("/static/topbar.html?v=20261114-main-assistant-pwa1", {
         credentials: "same-origin",
       });
       if (!response.ok) throw new Error(`Header component request failed (${response.status}).`);
@@ -145,6 +145,8 @@
       notificationButton,
       "#notification-panel",
     ));
+    header.querySelectorAll("[data-chart-assistant-open], [data-install-app]")
+      .forEach((button) => button.addEventListener("click", closeMenus));
     header.querySelector("[data-topbar-logout]").addEventListener("click", async () => {
       if (!window.confirm(window.JalSaathiI18n?.t("Log out of your JalSaathi account?") || "Log out of your JalSaathi account?")) return;
       try {

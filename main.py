@@ -8,14 +8,15 @@ import threading
 import time
 from collections import OrderedDict, deque
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlsplit
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
@@ -28,6 +29,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from models import (
+    AssistantConversation,
     AuthSession,
     Base,
     DailyFarmReminderSetting,
@@ -36,13 +38,23 @@ from models import (
     Farmer,
     FarmerCrop,
     FarmerField,
+    FarmerSensorReading,
     IrrigationReservoir,
     IrrigationSchedule,
 )
+from crop_disease_client import (
+    ALLOWED_IMAGE_TYPES,
+    MAX_CROP_IMAGE_BYTES,
+    CropDiseaseServiceError,
+    predict_crop_disease,
+)
 from schemas import (
+    AssistantConversationRenameRequest,
+    AssistantLanguageCode,
     CropCreate,
     CropPatch,
     CropResponse,
+    ChartAssistantRequest,
     DailyFarmReminderSettings,
     DailyFarmReminderSettingsResponse,
     DailyFarmTaskCreate,
@@ -75,6 +87,7 @@ from weather_api.integrations.weather_api import (
     WeatherUnavailableError,
     get_current_weather,
     get_forecast,
+    get_recent_history,
 )
 from sarvam_translation import (
     TranslationConfigurationError,
@@ -90,6 +103,7 @@ from farmer_assistant import (
     answer_farmer_question,
     explain_model2_prediction,
 )
+from chart_assistant import answer_chart_question, answer_chart_question_openai
 from model2_integration import load_production_model2_bundle
 from irrigation_optimizer import config as irrigation_config
 from irrigation_optimizer import water_calc as irrigation_water_calc
@@ -144,6 +158,14 @@ CSRF_COOKIE = "jalsaathi_csrf"
 PROJECT_ROOT = Path(__file__).resolve().parent
 STATIC_DIR = PROJECT_ROOT / "static"
 TEMPLATES_DIR = PROJECT_ROOT / "templates"
+PWA_ICONS_DIR = PROJECT_ROOT / "farmer-pwa" / "public" / "icons"
+PWA_ICON_FILES = {
+    "icon-192.png",
+    "icon-512.png",
+    "icon-maskable-192.png",
+    "icon-maskable-512.png",
+    "apple-touch-icon.png",
+}
 load_dotenv(PROJECT_ROOT / ".env")
 
 @asynccontextmanager
@@ -461,15 +483,41 @@ def _limit_assistant_requests(farmer_id: int) -> None:
         attempts.append(now)
 
 
+def _origin_key(value: str) -> tuple[str, str] | None:
+    try:
+        supplied = urlsplit(value)
+        _ = supplied.port
+    except ValueError:
+        return None
+    if (
+        supplied.scheme.casefold() not in {"http", "https"}
+        or not supplied.netloc
+        or supplied.username is not None
+        or supplied.password is not None
+        or supplied.path not in {"", "/"}
+        or supplied.query
+        or supplied.fragment
+    ):
+        return None
+    return supplied.scheme.casefold(), supplied.netloc.casefold()
+
+
 def _validate_origin(request: Request) -> None:
     origin = request.headers.get("origin")
     if origin:
-        supplied = urlsplit(origin)
-        expected = urlsplit(str(request.base_url))
-        if (
-            supplied.scheme != expected.scheme
-            or supplied.netloc.casefold() != expected.netloc.casefold()
-        ):
+        expected = _origin_key(str(request.base_url))
+        allowed_origins = {expected} if expected is not None else set()
+        for configured_origin in os.getenv("FARMER_PWA_ORIGINS", "").split(","):
+            configured_origin = configured_origin.strip()
+            if not configured_origin:
+                continue
+            configured_key = _origin_key(configured_origin)
+            if configured_key is None:
+                raise RuntimeError(
+                    "FARMER_PWA_ORIGINS must contain only valid HTTP(S) origins."
+                )
+            allowed_origins.add(configured_key)
+        if _origin_key(origin) not in allowed_origins:
             raise HTTPException(status_code=403, detail="Cross-origin request rejected.")
     elif request.headers.get("sec-fetch-site", "").casefold() == "cross-site":
         raise HTTPException(status_code=403, detail="Cross-origin request rejected.")
@@ -1594,13 +1642,132 @@ def _get_model2_prediction(
 
 @app.post("/api/assistant/chat")
 async def farmer_assistant_chat(
-    payload: FarmerAssistantRequest,
+    payload: FarmerAssistantRequest | ChartAssistantRequest,
     response: Response,
     db: Session = Depends(get_db),
     context: tuple[Farmer, AuthSession] = Depends(require_csrf),
 ):
     response.headers["Cache-Control"] = "no-store"
     _limit_assistant_requests(context[0].id)
+    if isinstance(payload, ChartAssistantRequest):
+        farmer_id = context[0].id
+        conversation = None
+        question = payload.question
+        history = [message.model_dump() for message in payload.history]
+        field_id = payload.field_id
+        crop_id = payload.crop_id
+        if payload.conversation_id is not None:
+            conversation = _owned_assistant_conversation(
+                db,
+                farmer_id,
+                payload.conversation_id,
+            )
+            saved_messages = conversation.messages
+            if not isinstance(saved_messages, list):
+                raise HTTPException(status_code=500, detail="Saved conversation data is invalid.")
+            if payload.regenerate:
+                if (
+                    len(saved_messages) < 2
+                    or not isinstance(saved_messages[-2], dict)
+                    or not isinstance(saved_messages[-1], dict)
+                    or saved_messages[-2].get("role") != "user"
+                    or saved_messages[-1].get("role") != "assistant"
+                    or not isinstance(saved_messages[-2].get("content"), str)
+                ):
+                    raise HTTPException(
+                        status_code=409,
+                        detail="There is no saved response to regenerate.",
+                    )
+                question = saved_messages[-2]["content"]
+                history = _assistant_history_entries(saved_messages[:-2])
+                field_id = conversation.field_id
+                crop_id = conversation.crop_id
+            else:
+                history = _assistant_history_entries(saved_messages)
+
+        selected_crop = None
+        if crop_id is not None:
+            selected_crop = _owned_crop(db, farmer_id, crop_id)
+            if field_id is not None and selected_crop.field_id != field_id:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Crop not found for the selected field.",
+                )
+            if field_id is None:
+                field_id = selected_crop.field_id
+
+        field_data = _assistant_chart_context(
+            db,
+            farmer_id,
+            field_id,
+            payload,
+            selected_crop,
+        )
+        if conversation is not None:
+            previous_disease = _latest_verified_crop_disease(conversation.messages)
+            if previous_disease is not None:
+                field_data["crop_disease"] = previous_disease
+        farmer = context[0]
+        field_data["farmer_profile"] = {
+            "name": farmer.name,
+            "state": farmer.state,
+            "district": farmer.district,
+            "village": farmer.village,
+        }
+        try:
+            answer_provider = (
+                answer_chart_question
+                if payload.persist_conversation or conversation is not None
+                else answer_chart_question_openai
+            )
+            answer = await answer_provider(
+                question,
+                field_data,
+                history,
+                payload.language_code,
+            )
+        except AssistantServiceError as error:
+            logger.warning("Chart assistant request failed with status %s.", error.status_code)
+            headers = {"Cache-Control": "no-store"}
+            if error.retry_after is not None:
+                headers["Retry-After"] = str(error.retry_after)
+            raise HTTPException(
+                status_code=error.status_code,
+                detail=error.detail,
+                headers=headers,
+            ) from error
+        result: dict[str, object] = {"answer": answer, "context": field_data}
+        if payload.persist_conversation or conversation is not None:
+            if conversation is None:
+                title = " ".join(question.split())
+                if len(title) > 120:
+                    title = f"{title[:117].rstrip()}..."
+                conversation = AssistantConversation(
+                    farmer_id=farmer_id,
+                    title=title,
+                    messages=[],
+                )
+                db.add(conversation)
+
+            saved_messages = list(conversation.messages)
+            if payload.regenerate:
+                saved_messages = saved_messages[:-1]
+            else:
+                saved_messages.append({"role": "user", "content": question})
+            saved_messages.append({
+                "role": "assistant",
+                "content": answer,
+                "context": field_data,
+            })
+            conversation.messages = saved_messages[-200:]
+            conversation.field_id = field_id
+            conversation.crop_id = selected_crop.id if selected_crop else None
+            conversation.updated_at = datetime.now(timezone.utc)
+            db.commit()
+            db.refresh(conversation)
+            result["conversation_id"] = conversation.id
+        return result
+
     token = farmer_assistant.assistant_request_context.set({
         "db": db,
         "farmer_id": context[0].id,
@@ -1624,6 +1791,879 @@ async def farmer_assistant_chat(
     finally:
         farmer_assistant.assistant_request_context.reset(token)
     return {"answer": answer}
+
+
+@app.post("/api/assistant/image")
+async def farmer_assistant_image(
+    response: Response,
+    image: UploadFile = File(...),
+    question: str = Form(..., min_length=1, max_length=1500),
+    language_code: AssistantLanguageCode = Form("en-IN"),
+    field_id: int | None = Form(None, gt=0),
+    crop_id: int | None = Form(None, gt=0),
+    chart_period: Literal["24h", "7d", "30d"] = Form("7d"),
+    conversation_id: int | None = Form(None, gt=0),
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    response.headers["Cache-Control"] = "no-store"
+    _limit_assistant_requests(context[0].id)
+    payload = ChartAssistantRequest(
+        assistant_mode="chart",
+        question=question,
+        language_code=language_code,
+        field_id=field_id,
+        crop_id=crop_id,
+        chart_period=chart_period,
+        persist_conversation=True,
+        conversation_id=conversation_id,
+    )
+    farmer_id = context[0].id
+    conversation = (
+        _owned_assistant_conversation(db, farmer_id, payload.conversation_id)
+        if payload.conversation_id is not None
+        else None
+    )
+    history = _assistant_history_entries(conversation.messages) if conversation else []
+
+    selected_crop = None
+    if payload.crop_id is not None:
+        selected_crop = _owned_crop(db, farmer_id, payload.crop_id)
+        if payload.field_id is not None and selected_crop.field_id != payload.field_id:
+            raise HTTPException(status_code=404, detail="Crop not found for the selected field.")
+        if payload.field_id is None:
+            payload.field_id = selected_crop.field_id
+    if payload.field_id is not None:
+        _owned_field(db, farmer_id, payload.field_id)
+
+    try:
+        image_bytes = await image.read(MAX_CROP_IMAGE_BYTES + 1)
+    finally:
+        await image.close()
+    if len(image_bytes) > MAX_CROP_IMAGE_BYTES:
+        raise HTTPException(status_code=413, detail="Choose an image no larger than 10 MB.")
+    content_type = image.content_type or ""
+    if content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(
+            status_code=415,
+            detail="Choose a JPEG, PNG, or WebP leaf image.",
+        )
+
+    try:
+        prediction = await predict_crop_disease(image_bytes, content_type)
+    except CropDiseaseServiceError as error:
+        status_code = 502 if error.status_code == 503 else error.status_code
+        raise HTTPException(
+            status_code=status_code,
+            detail=error.detail,
+            headers={"Cache-Control": "no-store"},
+        ) from error
+
+    field_data = _assistant_chart_context(
+        db,
+        farmer_id,
+        payload.field_id,
+        payload,
+        selected_crop,
+    )
+    field_data["farmer_profile"] = {
+        "name": context[0].name,
+        "state": context[0].state,
+        "district": context[0].district,
+        "village": context[0].village,
+    }
+    field_data["crop_disease"] = {
+        "status": "available",
+        "source": "crop_disease_model",
+        "prediction": prediction,
+    }
+    try:
+        answer = await answer_chart_question(
+            payload.question,
+            field_data,
+            history,
+            payload.language_code,
+        )
+    except AssistantServiceError as error:
+        logger.warning("Crop disease explanation failed with status %s.", error.status_code)
+        headers = {"Cache-Control": "no-store"}
+        if error.retry_after is not None:
+            headers["Retry-After"] = str(error.retry_after)
+        raise HTTPException(
+            status_code=error.status_code,
+            detail=error.detail,
+            headers=headers,
+        ) from error
+
+    if conversation is None:
+        title = " ".join(payload.question.split())
+        if len(title) > 120:
+            title = f"{title[:117].rstrip()}..."
+        conversation = AssistantConversation(
+            farmer_id=farmer_id,
+            title=title,
+            messages=[],
+        )
+        db.add(conversation)
+    saved_messages = list(conversation.messages)
+    saved_messages.append({
+        "role": "user",
+        "content": payload.question,
+        "image_attached": True,
+    })
+    saved_messages.append({
+        "role": "assistant",
+        "content": answer,
+        "context": field_data,
+    })
+    conversation.messages = saved_messages[-200:]
+    conversation.field_id = payload.field_id
+    conversation.crop_id = selected_crop.id if selected_crop else None
+    conversation.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(conversation)
+    return {
+        "answer": answer,
+        "context": field_data,
+        "conversation_id": conversation.id,
+    }
+
+
+def _owned_assistant_conversation(
+    db: Session,
+    farmer_id: int,
+    conversation_id: int,
+) -> AssistantConversation:
+    conversation = db.scalar(
+        select(AssistantConversation).where(
+            AssistantConversation.id == conversation_id,
+            AssistantConversation.farmer_id == farmer_id,
+        )
+    )
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+    return conversation
+
+
+def _assistant_history_entries(messages: list[dict]) -> list[dict[str, str]]:
+    entries = [
+        {"role": message["role"], "content": message["content"]}
+        for message in messages
+        if isinstance(message, dict)
+        and message.get("role") in {"user", "assistant"}
+        and isinstance(message.get("content"), str)
+        and message["content"].strip()
+    ]
+    return entries[-6:]
+
+
+def _latest_verified_crop_disease(messages: list[dict]) -> dict | None:
+    for message in reversed(messages):
+        if not isinstance(message, dict):
+            continue
+        context = message.get("context")
+        if not isinstance(context, dict):
+            continue
+        disease_context = context.get("crop_disease")
+        if (
+            isinstance(disease_context, dict)
+            and disease_context.get("status") == "available"
+            and disease_context.get("source") == "crop_disease_model"
+            and isinstance(disease_context.get("prediction"), dict)
+        ):
+            return disease_context
+    return None
+
+
+@app.get("/api/assistant/conversations")
+def list_assistant_conversations(
+    response: Response,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(get_auth_context),
+):
+    response.headers["Cache-Control"] = "no-store"
+    conversations = db.scalars(
+        select(AssistantConversation)
+        .where(AssistantConversation.farmer_id == context[0].id)
+        .order_by(AssistantConversation.updated_at.desc(), AssistantConversation.id.desc())
+        .limit(100)
+    ).all()
+    return [
+        {
+            "id": conversation.id,
+            "title": conversation.title,
+            "field_id": conversation.field_id,
+            "crop_id": conversation.crop_id,
+            "updated_at": conversation.updated_at.isoformat(),
+        }
+        for conversation in conversations
+    ]
+
+
+@app.get("/api/assistant/conversations/{conversation_id}")
+def get_assistant_conversation(
+    conversation_id: int,
+    response: Response,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(get_auth_context),
+):
+    response.headers["Cache-Control"] = "no-store"
+    conversation = _owned_assistant_conversation(db, context[0].id, conversation_id)
+    return {
+        "id": conversation.id,
+        "title": conversation.title,
+        "field_id": conversation.field_id,
+        "crop_id": conversation.crop_id,
+        "messages": conversation.messages,
+        "updated_at": conversation.updated_at.isoformat(),
+    }
+
+
+@app.patch("/api/assistant/conversations/{conversation_id}")
+def rename_assistant_conversation(
+    conversation_id: int,
+    payload: AssistantConversationRenameRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    response.headers["Cache-Control"] = "no-store"
+    conversation = _owned_assistant_conversation(db, context[0].id, conversation_id)
+    conversation.title = payload.title
+    conversation.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    return {"id": conversation.id, "title": conversation.title}
+
+
+@app.delete("/api/assistant/conversations/{conversation_id}")
+def delete_assistant_conversation(
+    conversation_id: int,
+    response: Response,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    response.headers["Cache-Control"] = "no-store"
+    conversation = _owned_assistant_conversation(db, context[0].id, conversation_id)
+    db.delete(conversation)
+    db.commit()
+    return {"deleted": True}
+
+
+def _assistant_chart_number(value, *, minimum=None, maximum=None):
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or (minimum is not None and value < minimum)
+        or (maximum is not None and value > maximum)
+    ):
+        return None
+    return float(value)
+
+
+def _assistant_chart_period(payload: ChartAssistantRequest) -> tuple[date, date]:
+    if payload.chart_period == "custom":
+        return payload.start_date, payload.end_date
+    today = datetime.now(timezone.utc).date()
+    days = {"24h": 1, "7d": 7, "30d": 30}[payload.chart_period]
+    return today - timedelta(days=days - 1), today
+
+
+def _assistant_chart_weather(farmer_id: int, field: FarmerField) -> dict:
+    unavailable = {
+        "current_weather": {
+            "status": "unavailable",
+            "reason": "Current field-specific weather is unavailable.",
+        },
+        "weather_forecast": {
+            "status": "unavailable",
+            "reason": "Field-specific weather forecast is unavailable.",
+            "maximum_horizon_hours": 120,
+            "data": [],
+        },
+        "recent_rainfall_history": {
+            "status": "unavailable",
+            "classification": "historical_observed",
+            "source": "selected_field_recent_weather_history_api",
+            "maximum_horizon_hours": 24,
+            "total_rainfall_mm": None,
+            "range": None,
+            "data": [],
+            "reason": "Recent observed rainfall history is unavailable.",
+        },
+    }
+    if field.latitude is not None and field.longitude is not None:
+        location = f"{field.latitude:.6f},{field.longitude:.6f}"
+    elif field.location and field.location.strip():
+        location = field.location.strip()
+    else:
+        unavailable["current_weather"]["reason"] = (
+            "This field has no saved coordinates or location for field-specific weather."
+        )
+        unavailable["weather_forecast"]["reason"] = unavailable["current_weather"]["reason"]
+        unavailable["recent_rainfall_history"]["reason"] = (
+            unavailable["current_weather"]["reason"]
+        )
+        return unavailable
+
+    try:
+        _limit_weather_requests(farmer_id)
+    except HTTPException as error:
+        reason = error.detail if isinstance(error.detail, str) else "Weather data is temporarily unavailable."
+        for section in unavailable.values():
+            section.update(reason=reason, retryable=error.status_code == 429)
+        return unavailable
+
+    def mark_unavailable(section: str, error: Exception) -> None:
+        detail = error.detail if isinstance(error, HTTPException) else str(error)
+        unavailable[section]["reason"] = (
+            detail if isinstance(detail, str) and detail else unavailable[section]["reason"]
+        )
+        if isinstance(error, HTTPException):
+            unavailable[section]["retryable"] = error.status_code == 429
+
+    try:
+        current = get_current_weather(location)
+    except (ValueError, WeatherUnavailableError, WeatherAuthError, HTTPException) as error:
+        mark_unavailable("current_weather", error)
+        current = None
+
+    try:
+        forecast = get_forecast(location, 120, timestep="1h")
+    except (ValueError, WeatherUnavailableError, WeatherAuthError, HTTPException) as error:
+        mark_unavailable("weather_forecast", error)
+        forecast = []
+
+    rainfall_history_failed = False
+    try:
+        rainfall_history = get_recent_history(location, 24)
+    except (ValueError, WeatherUnavailableError, WeatherAuthError, HTTPException) as error:
+        mark_unavailable("recent_rainfall_history", error)
+        rainfall_history = []
+        rainfall_history_failed = True
+
+    if current is None:
+        values = {key: None for key in (
+            "temperature_c", "feels_like_c", "humidity_percent",
+            "rainfall_mm_per_hr", "rain_probability_percent", "wind_speed_mps",
+        )}
+        observation_time = None
+    elif not isinstance(current, dict):
+        mark_unavailable(
+            "current_weather",
+            WeatherUnavailableError("Weather provider returned an unexpected current-weather response."),
+        )
+        current = None
+        values = {key: None for key in (
+            "temperature_c", "feels_like_c", "humidity_percent",
+            "rainfall_mm_per_hr", "rain_probability_percent", "wind_speed_mps",
+        )}
+        observation_time = None
+    else:
+        values = {
+            "temperature_c": _assistant_chart_number(current.get("temperature_c")),
+            "feels_like_c": _assistant_chart_number(current.get("feels_like_c")),
+            "humidity_percent": _assistant_chart_number(
+                current.get("humidity_percent"), minimum=0, maximum=100
+            ),
+            "rainfall_mm_per_hr": _assistant_chart_number(
+                current.get("rainfall_mm_per_hr"), minimum=0
+            ),
+            "rain_probability_percent": _assistant_chart_number(
+                current.get("precipitation_probability_percent"), minimum=0, maximum=100
+            ),
+            "wind_speed_mps": _assistant_chart_number(current.get("wind_speed_mps"), minimum=0),
+        }
+        observation_time = current.get("observation_time")
+        if isinstance(observation_time, datetime):
+            observation_time = observation_time.isoformat()
+        elif not isinstance(observation_time, str):
+            observation_time = None
+
+    if not isinstance(forecast, list):
+        mark_unavailable(
+            "weather_forecast",
+            WeatherUnavailableError("Weather provider returned an unexpected forecast response."),
+        )
+        forecast = []
+    forecast_data = []
+    for item in forecast[:72]:
+        if not isinstance(item, dict) or not isinstance(item.get("time"), str):
+            continue
+        forecast_data.append({
+            "time": item["time"],
+            "temperature_c": _assistant_chart_number(item.get("temperature_c")),
+            "humidity_percent": _assistant_chart_number(
+                item.get("humidity_percent"), minimum=0, maximum=100
+            ),
+            "rainfall_mm_per_hr": _assistant_chart_number(
+                item.get("rainfall_mm_per_hr"), minimum=0
+            ),
+            "rain_probability_percent": _assistant_chart_number(
+                item.get("precipitation_probability_percent", item.get("rain_probability_percent")),
+                minimum=0,
+                maximum=100,
+            ),
+            "wind_speed_mps": _assistant_chart_number(item.get("wind_speed_mps"), minimum=0),
+        })
+
+    if not isinstance(rainfall_history, list):
+        mark_unavailable(
+            "recent_rainfall_history",
+            WeatherUnavailableError("Weather provider returned an unexpected recent-history response."),
+        )
+        rainfall_history = []
+    observed_rainfall = []
+    for item in rainfall_history[-24:]:
+        if not isinstance(item, dict) or not isinstance(item.get("time"), str):
+            continue
+        observed_rainfall.append({
+            "time": item["time"],
+            "rain_accumulation_mm": _assistant_chart_number(
+                item.get("rain_accumulation_mm"), minimum=0
+            ),
+            "rain_intensity_mm_per_hr": _assistant_chart_number(
+                item.get("rain_intensity_mm_per_hr"), minimum=0
+            ),
+        })
+    accumulation_values = [
+        item["rain_accumulation_mm"] for item in observed_rainfall
+        if item["rain_accumulation_mm"] is not None
+    ]
+    history_complete = (
+        len(observed_rainfall) == 24
+        and len(accumulation_values) == len(observed_rainfall)
+    )
+    if observed_rainfall and accumulation_values:
+        history_status = "available" if history_complete else "partial"
+        if not history_complete:
+            reason = (
+                "Some hourly observed rainfall values are unavailable."
+                if len(accumulation_values) != len(observed_rainfall)
+                else "Observed rainfall data does not cover the full 24-hour requested period."
+            )
+            unavailable["recent_rainfall_history"]["reason"] = reason
+    else:
+        history_status = "unavailable"
+        if not rainfall_history_failed:
+            unavailable["recent_rainfall_history"]["reason"] = (
+                "No observed rainfall values are available for the recent-history period."
+            )
+    history_age_values = [
+        _assistant_chart_number(item.get("data_age_minutes"), minimum=0)
+        for item in rainfall_history if isinstance(item, dict)
+    ]
+    history_age_values = [value for value in history_age_values if value is not None]
+
+    current_available = current is not None and any(value is not None for value in values.values())
+    return {
+        "current_weather": {
+            "status": "available" if current_available else "unavailable",
+            "classification": "current_observation",
+            "source": "selected_field_current_weather_api",
+            "values": values,
+            "observation_time": observation_time,
+            "is_stale": bool(current.get("is_stale", False)) if current else False,
+            "data_age_minutes": _assistant_chart_number(
+                current.get("data_age_minutes"), minimum=0
+            ) if current else None,
+            **({"reason": unavailable["current_weather"]["reason"]}
+               if not current_available else {}),
+        },
+        "weather_forecast": {
+            "status": "available" if forecast_data else "unavailable",
+            "classification": "forecast",
+            "source": "selected_field_weather_forecast_api",
+            "maximum_horizon_hours": 120,
+            "range": {
+                "start_date": forecast_data[0]["time"],
+                "end_date": forecast_data[-1]["time"],
+            } if forecast_data else None,
+            "data": forecast_data,
+            **({"reason": unavailable["weather_forecast"]["reason"]}
+               if not forecast_data else {}),
+        },
+        "recent_rainfall_history": {
+            "status": history_status,
+            "classification": "historical_observed",
+            "source": "selected_field_recent_weather_history_api",
+            "maximum_horizon_hours": 24,
+            "coverage_hours": len(observed_rainfall),
+            "total_rainfall_mm": sum(accumulation_values) if history_complete else None,
+            "range": {
+                "start_date": observed_rainfall[0]["time"],
+                "end_date": observed_rainfall[-1]["time"],
+            } if observed_rainfall else None,
+            "data": observed_rainfall,
+            "is_stale": any(
+                item.get("is_stale", False) for item in rainfall_history
+                if isinstance(item, dict)
+            ),
+            "data_age_minutes": max(history_age_values) if history_age_values else None,
+            **({"reason": unavailable["recent_rainfall_history"]["reason"]}
+               if history_status != "available" else {}),
+        },
+    }
+
+
+def _assistant_chart_soil_history(
+    db: Session,
+    farmer_id: int,
+    fields_by_id: dict[int, FarmerField],
+    start_date: date,
+    end_date: date,
+) -> dict:
+    unavailable = {
+        "soil_moisture_history": {
+            "status": "unavailable",
+            "reason": "No verified farmer-owned soil-moisture readings are available for this date range.",
+            "unit": "percent",
+            "data": [],
+        },
+        "soil_temperature_history": {
+            "status": "unavailable",
+            "reason": "No verified farmer-owned soil-temperature readings are available for this date range.",
+            "unit": "°C",
+            "data": [],
+        },
+    }
+    if not fields_by_id:
+        return unavailable
+    start_time = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
+    end_time = datetime.combine(end_date + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
+    readings = db.scalars(
+        select(FarmerSensorReading)
+        .where(
+            FarmerSensorReading.farmer_id == farmer_id,
+            FarmerSensorReading.field_id.in_(fields_by_id),
+            FarmerSensorReading.recorded_at >= start_time,
+            FarmerSensorReading.recorded_at < end_time,
+        )
+        .order_by(FarmerSensorReading.recorded_at.desc(), FarmerSensorReading.id.desc())
+        .limit(501)
+    ).all()
+    records = [
+        {
+            "field_id": reading.field_id,
+            "field_name": fields_by_id[reading.field_id].name,
+            "recorded_at": reading.recorded_at.isoformat(),
+            "soil_moisture_percent": _assistant_chart_number(
+                reading.soil_moisture_percent,
+                minimum=0,
+                maximum=100,
+            ),
+            "soil_temperature_c": _assistant_chart_number(
+                reading.soil_temperature_c,
+                minimum=-50,
+                maximum=100,
+            ),
+            "humidity_percent": _assistant_chart_number(
+                reading.humidity_percent,
+                minimum=0,
+                maximum=100,
+            ),
+            "source": reading.source,
+        }
+        for reading in reversed(readings[:500])
+        if reading.field_id in fields_by_id
+    ]
+    result = {}
+    for history_key, metric_key, unit, reason in (
+        (
+            "soil_moisture_history",
+            "soil_moisture_percent",
+            "percent",
+            unavailable["soil_moisture_history"]["reason"],
+        ),
+        (
+            "soil_temperature_history",
+            "soil_temperature_c",
+            "°C",
+            unavailable["soil_temperature_history"]["reason"],
+        ),
+    ):
+        data = [record for record in records if record[metric_key] is not None]
+        result[history_key] = (
+            {
+                "status": "available",
+                "source": "farmer_sensor_readings",
+                "unit": unit,
+                "data": data,
+                "truncated": len(readings) > 500,
+            }
+            if data
+            else {
+                "status": "unavailable",
+                "reason": reason,
+                "unit": unit,
+                "data": [],
+            }
+        )
+    return result
+
+
+def _assistant_chart_context(
+    db: Session,
+    farmer_id: int,
+    field_id: int | None,
+    payload: ChartAssistantRequest,
+    selected_crop: FarmerCrop | None,
+) -> dict:
+    start_date, end_date = _assistant_chart_period(payload)
+    range_data = {
+        "period": payload.chart_period,
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+    }
+    generated_at = datetime.now(timezone.utc).isoformat()
+
+    if field_id is not None:
+        field = _owned_field(db, farmer_id, field_id)
+        crops = db.scalars(
+            select(FarmerCrop)
+            .where(FarmerCrop.farmer_id == farmer_id, FarmerCrop.field_id == field.id)
+            .order_by(FarmerCrop.id)
+            .limit(101)
+        ).all()
+        schedule_filters = [
+            IrrigationSchedule.farmer_id == farmer_id,
+            IrrigationSchedule.field_id == field.id,
+            IrrigationSchedule.scheduled_date >= start_date,
+            IrrigationSchedule.scheduled_date <= end_date,
+            IrrigationSchedule.status != "cancelled",
+        ]
+        if selected_crop is not None:
+            schedule_filters.append(IrrigationSchedule.crop_name == selected_crop.name)
+        schedules = db.scalars(
+            select(IrrigationSchedule)
+            .where(*schedule_filters)
+            .order_by(IrrigationSchedule.scheduled_date, IrrigationSchedule.id)
+            .limit(501)
+        ).all()
+        schedule_data = [
+            {
+                "scheduled_date": schedule.scheduled_date.isoformat(),
+                "water_liters": water_liters,
+                "status": schedule.status,
+            }
+            for schedule in schedules[:500]
+            if (water_liters := _assistant_chart_number(schedule.water_liters, minimum=0)) is not None
+        ]
+        soil_history = _assistant_chart_soil_history(
+            db,
+            farmer_id,
+            {field.id: field},
+            start_date,
+            end_date,
+        )
+        field_data = {
+            "scope": "selected farmer-owned field",
+            "range": range_data,
+            "generated_at": generated_at,
+            "field": {
+                "id": field.id,
+                "name": field.name,
+                "crop_label": field.crop,
+                "area": _assistant_chart_number(field.area, minimum=0),
+                "area_unit": field.area_unit,
+                "saved_crop_records": [
+                    {
+                        "name": crop.name,
+                        "variety": crop.variety,
+                        "planting_date": crop.planting_date.isoformat() if crop.planting_date else None,
+                        "expected_harvest_date": crop.expected_harvest_date.isoformat()
+                        if crop.expected_harvest_date else None,
+                        "growth_stage": crop.growth_stage,
+                    }
+                    for crop in crops[:100]
+                ],
+                "crops_truncated": len(crops) > 100,
+            },
+            **soil_history,
+            "actual_water_usage": {
+                "status": "unavailable",
+                "reason": "Saved schedules contain planned volumes, not measured water consumption.",
+            },
+            "planned_irrigation": {
+                "status": "available",
+                "source": "field_irrigation_schedules",
+                "label": "Planned schedule volumes; not actual water consumption.",
+                "unit": "liters",
+                "data": schedule_data,
+                "truncated": len(schedules) > 500,
+            },
+            "future_soil_moisture_prediction": {
+                "status": "unavailable",
+                "reason": "No verified field-specific soil-moisture prediction is saved.",
+            },
+            "data_limitations": [
+                *(
+                    ["Historical soil measurements are unavailable."]
+                    if soil_history["soil_moisture_history"]["status"] == "unavailable"
+                    else []
+                ),
+                "Actual measured water consumption is unavailable; schedules contain planned volumes only.",
+                "Observed rainfall history covers at most 24 hours; longer archive data is unavailable for this request.",
+                "No verified field-specific prediction is saved.",
+            ],
+        }
+        if selected_crop is not None:
+            field_data["selected_crop"] = {
+                "name": selected_crop.name,
+                "variety": selected_crop.variety,
+                "growth_stage": selected_crop.growth_stage,
+                "planting_date": selected_crop.planting_date.isoformat()
+                if selected_crop.planting_date else None,
+                "expected_harvest_date": selected_crop.expected_harvest_date.isoformat()
+                if selected_crop.expected_harvest_date else None,
+            }
+        field_data.update(_assistant_chart_weather(farmer_id, field))
+        return field_data
+
+    fields = db.scalars(
+        select(FarmerField)
+        .where(FarmerField.farmer_id == farmer_id)
+        .order_by(FarmerField.id)
+        .limit(51)
+    ).all()
+    fields_truncated = len(fields) > 50
+    fields = fields[:50]
+    field_by_id = {field.id: field for field in fields}
+    crops = db.scalars(
+        select(FarmerCrop)
+        .where(FarmerCrop.farmer_id == farmer_id)
+        .order_by(FarmerCrop.id)
+        .limit(101)
+    ).all()
+    crops_truncated = len(crops) > 100
+    crops_by_field: dict[int | None, list[dict]] = {}
+    for crop in crops[:100]:
+        crops_by_field.setdefault(crop.field_id, []).append({
+            "name": crop.name,
+            "variety": crop.variety,
+            "growth_stage": crop.growth_stage,
+            "planting_date": crop.planting_date.isoformat() if crop.planting_date else None,
+            "expected_harvest_date": crop.expected_harvest_date.isoformat()
+            if crop.expected_harvest_date else None,
+        })
+
+    schedules = []
+    if field_by_id:
+        schedule_filters = [
+            IrrigationSchedule.farmer_id == farmer_id,
+            IrrigationSchedule.field_id.in_(field_by_id),
+            IrrigationSchedule.scheduled_date >= start_date,
+            IrrigationSchedule.scheduled_date <= end_date,
+            IrrigationSchedule.status != "cancelled",
+        ]
+        if selected_crop is not None:
+            schedule_filters.append(IrrigationSchedule.crop_name == selected_crop.name)
+        schedules = db.scalars(
+            select(IrrigationSchedule)
+            .where(*schedule_filters)
+            .order_by(IrrigationSchedule.scheduled_date, IrrigationSchedule.id)
+            .limit(501)
+        ).all()
+    schedule_data = [
+        {
+            "field_id": schedule.field_id,
+            "field_name": field_by_id[schedule.field_id].name,
+            "crop_name": schedule.crop_name,
+            "scheduled_date": schedule.scheduled_date.isoformat(),
+            "water_liters": water_liters,
+            "status": schedule.status,
+        }
+        for schedule in schedules[:500]
+        if schedule.field_id in field_by_id
+        and (water_liters := _assistant_chart_number(schedule.water_liters, minimum=0)) is not None
+    ]
+    soil_history = _assistant_chart_soil_history(
+        db,
+        farmer_id,
+        field_by_id,
+        start_date,
+        end_date,
+    )
+
+    result = {
+        "scope": "authenticated farmer overview",
+        "range": range_data,
+        "generated_at": generated_at,
+        "fields": [
+            {
+                "id": field.id,
+                "name": field.name,
+                "crop_label": field.crop,
+                "area": _assistant_chart_number(field.area, minimum=0),
+                "area_unit": field.area_unit,
+                "saved_crop_records": crops_by_field.get(field.id, []),
+            }
+            for field in fields
+        ],
+        "unassigned_saved_crop_records": crops_by_field.get(None, []),
+        "fields_truncated": fields_truncated,
+        "crops_truncated": crops_truncated,
+        "current_weather": {
+            "status": "unavailable",
+            "classification": "current_observation",
+            "reason": "Select a field for field-specific current weather.",
+            "values": {},
+        },
+        "weather_forecast": {
+            "status": "unavailable",
+            "classification": "forecast",
+            "reason": "Select a field for field-specific weather charts.",
+            "maximum_horizon_hours": 120,
+            "data": [],
+        },
+        "recent_rainfall_history": {
+            "status": "unavailable",
+            "classification": "historical_observed",
+            "reason": (
+                "Select a field for observed rainfall history. The available recent-history "
+                "period is limited to 24 hours."
+            ),
+            "maximum_horizon_hours": 24,
+            "coverage_hours": 0,
+            "total_rainfall_mm": None,
+            "range": None,
+            "data": [],
+        },
+        **soil_history,
+        "actual_water_usage": {
+            "status": "unavailable",
+            "reason": "The application has no verified sensor-measured water-usage records.",
+        },
+        "planned_irrigation": {
+            "status": "available",
+            "source": "farmer_irrigation_schedules",
+            "label": "Planned schedule volumes; not actual water consumption.",
+            "unit": "liters",
+            "data": schedule_data,
+            "truncated": len(schedules) > 500,
+        },
+        "data_limitations": [
+            "Select a field for field-specific weather charts.",
+            *(
+                ["Historical soil measurements are unavailable."]
+                if soil_history["soil_moisture_history"]["status"] == "unavailable"
+                else []
+            ),
+            "Actual measured water consumption is unavailable; schedules contain planned volumes only.",
+            "Observed rainfall history covers at most 24 hours; longer archive data is unavailable for this request.",
+        ],
+    }
+    if selected_crop is not None:
+        result["selected_crop"] = {
+            "name": selected_crop.name,
+            "variety": selected_crop.variety,
+            "growth_stage": selected_crop.growth_stage,
+            "planting_date": selected_crop.planting_date.isoformat()
+            if selected_crop.planting_date else None,
+            "expected_harvest_date": selected_crop.expected_harvest_date.isoformat()
+            if selected_crop.expected_harvest_date else None,
+        }
+    return result
 
 
 @app.post("/api/assistant/model2-explanation")
@@ -1828,6 +2868,42 @@ def delete_farmer_crop(
 @app.get("/", include_in_schema=False)
 def home():
     return FileResponse(TEMPLATES_DIR / "landing.html")
+
+
+@app.get("/manifest.webmanifest", include_in_schema=False)
+def main_app_manifest():
+    return FileResponse(
+        STATIC_DIR / "main-app.webmanifest",
+        media_type="application/manifest+json",
+        headers={"Cache-Control": "no-cache"},
+    )
+
+
+@app.get("/service-worker.js", include_in_schema=False)
+def main_app_service_worker():
+    return FileResponse(
+        STATIC_DIR / "main-app-sw.js",
+        media_type="application/javascript",
+        headers={
+            "Cache-Control": "no-cache",
+            "Service-Worker-Allowed": "/",
+        },
+    )
+
+
+@app.get("/offline.html", include_in_schema=False)
+def main_app_offline_page():
+    return FileResponse(STATIC_DIR / "main-offline.html")
+
+
+@app.get("/pwa-icons/{icon_name}", include_in_schema=False)
+def main_app_pwa_icon(icon_name: str):
+    if icon_name not in PWA_ICON_FILES:
+        raise HTTPException(status_code=404, detail="PWA icon not found.")
+    icon_path = PWA_ICONS_DIR / icon_name
+    if not icon_path.is_file():
+        raise HTTPException(status_code=404, detail="PWA icon not found.")
+    return FileResponse(icon_path, headers={"Cache-Control": "public, max-age=86400"})
 
 
 @app.get("/dashboard", include_in_schema=False)

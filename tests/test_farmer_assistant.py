@@ -1,7 +1,7 @@
 import asyncio
 from types import SimpleNamespace
 
-from datetime import date
+from datetime import date, datetime, timezone
 
 import httpx
 import pytest
@@ -10,7 +10,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
 import farmer_assistant
-from models import Base, Farmer, FarmerCrop, FarmerField, IrrigationSchedule
+from models import Base, Farmer, FarmerCrop, FarmerField, FarmerSensorReading, IrrigationSchedule
 
 
 def test_missing_api_key_fails_closed(monkeypatch):
@@ -335,7 +335,16 @@ def test_farmer_context_includes_weather_and_sensor_values(monkeypatch):
         )
         db.execute(
             text("INSERT INTO sensor_readings (field_id, soil_moisture, recorded_at) VALUES (:field_id, :soil_moisture, :recorded_at)"),
-            {"field_id": field.id, "soil_moisture": 34.6, "recorded_at": "2026-11-16T06:00:00Z"},
+            {"field_id": field.id, "soil_moisture": 88.8, "recorded_at": "2026-11-16T06:00:00Z"},
+        )
+        db.add(
+            FarmerSensorReading(
+                farmer_id=farmer.id,
+                field_id=field.id,
+                recorded_at=datetime(2026, 11, 16, 6, tzinfo=timezone.utc),
+                soil_moisture_percent=34.6,
+                source="test_fixture",
+            )
         )
         db.commit()
         token = farmer_assistant.assistant_request_context.set({"db": db, "farmer_id": farmer.id})
@@ -346,6 +355,7 @@ def test_farmer_context_includes_weather_and_sensor_values(monkeypatch):
 
     assert "current weather" in captured["input"]
     assert "soil_moisture=34.6" in captured["input"]
+    assert "88.8" not in captured["input"]
 
 
 def test_model_status_notes_cover_water_and_crop_risk_questions():

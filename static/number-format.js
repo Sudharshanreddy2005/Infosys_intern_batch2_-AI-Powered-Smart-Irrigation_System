@@ -20,13 +20,11 @@
       codePoint >= digitStart && codePoint <= digitStart + 9);
     return start === undefined ? character : String(codePoint - start);
   }).join("");
-  const normalizeAssistantText = (value) => latinizeDigits(value).replace(
-    /(-?\d+(?:[.,]\d+)?)\s*°\s*C\b/gi,
-    (_match, number) => formatTemperature(number.replace(",", "."), "—"),
-  );
+  const normalizeAssistantText = (value) => latinizeDigits(value);
 
   const formatting = Object.freeze({
     formatTemperature,
+    normalizeDigits: latinizeDigits,
     normalizeAssistantText,
     numberOptions: (options = {}) => ({
       maximumFractionDigits: 20,

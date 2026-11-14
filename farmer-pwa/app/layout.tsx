@@ -32,8 +32,9 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <ServiceWorkerRegistration />
         <ThemeProvider>
           <I18nProvider>
-            <InstallExperience />
-            <FarmDataProvider>{children}</FarmDataProvider>
+            <InstallExperience>
+              <FarmDataProvider>{children}</FarmDataProvider>
+            </InstallExperience>
           </I18nProvider>
         </ThemeProvider>
       </body>

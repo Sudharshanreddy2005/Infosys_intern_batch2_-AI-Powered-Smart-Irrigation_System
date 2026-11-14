@@ -5,6 +5,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertList } from "@/components/alert-list";
 import { AppShell } from "@/components/app-shell";
+import { InstallActionButton } from "@/components/install-experience";
 import { FieldCard } from "@/components/field-card";
 import { FieldsManagement } from "@/components/farm-management";
 import { useFarmData } from "@/components/farm-data-provider";
@@ -12,7 +13,7 @@ import { ScheduleItem } from "@/components/schedule-item";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { WeatherCard } from "@/components/weather-card";
 import { isThemeChoice, useTheme } from "@/components/theme-provider";
-import { isLanguageCode, languageOptions, useI18n, type TranslationSource } from "@/components/i18n-provider";
+import { isLanguageCode, languageOptions, LanguageSelector, useI18n, type TranslationSource } from "@/components/i18n-provider";
 import { login, registerFarmer } from "@/lib/api";
 import type { ApiError, FarmerProfileUpdate, ForecastPeriod } from "@/lib/types";
 
@@ -230,7 +231,7 @@ function AuthPage({ mode }: { mode: "login" | "register" }) {
       .finally(() => setBusy(false));
   }
 
-  return <main className="auth-page"><Link className="auth-brand" href="/dashboard"><span className="brand-mark" aria-hidden="true">J</span>JalSaathi</Link><section className="auth-card" aria-labelledby="auth-title">
+  return <main className="auth-page"><div className="auth-header"><Link className="auth-brand" href="/dashboard"><span className="brand-mark" aria-hidden="true">J</span>JalSaathi</Link><div className="auth-header-actions"><LanguageSelector /><InstallActionButton /></div></div><section className="auth-card" aria-labelledby="auth-title">
     <p className="eyebrow">{t("YOUR FARM, AT A GLANCE")}</p><h1 id="auth-title">{t(mode === "login" ? "Welcome back" : "Create your farmer account")}</h1><p className="muted">{t(mode === "login" ? "Sign in to see your fields and irrigation schedule." : "Create an account to save your farm information.")}</p>
     {error ? <ErrorState>{t(error)}</ErrorState> : accountError ? <ErrorState>{t(accountError)}</ErrorState> : null}
     <form className="profile-form" onSubmit={submit}>

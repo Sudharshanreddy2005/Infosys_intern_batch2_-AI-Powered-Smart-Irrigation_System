@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f5f4e9">
+    <title data-i18n-ignore>JalSaathi | Offline</title>
+    <style>
+      :root { color-scheme: light; --page: #f5f4e9; --surface: #fffefa; --text: #1d2a1e; --muted: #56685b; --line: #dfe8df; --green: #0d5a46; }
+      body { display: grid; min-height: 100vh; box-sizing: border-box; place-items: center; margin: 0; padding: 1.5rem; background: var(--page); color: var(--text); font: 16px/1.6 Inter, "Noto Sans Devanagari", "Noto Sans Telugu", "Noto Sans Kannada", "Noto Sans Tamil", "Noto Sans Malayalam", sans-serif; }
+      main { width: min(100%, 30rem); box-sizing: border-box; padding: 2rem; border: 1px solid var(--line); border-radius: 1.25rem; background: var(--surface); box-shadow: 0 14px 34px rgb(23 56 35 / 9%); }
+      h1 { margin: 0; color: var(--green); font-size: 1.6rem; }
+      p { color: var(--muted); }
+      a { display: inline-block; margin-top: .5rem; color: var(--green); font-weight: 700; }
+    </style>
+  </head>
+  <body data-i18n-ignore>
+    <main>
+      <h1 data-offline-title>You are offline</h1>
+      <p data-offline-message>Connect to the internet to continue. Your account data is not available offline.</p>
+      <a data-offline-link href="/">Return to JalSaathi</a>
+    </main>
+    <script>
+      (() => {
+        const messages = {
+          en: ["You are offline", "Connect to the internet to continue. Your account data is not available offline.", "Return to JalSaathi"],
+          te: ["మీరు ఆఫ్‌లైన్‌లో ఉన్నారు", "కొనసాగించడానికి ఇంటర్నెట్‌కు కనెక్ట్ అవ్వండి. మీ ఖాతా డేటా ఆఫ్‌లైన్‌లో అందుబాటులో ఉండదు.", "జలసాథికి తిరిగి వెళ్లండి"],
+          hi: ["आप ऑफ़लाइन हैं", "जारी रखने के लिए इंटरनेट से जुड़ें। आपका खाता डेटा ऑफ़लाइन उपलब्ध नहीं है।", "जलसाथी पर लौटें"],
+          kn: ["ನೀವು ಆಫ್‌ಲೈನ್‌ನಲ್ಲಿದ್ದೀರಿ", "ಮುಂದುವರಿಸಲು ಇಂಟರ್ನೆಟ್‌ಗೆ ಸಂಪರ್ಕಿಸಿ. ನಿಮ್ಮ ಖಾತೆಯ ಡೇಟಾ ಆಫ್‌ಲೈನ್‌ನಲ್ಲಿ ಲಭ್ಯವಿಲ್ಲ.", "ಜಲಸಾಥಿಗೆ ಹಿಂತಿರುಗಿ"],
+          ta: ["நீங்கள் இணையமின்றி உள்ளீர்கள்", "தொடர இணையத்துடன் இணைக்கவும். உங்கள் கணக்குத் தரவு இணையமின்றி கிடைக்காது.", "ஜல்சாத்திக்குத் திரும்பவும்"],
+          ml: ["നിങ്ങൾ ഓഫ്‌ലൈനിലാണ്", "തുടരാൻ ഇന്റർനെറ്റിലേക്ക് കണക്റ്റ് ചെയ്യുക. നിങ്ങളുടെ അക്കൗണ്ട് ഡാറ്റ ഓഫ്‌ലൈനിൽ ലഭ്യമല്ല.", "ജൽസാഥിയിലേക്ക് മടങ്ങുക"],
+        };
+        let language = "en";
+        try {
+          language = localStorage.getItem("jalsaathi.main.pwa-language.v1") || "en";
+        } catch (error) {
+          console.warn("JalSaathi offline language preference could not be read.", error);
+        }
+        if (!Object.hasOwn(messages, language)) language = "en";
+        document.documentElement.lang = language;
+        const [title, description, link] = messages[language];
+        document.querySelector("[data-offline-title]").textContent = title;
+        document.querySelector("[data-offline-message]").textContent = description;
+        document.querySelector("[data-offline-link]").textContent = link;
+        document.title = `JalSaathi | ${title}`;
+      })();
+    </script>
+  </body>
+</html>

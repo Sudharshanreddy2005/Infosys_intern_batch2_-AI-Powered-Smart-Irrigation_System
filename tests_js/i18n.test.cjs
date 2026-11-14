@@ -504,15 +504,34 @@ test("temperature formatting rounds display only and keeps Latin digits across a
   }
 });
 
-test("assistant output uses Latin digits and whole-degree Celsius", () => {
-  const { numberFormatting } = createI18nHarness(async () => ({ translations: [] }));
-  const generated = [
-    String.fromCodePoint(0x0C68, 0x0C66, 0x002E, 0x0C6E, 0x00B0, 0x0043),
-    String.fromCodePoint(0x0969, 0x0968, 0x002E, 0x096B, 0x0025),
-    String.fromCodePoint(0x002D, 0x0CE8, 0x002E, 0x0CEC, 0x00B0, 0x0043),
-  ].join("; ");
+test("standalone numeric measurements remain unchanged in every supported language", () => {
+  const { api } = createI18nHarness(async () => ({ translations: [] }));
+  const measurements = ["21°C", "83%", "0.6 m/s", "0 mm/h", "1,234.5 L"];
 
-  assert.equal(numberFormatting.normalizeAssistantText(generated), "21°C; 32.5%; -3°C");
+  for (const language of ["en", "te", "hi", "kn", "ta", "ml"]) {
+    for (const measurement of measurements) {
+      assert.equal(api.t(measurement, language), measurement);
+    }
+  }
+});
+
+test("assistant output uses Latin digits without changing values in all six languages", () => {
+  const { numberFormatting } = createI18nHarness(async () => ({ translations: [] }));
+  const expected = "Field 21; farmer 42; 2026-11-15 04:11; 83%; 21.8°C; 125 L; 0.6 mm/h";
+  const regionalize = (start) => expected.replace(/\d/g, (digit) =>
+    String.fromCodePoint(start + Number(digit)));
+  const samples = [
+    expected,
+    regionalize(0x0C66),
+    regionalize(0x0966),
+    regionalize(0x0CE6),
+    regionalize(0x0BE6),
+    regionalize(0x0D66),
+  ];
+
+  samples.forEach((sample) => {
+    assert.equal(numberFormatting.normalizeAssistantText(sample), expected);
+  });
 });
 
 test("local dictionaries do not embed regional numeral glyphs", () => {
@@ -755,7 +774,7 @@ test("Sarvam translates only explicitly marked dynamic text and avoids duplicate
   const harness = createI18nHarness(async (_path, options) => {
     const body = JSON.parse(options.body);
     requests.push(body);
-    return { translations: body.texts.map(() => "अनुवादित पाठ") };
+    return { translations: body.texts.map(() => "अनुवादित पाठ ७९%") };
   }, new Map(), { remote: true });
 
   harness.api.setLanguage("ml");
@@ -768,8 +787,8 @@ test("Sarvam translates only explicitly marked dynamic text and avoids duplicate
     harness.languageSelect.childNodes.map((option) => option.textContent),
     ["English", "తెలుగు", "हिन्दी", "ಕನ್ನಡ", "தமிழ்", "മലയാളം"],
   );
-  assert.equal(harness.nodes[0].nodeValue, "अनुवादित पाठ");
-  assert.equal(harness.nodes[1].nodeValue, "अनुवादित पाठ");
+  assert.equal(harness.nodes[0].nodeValue, "अनुवादित पाठ 79%");
+  assert.equal(harness.nodes[1].nodeValue, "अनुवादित पाठ 79%");
   assert.equal(harness.nodes[2].nodeValue, "ഡാഷ്ബോർഡ്");
   assert.equal(harness.nodes[3].nodeValue, "private field name");
 });
@@ -1069,4 +1088,55 @@ test("translation audit reports missing keys without leaving English text visibl
   assert.ok(!report.untranslatedStaticStrings.includes(REMOTE_TEST_PHRASE));
   assert.ok(!report.untranslatedStaticStrings.includes(""));
   assert.ok(!report.untranslatedStaticStrings.includes("private field name"));
+});
+
+test("PWA header, installation help, and Chart Assistant labels are local in all six languages", () => {
+  const pwa = JSON.parse(fs.readFileSync(
+    path.join(__dirname, "..", "farmer-pwa", "locales", "pwa.json"),
+    "utf8",
+  ));
+  const requiredKeys = [
+    "Select language",
+    "Notifications",
+    "Upcoming irrigation",
+    "Open Chart Assistant",
+    "Chart Assistant",
+    "Select a field",
+    "Select a crop",
+    "Chart period",
+    "Custom dates",
+    "Chart Assistant could not respond. Please check your connection and try again.",
+    "No verified chart data is available for this selection.",
+    "Installation instructions",
+    "On Android, open the browser menu and choose Install app or Add to Home Screen.",
+    "If installation is unavailable, update your browser and open JalSaathi over HTTPS.",
+  ];
+
+  for (const key of requiredKeys) {
+    const translations = pwa.entries[key];
+    assert.ok(Array.isArray(translations), `missing PWA translation: ${key}`);
+    assert.equal(translations.length, 6, `incomplete PWA translation: ${key}`);
+    assert.ok(translations.every((translation) => typeof translation === "string" && translation.trim()));
+    assert.ok(translations.slice(1).every((translation) => translation !== key));
+  }
+});
+
+test("legacy Calendar and Chart Assistant copy is translated in all six languages", () => {
+  const context = { window: {} };
+  localeSources.forEach((source) => vm.runInNewContext(source, context));
+  const catalog = context.window.JalSaathiTranslationCatalog;
+  const requiredKeys = Object.keys(catalog.en).filter((key) =>
+    key.startsWith("calendar.") || key.startsWith("chartAssistant."));
+
+  assert.ok(requiredKeys.includes("calendar.monthlySummary"));
+  assert.ok(requiredKeys.includes("chartAssistant.copyResponse"));
+  assert.ok(catalog.en["nav.calendar"]);
+  for (const [code, dictionary] of Object.entries(catalog)) {
+    assert.ok(dictionary["nav.calendar"], `${code} is missing nav.calendar`);
+    for (const key of requiredKeys) {
+      assert.equal(typeof dictionary[key], "string", `${code} is missing ${key}`);
+      assert.ok(dictionary[key].trim(), `${code} has an empty translation for ${key}`);
+      if (code !== "en") assert.notEqual(dictionary[key], catalog.en[key], `${code} has untranslated ${key}`);
+    }
+  }
 });

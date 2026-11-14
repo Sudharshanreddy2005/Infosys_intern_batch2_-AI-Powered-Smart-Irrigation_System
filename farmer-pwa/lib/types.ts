@@ -89,6 +89,92 @@ export type ScheduleActionResponse = {
 
 export type ScheduleAction = "confirm" | "cancel" | "complete";
 
+export type AssistantLanguageCode = "en-IN" | "te-IN" | "hi-IN" | "kn-IN" | "ta-IN" | "ml-IN";
+export type AssistantHistoryEntry = {
+  role: "user" | "assistant";
+  content: string;
+};
+export type ChartPeriod = "24h" | "7d" | "30d" | "custom";
+export type ChartAssistantRequest = {
+  assistant_mode: "chart";
+  question: string;
+  language_code: AssistantLanguageCode;
+  field_id?: number | null;
+  crop_id?: number | null;
+  history: AssistantHistoryEntry[];
+  chart_period: ChartPeriod;
+  start_date?: string;
+  end_date?: string;
+};
+export type ChartAssistantField = {
+  id: number;
+  name: string;
+  crop_label: string | null;
+  area: number | null;
+  area_unit: string;
+};
+export type ChartAssistantForecastPoint = {
+  time: string;
+  temperature_c: number | null;
+  humidity_percent: number | null;
+  rainfall_mm_per_hr: number | null;
+  rain_probability_percent: number | null;
+  wind_speed_mps: number | null;
+};
+export type ChartAssistantSchedulePoint = {
+  field_id?: number;
+  field_name?: string;
+  crop_name?: string;
+  scheduled_date: string;
+  water_liters: number;
+  status: string;
+};
+export type ChartAssistantContext = {
+  scope: string;
+  range: { period: string; start_date: string; end_date: string };
+  generated_at: string;
+  field?: ChartAssistantField;
+  fields?: ChartAssistantField[];
+  selected_crop?: {
+    name: string;
+    variety: string | null;
+    growth_stage: string | null;
+    planting_date: string | null;
+    expected_harvest_date: string | null;
+  };
+  current_weather?: {
+    status: string;
+    values?: {
+      temperature_c: number | null;
+      feels_like_c: number | null;
+      humidity_percent: number | null;
+      rainfall_mm_per_hr: number | null;
+      rain_probability_percent: number | null;
+      wind_speed_mps: number | null;
+    };
+    observation_time?: string | null;
+  };
+  weather_forecast: {
+    status: string;
+    source?: string;
+    maximum_horizon_hours?: number;
+    data: ChartAssistantForecastPoint[];
+  };
+  planned_irrigation: {
+    status: string;
+    source?: string;
+    label?: string;
+    unit: string;
+    data: ChartAssistantSchedulePoint[];
+  };
+  soil_moisture_history?: { status: string; reason?: string };
+  actual_water_usage?: { status: string; reason?: string };
+};
+export type ChartAssistantResponse = {
+  answer: string;
+  context: ChartAssistantContext;
+};
+
 export type CurrentWeather = {
   location?: string;
   locality?: string | null;

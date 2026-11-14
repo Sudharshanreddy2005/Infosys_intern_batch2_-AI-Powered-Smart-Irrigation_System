@@ -414,6 +414,166 @@
         <p class="portal-empty-note" data-ai-dashboard-loading role="status" aria-live="polite">Loading your fields and model status…</p>
       `,
     },
+    calendar: {
+      title: "Calendar",
+      subtitle: "Review your irrigation plans and crop dates.",
+      render: `
+        <section class="calendar-page" data-calendar-root>
+          <div class="portal-page-heading">
+            <div><h1 data-i18n-key="calendar.title">Calendar</h1><p data-i18n-key="calendar.subtitle">Review your irrigation plans and crop dates.</p></div>
+            <span class="portal-demo-tag" data-i18n-key="calendar.accountData">Farmer account data</span>
+          </div>
+          <div class="calendar-toolbar">
+            <div class="calendar-month-navigation">
+              <button class="calendar-secondary-action calendar-month-step" type="button" data-calendar-prev><span aria-hidden="true">‹</span><span data-i18n-key="calendar.previousMonth">Previous month</span></button>
+              <h2 id="calendar-month-label" data-calendar-month></h2>
+              <button class="calendar-secondary-action calendar-month-step" type="button" data-calendar-next><span data-i18n-key="calendar.nextMonth">Next month</span><span aria-hidden="true">›</span></button>
+            </div>
+            <button class="calendar-secondary-action" type="button" data-calendar-today data-i18n-key="calendar.today">Today</button>
+          </div>
+          <div class="calendar-filters">
+            <label><span data-i18n-key="calendar.fieldFilter">Field</span>
+              <select data-calendar-field><option value="all" data-i18n-key="calendar.allFields">All fields</option></select>
+            </label>
+            <label><span data-i18n-key="calendar.cropFilter">Crop</span>
+              <select data-calendar-crop><option value="all" data-i18n-key="calendar.allCrops">All crops</option></select>
+            </label>
+          </div>
+          <p class="calendar-feedback" data-calendar-feedback role="status" aria-live="polite" hidden></p>
+          <button class="calendar-secondary-action calendar-retry" type="button" data-calendar-retry data-i18n-key="calendar.retry" hidden>Retry</button>
+          <div class="calendar-layout">
+            <section class="portal-card calendar-month-card" aria-labelledby="calendar-month-label">
+              <div class="calendar-weekdays" role="row">
+                <span data-i18n-key="calendar.weekdaySun">Sun</span><span data-i18n-key="calendar.weekdayMon">Mon</span>
+                <span data-i18n-key="calendar.weekdayTue">Tue</span><span data-i18n-key="calendar.weekdayWed">Wed</span>
+                <span data-i18n-key="calendar.weekdayThu">Thu</span><span data-i18n-key="calendar.weekdayFri">Fri</span>
+                <span data-i18n-key="calendar.weekdaySat">Sat</span>
+              </div>
+              <div class="calendar-grid" data-calendar-grid role="grid" aria-labelledby="calendar-month-label"></div>
+              <div class="calendar-legend" aria-labelledby="calendar-legend-title">
+                <span class="common-sr-only" id="calendar-legend-title" data-i18n-key="calendar.legendTitle">Calendar event legend</span>
+                <span class="calendar-legend-item"><i class="calendar-dot calendar-dot--completed"></i><span data-i18n-key="calendar.completed">Completed</span></span>
+                <span class="calendar-legend-item"><i class="calendar-dot calendar-dot--pending"></i><span data-i18n-key="calendar.pending">Pending</span></span>
+                <span class="calendar-legend-item"><i class="calendar-dot calendar-dot--unsuccessful"></i><span data-i18n-key="calendar.unsuccessful">Unsuccessful</span></span>
+                <span class="calendar-legend-item"><i class="calendar-dot calendar-dot--unconfirmed"></i><span data-i18n-key="calendar.notConfirmed">Not confirmed</span></span>
+                <span class="calendar-legend-item"><i class="calendar-dot calendar-dot--crop"></i><span data-i18n-key="calendar.cropDate">Crop date</span></span>
+                <span class="calendar-legend-item"><i class="calendar-dot calendar-dot--cancelled"></i><span data-i18n-key="calendar.cancelled">Cancelled</span></span>
+              </div>
+            </section>
+            <aside class="portal-card calendar-details-card" aria-labelledby="calendar-details-title">
+              <h2 id="calendar-details-title" data-i18n-key="calendar.selectedDate">Selected date</h2>
+              <p class="calendar-selected-date" data-calendar-selected-date></p>
+              <div class="calendar-status-counts" data-calendar-status-counts></div>
+              <div class="calendar-water-summary">
+                <div><span data-i18n-key="calendar.plannedWater">Planned water</span><strong data-calendar-planned-water></strong></div>
+                <div><span data-i18n-key="calendar.actualWater">Measured water</span><strong data-calendar-actual-water data-i18n-key="calendar.actualWaterUnavailable">Unavailable</strong></div>
+              </div>
+              <p class="calendar-empty-note" data-calendar-empty hidden></p>
+              <div class="calendar-event-list" data-calendar-events></div>
+            </aside>
+          </div>
+          <section class="calendar-summary" aria-labelledby="calendar-summary-title">
+            <h2 id="calendar-summary-title" data-i18n-key="calendar.monthlySummary">Monthly summary</h2>
+            <div class="calendar-summary-grid">
+              <article class="portal-card calendar-summary-card"><span data-i18n-key="calendar.totalEvents">Irrigation events</span><strong data-calendar-total></strong></article>
+              <article class="portal-card calendar-summary-card"><span data-i18n-key="calendar.completedCount">Completed</span><strong data-calendar-completed></strong></article>
+              <article class="portal-card calendar-summary-card"><span data-i18n-key="calendar.pendingCount">Pending</span><strong data-calendar-pending></strong></article>
+              <article class="portal-card calendar-summary-card"><span data-i18n-key="calendar.monthlyPlannedWater">Planned water this month</span><strong data-calendar-monthly-water></strong></article>
+            </div>
+          </section>
+        </section>
+      `,
+    },
+    "chart-assistant": {
+      title: "JalSaathi AI",
+      subtitle: "Ask questions about your farm data and create reports.",
+      render: `
+        <section class="chart-assistant-page" data-chart-assistant-page>
+          <div class="ai-chat-layout" data-ai-chat>
+            <aside class="ai-chat-sidebar" data-ai-sidebar aria-label="Recent conversations">
+              <div class="ai-chat-sidebar-heading">
+                <span class="ai-chat-logo" aria-hidden="true">
+                  <svg viewBox="0 0 24 24"><path d="M12 3 4 7v5c0 4.5 3.1 7.7 8 9 4.9-1.3 8-4.5 8-9V7l-8-4Z" /><path d="m8.5 12 2.2 2.2 4.8-5" /></svg>
+                </span>
+                <div><strong data-i18n-key="aiChat.brand">JalSaathi AI</strong><small data-i18n-key="aiChat.historyTitle">Recent conversations</small></div>
+                <button class="ai-chat-icon-button ai-chat-mobile-close" type="button" data-ai-close-sidebar aria-label="Close conversation history">×</button>
+              </div>
+              <button class="ai-chat-new-button" type="button" data-ai-new>
+                <span aria-hidden="true">+</span><span data-i18n-key="aiChat.newChat">New chat</span>
+              </button>
+              <p class="ai-chat-history-empty" data-ai-history-empty data-i18n-key="aiChat.noConversations">Your conversations will appear here.</p>
+              <div class="ai-chat-history-list" data-ai-history-list></div>
+            </aside>
+            <section class="ai-chat-main" aria-label="JalSaathi AI conversation">
+              <header class="ai-chat-header">
+                <button class="ai-chat-icon-button ai-chat-mobile-open" type="button" data-ai-open-sidebar aria-label="Open conversation history">☰</button>
+                <div class="ai-chat-heading">
+                  <h1 data-i18n-key="aiChat.brand">JalSaathi AI</h1>
+                  <p><span class="ai-chat-status-dot" aria-hidden="true"></span><span data-i18n-key="aiChat.ready">Ready to help</span></p>
+                </div>
+                <div class="ai-chat-header-actions">
+                  <button class="ai-chat-secondary-button" type="button" data-ai-clear disabled data-i18n-key="aiChat.clearConversation">Clear conversation</button>
+                </div>
+              </header>
+              <div class="ai-chat-controls">
+                <label><span data-i18n-key="chartAssistant.field">Field</span>
+                  <select data-ai-field><option value="all" data-i18n-key="chartAssistant.allFields">All fields</option></select>
+                </label>
+                <label><span data-i18n-key="chartAssistant.crop">Crop</span>
+                  <select data-ai-crop><option value="all" data-i18n-key="chartAssistant.allCrops">All crops</option></select>
+                </label>
+                <label><span data-i18n-key="chartAssistant.period">Date range</span>
+                  <select data-ai-period>
+                    <option value="24h" data-i18n-key="chartAssistant.24h">24 hours</option>
+                    <option value="7d" selected data-i18n-key="chartAssistant.7d">7 days</option>
+                    <option value="30d" data-i18n-key="chartAssistant.30d">30 days</option>
+                  </select>
+                </label>
+                <label><span data-i18n-key="chartAssistant.reportFormat">Report format</span>
+                  <select data-ai-format>
+                    <option value="text" data-i18n-key="chartAssistant.textFormat">Text</option>
+                    <option value="chart" data-i18n-key="chartAssistant.chartFormat">Chart</option>
+                  </select>
+                </label>
+              </div>
+              <div class="ai-chat-rename" data-ai-rename-panel hidden>
+                <label><span data-i18n-key="aiChat.renameTitle">Conversation title</span>
+                  <input type="text" maxlength="120" data-ai-rename-input>
+                </label>
+                <button class="ai-chat-secondary-button" type="button" data-ai-rename-cancel data-i18n-key="aiChat.cancel">Cancel</button>
+                <button class="ai-chat-primary-button" type="button" data-ai-rename-save data-i18n-key="aiChat.save">Save</button>
+              </div>
+              <p class="ai-chat-feedback" data-ai-feedback role="status" aria-live="polite" hidden></p>
+              <div class="ai-chat-thread" data-ai-thread aria-live="polite" aria-relevant="additions text"></div>
+              <form class="ai-chat-form" data-ai-form>
+                <label class="common-sr-only" for="ai-chat-question" data-i18n-key="aiChat.questionLabel">Ask JalSaathi AI about your farm</label>
+                <div class="ai-chat-image-preview" data-ai-image-preview hidden></div>
+                <div class="ai-chat-compose-tools">
+                  <input class="common-sr-only" type="file" data-ai-image-input accept="image/jpeg,image/png,image/webp">
+                  <button class="ai-chat-tool-button" type="button" data-ai-attach aria-haspopup="menu" aria-expanded="false" data-i18n-key="aiChat.attachPhoto">Add leaf photo</button>
+                  <div class="ai-chat-attachment-menu" data-ai-attachment-menu role="menu" hidden>
+                    <button class="ai-chat-tool-button" type="button" data-ai-upload role="menuitem" data-i18n-key="aiChat.uploadPhoto">Upload photo</button>
+                    <button class="ai-chat-tool-button" type="button" data-ai-camera role="menuitem" data-i18n-key="aiChat.takePhoto">Take photo</button>
+                  </div>
+                  <button class="ai-chat-tool-button" type="button" data-ai-voice data-i18n-key="aiChat.voiceInput">Voice input</button>
+                </div>
+                <div class="ai-chat-camera-panel" data-ai-camera-panel hidden>
+                  <video data-ai-camera-video autoplay playsinline muted></video>
+                  <div class="ai-chat-camera-actions">
+                    <button class="ai-chat-tool-button" type="button" data-ai-camera-capture data-i18n-key="aiChat.capturePhoto">Capture photo</button>
+                    <button class="ai-chat-tool-button" type="button" data-ai-camera-close data-i18n-key="aiChat.closeCamera">Close camera</button>
+                  </div>
+                </div>
+                <textarea id="ai-chat-question" data-ai-question rows="2" maxlength="1500" placeholder="Ask about your fields, crops, weather, or irrigation…" data-i18n-key="aiChat.questionPlaceholder"></textarea>
+                <button class="ai-chat-send-button" type="submit" data-ai-send aria-label="Send message" data-i18n-key="aiChat.send">Send</button>
+                <p class="ai-chat-disclaimer" data-i18n-key="aiChat.dataNotice">Answers use only data available in your farmer account.</p>
+              </form>
+            </section>
+            <button class="ai-chat-sidebar-scrim" type="button" data-ai-close-sidebar aria-label="Close conversation history" hidden></button>
+          </div>
+        </section>
+      `,
+    },
   };
 
   const params = new URLSearchParams(window.location.search);
@@ -458,6 +618,8 @@
   if (view === "experimental-model") void initializeExperimentalModelView(content);
   if (view === "predictions") void window.JalSaathiModelPredictions?.initialize(content);
   if (view === "ai-model-predictions") void window.JalSaathiAIDashboard?.initialize(content);
+  if (view === "calendar") void window.JalSaathiCalendar?.initialize(content);
+  if (view === "chart-assistant") window.JalSaathiAiChat?.initialize(content);
 
   const renderGreeting = () => {
     const userName = window.JalSaathiProfile.getDisplayName();

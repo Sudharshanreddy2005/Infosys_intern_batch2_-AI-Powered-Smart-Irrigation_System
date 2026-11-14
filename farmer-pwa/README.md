@@ -1,11 +1,24 @@
 # JalSaathi Farmer PWA
 
+## Docker Compose
+
+From the repository root, run:
+
+```powershell
+docker compose config --services
+docker compose build
+docker compose up -d
+docker compose ps
+```
+
+The PWA is at `http://localhost:8000`, FastAPI at `http://localhost:8002`, and PostgreSQL at `localhost:5433`. The Next.js proxy uses `http://backend:8000` inside Docker. Crop disease detection remains a separately managed service on host port `8001`; it is not started or duplicated by this Compose file. Do not use `docker compose down -v` if the PostgreSQL data must be retained.
+
 ## Local development
 
-1. Start the FastAPI backend and PostgreSQL using the repository's existing setup.
+1. Start PostgreSQL and FastAPI using the repository's setup.
 2. From `farmer-pwa`, copy `.env.example` to `.env.local`.
-3. Keep `NEXT_PUBLIC_API_URL` empty to use the same-origin Next.js rewrite proxy. Set `FASTAPI_ORIGIN` to the reachable backend URL.
-4. Configure the backend's `FARMER_PWA_ORIGINS` to allow `http://localhost:3000` and `http://127.0.0.1:3000`; this is used by existing origin/CSRF checks, not CORS.
+3. Keep `NEXT_PUBLIC_API_URL` empty to use the same-origin Next.js rewrite proxy. For local `npm run dev`, set `FASTAPI_ORIGIN=http://localhost:8002` when using the Compose backend.
+4. Configure the backend's `FARMER_PWA_ORIGINS` with the exact local browser origins used by the PWA (for example `http://localhost:3000` for `npm run dev` or `http://localhost:8000` for Docker). This allowlist is used by origin/CSRF checks, not CORS.
 5. Set `CROP_DISEASE_ORIGIN` (or `NEXT_PUBLIC_CROP_DISEASE_URL`) when the standalone crop disease service is running on another host or in Docker. Do not assume `localhost` resolves to the same machine from both the browser and the container.
 6. Run `npm install` if dependencies are not installed, then `npm run dev`.
 7. Open `http://localhost:3000`.

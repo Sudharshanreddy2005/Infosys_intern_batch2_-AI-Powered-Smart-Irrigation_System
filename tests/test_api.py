@@ -1,4 +1,5 @@
 import os
+from types import SimpleNamespace
 
 os.environ["DATABASE_URL"] = "sqlite://"
 
@@ -114,6 +115,76 @@ def test_current_weather_returns_provider_data_without_live_network(monkeypatch)
     assert response.status_code == 200
     assert response.json()["location"] == "10,20"
     assert response.json()["temperature_c"] == 21
+
+
+def test_assistant_weather_context_keeps_observations_and_forecasts_distinct(monkeypatch):
+    observed_rainfall = [
+        {
+            "time": f"2026-03-30T{hour:02d}:00:00Z",
+            "rain_accumulation_mm": 2.5 if hour == 23 else 0,
+            "rain_intensity_mm_per_hr": 1.1 if hour == 23 else 0,
+            "is_stale": False,
+            "data_age_minutes": 0,
+        }
+        for hour in range(24)
+    ]
+    monkeypatch.setattr(main, "_limit_weather_requests", lambda farmer_id: None)
+    monkeypatch.setattr(
+        main,
+        "get_current_weather",
+        lambda location: {
+            "temperature_c": 22,
+            "observation_time": "2026-03-30T12:00:00Z",
+        },
+    )
+    monkeypatch.setattr(
+        main,
+        "get_forecast",
+        lambda location, hours, timestep="1h": [
+            {"time": "2026-03-30T13:00:00Z", "rainfall_mm_per_hr": 4},
+        ],
+    )
+    monkeypatch.setattr(
+        main,
+        "get_recent_history",
+        lambda location, hours: observed_rainfall,
+    )
+
+    context = main._assistant_chart_weather(
+        12,
+        SimpleNamespace(latitude=12.5, longitude=77.6, location=None),
+    )
+
+    assert context["current_weather"]["classification"] == "current_observation"
+    assert context["current_weather"]["values"]["temperature_c"] == 22
+    assert context["weather_forecast"]["classification"] == "forecast"
+    assert context["weather_forecast"]["data"][0]["rainfall_mm_per_hr"] == 4
+    assert context["recent_rainfall_history"]["classification"] == "historical_observed"
+    assert context["recent_rainfall_history"]["total_rainfall_mm"] == 2.5
+    assert context["recent_rainfall_history"]["coverage_hours"] == 24
+    assert len(context["recent_rainfall_history"]["data"]) == 24
+
+
+def test_assistant_weather_context_does_not_total_incomplete_observations(monkeypatch):
+    monkeypatch.setattr(main, "_limit_weather_requests", lambda farmer_id: None)
+    monkeypatch.setattr(main, "get_current_weather", lambda location: {})
+    monkeypatch.setattr(main, "get_forecast", lambda location, hours, timestep="1h": [])
+    monkeypatch.setattr(
+        main,
+        "get_recent_history",
+        lambda location, hours: [
+            {"time": "2026-03-30T10:00:00Z", "rain_accumulation_mm": 2},
+            {"time": "2026-03-30T11:00:00Z", "rain_accumulation_mm": None},
+        ],
+    )
+
+    context = main._assistant_chart_weather(
+        12,
+        SimpleNamespace(latitude=12.5, longitude=77.6, location=None),
+    )
+
+    assert context["recent_rainfall_history"]["status"] == "partial"
+    assert context["recent_rainfall_history"]["total_rainfall_mm"] is None
 
 
 def test_provider_rate_limit_retry_after_is_forwarded(monkeypatch):

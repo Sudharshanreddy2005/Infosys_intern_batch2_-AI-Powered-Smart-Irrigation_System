@@ -1,5 +1,7 @@
 import type {
   ApiError,
+  ChartAssistantRequest,
+  ChartAssistantResponse,
   CurrentWeather,
   CropCreatePayload,
   CropPatchPayload,
@@ -83,6 +85,11 @@ export const getProfile = () => apiRequest<FarmerProfile>("/api/auth/me");
 export const getFields = () => apiRequest<FarmField[]>("/api/fields");
 export const getCrops = () => apiRequest<FarmCrop[]>("/api/crops");
 export const getSchedules = () => apiRequest<ScheduleListResponse>("/api/irrigation/schedules");
+export const askChartAssistant = (payload: ChartAssistantRequest) =>
+  apiRequest<ChartAssistantResponse>("/api/assistant/chat", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 export const performScheduleAction = (scheduleId: number, action: ScheduleAction) =>
   apiRequest<ScheduleActionResponse>(
     `/api/irrigation/schedules/${encodeURIComponent(String(scheduleId))}/${action}`,
@@ -220,9 +227,7 @@ export async function clearPageCache(): Promise<void> {
   const cacheNames = await caches.keys();
   await Promise.all(cacheNames
     .filter((name) => name.startsWith(`${APP_CACHE_PREFIX}pages-`))
-    .map(async (name) => {
-      if (!await caches.delete(name)) throw new Error(`Could not clear offline page cache ${name}.`);
-    }));
+    .map((name) => caches.delete(name)));
 }
 
 export async function clearClientData(): Promise<void> {

@@ -1,10 +1,9 @@
 import contextvars
 import json
 import os
-from datetime import datetime
 from pathlib import Path
 
-from sqlalchemy import inspect, select, text
+from sqlalchemy import select
 from openai import (
     APIConnectionError,
     APIStatusError,
@@ -14,7 +13,7 @@ from openai import (
     OpenAIError,
     RateLimitError,
 )
-from models import FarmerCrop, FarmerField, IrrigationSchedule
+from models import FarmerCrop, FarmerField, FarmerSensorReading, IrrigationSchedule
 from model1.inference import load_artifact_bundle, predict_records as predict_model1_records
 from model2_integration import load_production_model2_bundle
 from weather_api.integrations.weather_api import get_current_weather, get_forecast
@@ -169,48 +168,36 @@ def _weather_note_for_field(field) -> str:
         return "; current weather unavailable"
 
 
-def _sensor_summary_for_field(db, field_id: int, farmer_field_ids: set[int]) -> str:
-    try:
-        inspector = inspect(db.bind)
-        if not inspector.has_table("sensor_readings"):
-            return "sensor data unavailable"
-        columns = [column["name"] for column in inspector.get_columns("sensor_readings")]
-        if not columns or "field_id" not in columns:
-            return "sensor data unavailable"
-        order_column = "recorded_at" if "recorded_at" in columns else "timestamp" if "timestamp" in columns else None
-        if order_column is None:
-            return "sensor data unavailable"
-        metric_names = [
-            name for name in ("soil_moisture", "soil_moisture_percent", "moisture_percent", "moisture", "temperature_c", "temperature", "humidity_percent", "humidity")
-            if name in columns
-        ]
-        if not metric_names:
-            return "sensor data unavailable"
-        summaries = []
-        for field in sorted(farmer_field_ids):
-            selected = ["field_id", order_column] + metric_names
-            selector = ", ".join(selected)
-            rows = db.execute(
-                text(
-                    f"SELECT {selector} FROM sensor_readings "
-                    "WHERE field_id = :field_id "
-                    f"ORDER BY {order_column} DESC LIMIT 5"
-                ),
-                {"field_id": field},
-            ).fetchall()
-            for row in rows:
-                values = {column: row[index] for index, column in enumerate(selected)}
-                metric_text = ", ".join(
-                    f"{metric}={values.get(metric)}" for metric in metric_names if values.get(metric) is not None
-                ) or "no measurements"
-                summaries.append(
-                    f"field_id={values.get('field_id')}, {metric_text}, at={values.get(order_column)}"
-                )
-        if not summaries:
-            return "no recent sensor values for your fields"
-        return "; ".join(summaries[:10])
-    except Exception:
-        return "sensor data unavailable"
+def _sensor_summary_for_farmer(db, farmer_id: int, fields: dict[int, FarmerField]) -> str:
+    if not fields:
+        return "no registered fields"
+    readings = db.scalars(
+        select(FarmerSensorReading)
+        .where(
+            FarmerSensorReading.farmer_id == farmer_id,
+            FarmerSensorReading.field_id.in_(fields),
+        )
+        .order_by(FarmerSensorReading.recorded_at.desc(), FarmerSensorReading.id.desc())
+        .limit(10)
+    ).all()
+    if not readings:
+        return "no verified farmer-owned sensor readings are available"
+
+    summaries = []
+    for reading in readings:
+        metrics = []
+        if reading.soil_moisture_percent is not None:
+            metrics.append(f"soil_moisture={reading.soil_moisture_percent}%")
+        if reading.soil_temperature_c is not None:
+            metrics.append(f"soil_temperature={reading.soil_temperature_c}°C")
+        if reading.humidity_percent is not None:
+            metrics.append(f"humidity={reading.humidity_percent}%")
+        summaries.append(
+            f"field='{fields[reading.field_id].name}', "
+            f"{', '.join(metrics)}, at={reading.recorded_at.isoformat()}, "
+            f"source={reading.source}"
+        )
+    return "; ".join(summaries)
 
 
 def _summarize_farmer_data(db, farmer_id: int, question: str | None = None) -> str:
@@ -236,7 +223,7 @@ def _summarize_farmer_data(db, farmer_id: int, question: str | None = None) -> s
         ).all()
     )
     relevant_topics = _infer_relevant_context(question)
-    farmer_field_ids = {field.id for field in field_rows}
+    fields_by_id = {field.id: field for field in field_rows}
     model_notes = _model_status_notes(question)
 
     field_lines = []
@@ -275,7 +262,11 @@ def _summarize_farmer_data(db, farmer_id: int, question: str | None = None) -> s
     if not schedule_lines:
         schedule_lines.append("- No irrigation schedules yet.")
 
-    sensor_summary = _sensor_summary_for_field(db, None, farmer_field_ids) if "sensor" in relevant_topics else "sensor data not requested"
+    sensor_summary = (
+        _sensor_summary_for_farmer(db, farmer_id, fields_by_id)
+        if "sensor" in relevant_topics
+        else "sensor data not requested"
+    )
 
     context_lines = [
         "Farmer context summary:\n",
@@ -324,13 +315,15 @@ async def _request_response(
     input_text: str,
     instructions: str,
     language_code: AssistantLanguageCode,
+    *,
+    max_input_characters: int = 5000,
 ) -> str:
     if not isinstance(input_text, str):
         raise AssistantServiceError(400, "The question must be submitted as plain text.")
     input_text = input_text.strip()
     if not input_text:
         raise AssistantServiceError(400, "Enter a question.")
-    if len(input_text) > 5000:
+    if len(input_text) > max_input_characters:
         raise AssistantServiceError(400, "The question exceeds the allowed length.")
 
     api_key = os.getenv("OPENAI_API_KEY", "").strip()

@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useFarmData } from "@/components/farm-data-provider";
-import { isTranslationSource, useI18n, type TranslationSource } from "@/components/i18n-provider";
+import { ChartAssistantDialog } from "@/components/chart-assistant";
+import { isTranslationSource, LanguageSelector, useI18n, type TranslationSource } from "@/components/i18n-provider";
+import { InstallActionButton } from "@/components/install-experience";
 import { ErrorState, LoadingState, OfflineBanner } from "@/components/states";
 
 type NavigationItem = { href: string; label: TranslationSource; icon: string };
@@ -26,6 +28,8 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   const { data, loading, online, error, refreshing, refreshCooling, refresh, signOut } = useFarmData();
   const { t, formatDateTime } = useI18n();
   const [scheduleActionNotice, setScheduleActionNotice] = useState<TranslationSource | "">("");
+  const [chartAssistantOpen, setChartAssistantOpen] = useState(false);
+  const closeChartAssistant = useCallback(() => setChartAssistantOpen(false), []);
 
   useEffect(() => {
     const navigateFromCache = (event: MouseEvent) => {
@@ -63,7 +67,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
 
   if (loading && !data) return <LoadingState />;
   if (!data) {
-    return <main className="auth-page">{!online && <OfflineBanner />}<div className="auth-brand"><span className="brand-mark">J</span>JalSaathi</div><section className="auth-card">
+    return <main className="auth-page">{!online && <OfflineBanner />}<div className="auth-header"><div className="auth-brand"><span className="brand-mark">J</span>JalSaathi</div><div className="auth-header-actions"><LanguageSelector /><InstallActionButton /></div></div><section className="auth-card">
       <h1>{t("Your farm information needs sign-in")}</h1>
       {error && <ErrorState>{t(error)}</ErrorState>}
       <p className="muted">{t("Sign in to see your saved farm information.")}</p>
@@ -78,9 +82,19 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
         <Link className="brand" href="/dashboard" aria-label={t("JalSaathi dashboard")}><span className="brand-mark" aria-hidden="true">J</span><span>JalSaathi</span></Link>
         <div className="topbar-actions">
           <span className={`connection ${online ? "is-online" : "is-offline"}`}><span aria-hidden="true" />{online ? t("Online") : t("Offline")}</span>
-          <Link className={`icon-button alerts-button${pathname === "/alerts" ? " active" : ""}`} href="/alerts" prefetch={false} aria-label={t("Alerts")} aria-current={pathname === "/alerts" ? "page" : undefined}>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></svg>
-          </Link>
+          <button
+            className="icon-button header-action chart-assistant-launch"
+            type="button"
+            onClick={() => setChartAssistantOpen(true)}
+            aria-label={t("Open Chart Assistant")}
+            aria-expanded={chartAssistantOpen}
+          >
+            <span aria-hidden="true">▥</span>
+            <span className="header-action-label">{t("Chart Assistant")}</span>
+          </button>
+          <InstallActionButton />
+          <LanguageSelector className="header-language-select" />
+          <NotificationMenu schedules={data.schedules} />
           <button className="icon-button refresh-button" type="button" onClick={() => void refresh()} disabled={!online || refreshing || refreshCooling} aria-label={t("Refresh farm data")}><span aria-hidden="true">{refreshing ? "…" : "↻"}</span><span className="refresh-label">{refreshing ? t("Refreshing…") : refreshCooling ? t("Refresh paused briefly") : t("Refresh")}</span></button>
           <details className="avatar-menu">
             <summary className="avatar" aria-label={t("Open account menu for {name}", { name: data.profile.name })}>
@@ -93,6 +107,12 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
           </details>
         </div>
       </header>
+      <ChartAssistantDialog
+        open={chartAssistantOpen}
+        onClose={closeChartAssistant}
+        data={data}
+        online={online}
+      />
       <nav className="desktop-nav" aria-label={t("Main navigation")}>{desktopNavigation.map((item) => <NavLink key={item.href} {...item} label={t(item.label)} online={online} current={isCurrentRoute(pathname, item.href)} />)}</nav>
       <main className="content">
         {!online && <OfflineBanner lastUpdated={data.lastUpdated} />}
@@ -104,6 +124,48 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
       <nav className="mobile-nav" aria-label={t("Main navigation")}>{mobileNavigation.map((item) => <NavLink key={item.href} {...item} label={t(item.label)} online={online} current={isCurrentRoute(pathname, item.href)} />)}</nav>
     </div>
   );
+}
+
+function NotificationMenu({ schedules }: { schedules: import("@/lib/types").IrrigationSchedule[] }) {
+  const { t, formatDateTime, formatNumber } = useI18n();
+  const today = localDateKey();
+  const upcoming = schedules
+    .filter((schedule) => schedule.scheduled_date >= today &&
+      schedule.status !== "completed" && schedule.status !== "cancelled")
+    .sort((first, second) => first.scheduled_date.localeCompare(second.scheduled_date))
+    .slice(0, 5);
+
+  return (
+    <details className="notification-menu">
+      <summary className="icon-button notification-button" aria-label={t("Notifications")}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></svg>
+        {upcoming.length > 0 && <span className="notification-count">{upcoming.length}</span>}
+      </summary>
+      <section className="notification-panel" aria-label={t("Upcoming irrigation")}>
+        <h2>{t("Upcoming irrigation")}</h2>
+        {upcoming.length === 0 ? (
+          <p className="muted">{t("No upcoming irrigation notifications.")}</p>
+        ) : (
+          <ul>
+            {upcoming.map((schedule) => (
+              <li key={schedule.id}>
+                <span>{t("Scheduled irrigation")}</span>
+                <strong>{schedule.field_name}</strong>
+                <small>
+                  {formatDateTime(`${schedule.scheduled_date}T00:00:00`)} · {formatNumber(schedule.water_liters)} L
+                </small>
+              </li>
+            ))}
+          </ul>
+        )}
+        <Link href="/schedule" prefetch={false}>{t("View irrigation schedule")}</Link>
+      </section>
+    </details>
+  );
+}
+
+function localDateKey(date = new Date()): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
 function isCurrentRoute(pathname: string, href: string): boolean {

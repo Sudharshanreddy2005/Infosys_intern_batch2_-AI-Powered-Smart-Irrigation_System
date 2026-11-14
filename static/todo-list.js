@@ -34,10 +34,16 @@
   const formatDateTime = (value) => {
     const date = parseTaskDate(value);
     if (!date) return "Not scheduled";
-    return new Intl.DateTimeFormat(undefined, {
+    const options = {
       dateStyle: "medium",
       timeStyle: "short",
-    }).format(date);
+    };
+    if (window.JalSaathiI18n?.formatDate) {
+      return window.JalSaathiI18n.formatDate(date, options);
+    }
+    const dateOptions = window.JalSaathiNumberFormat?.dateOptions(options) ??
+      { ...options, numberingSystem: "latn" };
+    return new Intl.DateTimeFormat(document.documentElement.lang || undefined, dateOptions).format(date);
   };
 
   const buildReminderMessage = (pendingTasks) => {

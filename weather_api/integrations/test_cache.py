@@ -79,6 +79,57 @@ def test_daily_forecast_uses_provider_daily_values(monkeypatch):
     assert forecast[0]["rain_probability_percent"] == 40
 
 
+def test_recent_weather_history_maps_observed_rain_and_caches(monkeypatch):
+    monkeypatch.setattr(config, "get_location", lambda location=None: location or "10,20")
+    monkeypatch.setattr(config, "get_api_key", lambda: "test-key")
+    calls = []
+
+    def fake_request(endpoint, params):
+        calls.append((endpoint, params))
+        return {
+            "timelines": {
+                "hourly": [
+                    {
+                        "time": "2026-03-30T10:00:00Z",
+                        "values": {"rainAccumulation": 0, "rainIntensity": 0},
+                    },
+                    {
+                        "time": "2026-03-30T11:00:00Z",
+                        "values": {"rainAccumulation": 2.5, "rainIntensity": 1.1},
+                    },
+                ]
+            }
+        }
+
+    monkeypatch.setattr(weather_api, "_make_request", fake_request)
+
+    full = weather_api.get_recent_history(hours=24)
+    short = weather_api.get_recent_history(hours=1)
+
+    assert calls == [
+        (
+            config.RECENT_HISTORY_ENDPOINT,
+            {
+                "location": "10,20",
+                "units": "metric",
+                "timesteps": "1h",
+                "apikey": "test-key",
+            },
+        )
+    ]
+    assert full[0]["rain_accumulation_mm"] == 0
+    assert full[1]["rain_intensity_mm_per_hr"] == 1.1
+    assert short[0]["time"] == "2026-03-30T11:00:00Z"
+    assert all(item["is_stale"] is False for item in full)
+
+
+def test_recent_weather_history_rejects_ranges_over_24_hours(monkeypatch):
+    monkeypatch.setattr(config, "get_location", lambda location=None: location or "10,20")
+
+    with pytest.raises(ValueError, match="limited to 24 hours"):
+        weather_api.get_recent_history(hours=25)
+
+
 def test_weather_requests_are_package_safe_and_cache_by_location(monkeypatch):
     monkeypatch.setattr(config, "get_location", lambda location=None: location or "10,20")
     monkeypatch.setattr(config, "get_api_key", lambda: "test-key")

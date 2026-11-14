@@ -315,3 +315,51 @@ def get_forecast(location=None, hours=24, use_cache=True, timestep="1h"):
 
     result, age = _cached_or_raise(key, request) if use_cache else request()
     return _with_status(result[:hours], age >= config.CACHE_MINUTES * 60, age)
+
+
+def get_recent_history(location=None, hours=24, use_cache=True):
+    if not 1 <= hours <= 24:
+        raise ValueError("Recent weather history is limited to 24 hours.")
+
+    resolved_location = config.get_location(location)
+    key = ("recent_history", resolved_location)
+
+    def request():
+        response = _make_request(
+            config.RECENT_HISTORY_ENDPOINT,
+            {
+                "location": resolved_location,
+                "units": config.UNITS,
+                "timesteps": "1h",
+                "apikey": config.get_api_key(),
+            },
+        )
+        try:
+            timeline = response["timelines"]["hourly"]
+            if not isinstance(timeline, list):
+                raise TypeError
+        except (KeyError, TypeError, AttributeError) as error:
+            raise WeatherUnavailableError(
+                "Weather provider returned an unexpected recent-history response."
+            ) from error
+
+        history = []
+        for entry in timeline:
+            if not isinstance(entry, dict):
+                continue
+            values = entry.get("values")
+            timestamp = entry.get("time")
+            if not isinstance(values, dict) or not isinstance(timestamp, str):
+                continue
+            history.append({
+                "time": timestamp,
+                "rain_accumulation_mm": values.get("rainAccumulation"),
+                "rain_intensity_mm_per_hr": values.get("rainIntensity"),
+            })
+
+        if use_cache:
+            _save_cache(key, history)
+        return history, 0
+
+    result, age = _cached_or_raise(key, request) if use_cache else request()
+    return _with_status(result[-hours:], age >= config.CACHE_MINUTES * 60, age)

@@ -3,7 +3,7 @@ import type { MetadataRoute } from "next";
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: "/",
-    name: "JalSaathi Farmer",
+    name: "JalSaathi",
     short_name: "JalSaathi",
     description: "Your fields and irrigation schedule, even when you are offline.",
     lang: "en",

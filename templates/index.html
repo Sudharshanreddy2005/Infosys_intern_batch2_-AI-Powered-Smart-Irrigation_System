@@ -3,12 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f5f4e9" />
     <title>JalSaathi | Smart Irrigation</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/pwa-icons/apple-touch-icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Noto+Sans+Assamese:wght@400;500;600;700&family=Noto+Sans+Bengali:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600;700&family=Noto+Sans+Gujarati:wght@400;500;600;700&family=Noto+Sans+Gurmukhi:wght@400;500;600;700&family=Noto+Sans+Kannada:wght@400;500;600;700&family=Noto+Sans+Malayalam:wght@400;500;600;700&family=Noto+Sans+Oriya:wght@400;500;600;700&family=Noto+Sans+Tamil:wght@400;500;600;700&family=Noto+Sans+Telugu:wght@400;500;600;700&family=Noto+Nastaliq+Urdu&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/static/styles.css?v=20261104-glass-nav-refine10-scrollbars1" />
-    <link rel="stylesheet" href="/static/topbar.css?v=20261104-glass-nav-refine10" />
+    <link rel="stylesheet" href="/static/topbar.css?v=20261114-main-assistant-pwa1" />
   </head>
   <body data-i18n-static>
     <div class="common-topbar-mount" data-common-topbar></div>
@@ -38,6 +41,14 @@
               <svg class="nav-outline" viewBox="0 0 24 24"><path d="M7 3v3m10-3v3M4 9h16M6 5h12a2 2 0 0 1 2 2v12H4V7a2 2 0 0 1 2-2z" /><path d="M8 13h2m4 0h2m-8 4h2m4 0h2" /></svg>
             </span>
             <span data-i18n-key="nav.schedule">Irrigation Schedule</span>
+          </a>
+          <a class="nav-item" href="/static/sections.html?view=calendar">
+            <span class="nav-icon"><svg class="nav-outline" viewBox="0 0 24 24"><path d="M7 3v3m10-3v3M4 9h16M6 5h12a2 2 0 0 1 2 2v12H4V7a2 2 0 0 1 2-2z" /><path d="M8 13h.01M12 13h.01M16 13h.01M8 17h.01M12 17h.01" /></svg></span>
+            <span data-i18n-key="nav.calendar">Calendar</span>
+          </a>
+          <a class="nav-item" href="/static/sections.html?view=chart-assistant">
+            <span class="nav-icon"><svg class="nav-outline" viewBox="0 0 24 24"><path d="M4 19h16M6 16l4-5 3 2 5-7" /><circle cx="6" cy="16" r="1" /><circle cx="10" cy="11" r="1" /><circle cx="13" cy="13" r="1" /><circle cx="18" cy="6" r="1" /></svg></span>
+            <span data-i18n-key="chartAssistant.open">Chart Assistant</span>
           </a>
           <a class="nav-item" href="/static/sections.html?view=reports">
             <span class="nav-icon">
@@ -364,10 +375,12 @@
     <script src="/static/i18n/kn.js?v=20261114-complete-translations3"></script>
     <script src="/static/i18n/ta.js?v=20261114-complete-translations3"></script>
     <script src="/static/i18n/ml.js?v=20261114-complete-translations3"></script>
-    <script src="/static/number-format.js?v=20261114-latin-numbers1"></script>
-    <script src="/static/i18n.js?v=20261114-latin-numbers1"></script>
+    <script src="/static/number-format.js?v=20261115-latin-digits2"></script>
+    <script src="/static/i18n.js?v=20261115-numeric-measurements1"></script>
+    <script src="/static/pwa-install.js?v=20261114-main-pwa1"></script>
     <script src="/static/sidebar.js?v=20261104-sidebar-toggle-fix1"></script>
-    <script src="/static/topbar.js?v=20261104-sidebar-toggle-fix1"></script>
+    <script src="/static/topbar.js?v=20261114-main-assistant-pwa1"></script>
+    <script src="/static/chart-assistant.js?v=20261121-gemini-chat1"></script>
     <script src="/static/weather.js?v=20261114-complete-translations3"></script>
     <script src="/static/field-numbering.js?v=20261028-field-numbering1"></script>
     <script src="/static/experimental-model.js?v=20261028-model1-auto1"></script>

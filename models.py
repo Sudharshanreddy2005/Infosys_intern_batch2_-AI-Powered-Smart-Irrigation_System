@@ -8,9 +8,11 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -53,7 +55,10 @@ class AuthSession(Base):
 
 class FarmerField(Base):
     __tablename__ = "farmer_fields"
-    __table_args__ = (Index("ix_farmer_fields_owner_name", "farmer_id", "name"),)
+    __table_args__ = (
+        Index("ix_farmer_fields_owner_name", "farmer_id", "name"),
+        UniqueConstraint("id", "farmer_id", name="uq_farmer_fields_id_owner"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     farmer_id: Mapped[int] = mapped_column(
@@ -71,6 +76,61 @@ class FarmerField(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class FarmerSensorReading(Base):
+    __tablename__ = "farmer_sensor_readings"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["field_id", "farmer_id"],
+            ["farmer_fields.id", "farmer_fields.farmer_id"],
+            ondelete="CASCADE",
+            name="fk_farmer_sensor_readings_owned_field",
+        ),
+        CheckConstraint(
+            "soil_moisture_percent IS NOT NULL OR soil_temperature_c IS NOT NULL "
+            "OR humidity_percent IS NOT NULL",
+            name="ck_farmer_sensor_readings_has_measurement",
+        ),
+        CheckConstraint(
+            "soil_moisture_percent IS NULL OR "
+            "(soil_moisture_percent >= 0 AND soil_moisture_percent <= 100)",
+            name="ck_farmer_sensor_readings_moisture_range",
+        ),
+        CheckConstraint(
+            "humidity_percent IS NULL OR (humidity_percent >= 0 AND humidity_percent <= 100)",
+            name="ck_farmer_sensor_readings_humidity_range",
+        ),
+        CheckConstraint(
+            "soil_temperature_c IS NULL OR "
+            "(soil_temperature_c >= -50 AND soil_temperature_c <= 100)",
+            name="ck_farmer_sensor_readings_temperature_range",
+        ),
+        CheckConstraint(
+            "source IN ('sensor', 'farmer_entered', 'test_fixture')",
+            name="ck_farmer_sensor_readings_source",
+        ),
+        Index(
+            "ix_farmer_sensor_readings_owner_field_time",
+            "farmer_id",
+            "field_id",
+            "recorded_at",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    farmer_id: Mapped[int] = mapped_column(
+        ForeignKey("farmers.id", ondelete="CASCADE"), nullable=False
+    )
+    field_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    soil_moisture_percent: Mapped[float | None] = mapped_column(Float)
+    soil_temperature_c: Mapped[float | None] = mapped_column(Float)
+    humidity_percent: Mapped[float | None] = mapped_column(Float)
+    source: Mapped[str] = mapped_column(String(32), nullable=False, server_default="sensor")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
 
@@ -158,6 +218,32 @@ class IrrigationSchedule(Base):
     irrigation_method: Mapped[str] = mapped_column(String(20), nullable=False)
     status: Mapped[str] = mapped_column(String(24), nullable=False, index=True)
     plan_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class AssistantConversation(Base):
+    __tablename__ = "assistant_conversations"
+    __table_args__ = (
+        Index("ix_assistant_conversations_owner_updated", "farmer_id", "updated_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    farmer_id: Mapped[int] = mapped_column(
+        ForeignKey("farmers.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    field_id: Mapped[int | None] = mapped_column(
+        ForeignKey("farmer_fields.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    crop_id: Mapped[int | None] = mapped_column(
+        ForeignKey("farmer_crops.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    messages: Mapped[list[dict]] = mapped_column(JSON, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

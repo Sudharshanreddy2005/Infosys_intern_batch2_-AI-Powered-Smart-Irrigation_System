@@ -8,7 +8,7 @@ import kn from "@/locales/kn.json";
 import ta from "@/locales/ta.json";
 import ml from "@/locales/ml.json";
 import pwa from "@/locales/pwa.json";
-import numberFormatting from "../../static/number-format.js";
+import numberFormatting from "../static/number-format.js";
 
 export const languageOptions = [
   { code: "en", locale: "en-IN", label: "English" },
@@ -112,4 +112,24 @@ export function useI18n() {
   const value = useContext(context);
   if (!value) throw new Error("useI18n must be used within I18nProvider.");
   return value;
+}
+
+export function LanguageSelector({ className = "" }: Readonly<{ className?: string }>) {
+  const { language, setLanguage, t } = useI18n();
+  return (
+    <label className={`language-selector ${className}`.trim()}>
+      <span className="sr-only">{t("Select language")}</span>
+      <select
+        aria-label={t("Select language")}
+        value={language}
+        onChange={(event) => {
+          if (isLanguageCode(event.target.value)) setLanguage(event.target.value);
+        }}
+      >
+        {languageOptions.map((option) => (
+          <option key={option.code} value={option.code}>{option.label}</option>
+        ))}
+      </select>
+    </label>
+  );
 }

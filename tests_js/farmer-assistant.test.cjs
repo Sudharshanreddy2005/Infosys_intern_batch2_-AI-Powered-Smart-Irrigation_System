@@ -214,7 +214,7 @@ test("Model 2 explanation uses owned IDs and normalizes generated numeric text",
   assert.equal(payload.language_code, "en-IN");
   assert.match(assistant.explainStatus.textContent, /123\.5 liters per field per 24 hours/);
   assert.equal(assistant.explainStatus.textContent.includes("<strong>"), true);
-  assert.equal(assistant.log.children[0].textContent, "<strong>Limitations 21°C</strong>");
+  assert.equal(assistant.log.children[0].textContent, "<strong>Limitations 20.8°C</strong>");
   assert.equal(assistant.log.children[0].innerHTML, undefined);
 });
 

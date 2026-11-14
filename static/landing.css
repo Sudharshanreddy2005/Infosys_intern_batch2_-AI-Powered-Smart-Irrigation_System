@@ -32,6 +32,14 @@ a { color: inherit; }
 .button-primary:hover { background: #084a39; }
 .button-secondary { border-color: #dae4d8; background: white; color: var(--landing-green); }
 .button-outline { border-color: rgba(255,255,255,.72); color: white; }
+.landing-install-button { white-space: nowrap; }
+.common-install-dialog { width: min(420px, calc(100% - 32px)); padding: 24px; border: 1px solid #dfe8df; border-radius: 18px; background: #fffefa; color: #1d2a1e; box-shadow: 0 20px 60px rgb(15 39 27 / 25%); }
+.common-install-dialog::backdrop { background: rgb(20 37 27 / 48%); }
+.common-install-dialog h2 { margin: 0; color: #164e3d; font-size: 21px; }
+.common-install-dialog p { color: #56685b; font-size: 13px; line-height: 1.6; }
+.common-install-dialog .common-chart-primary { min-height: 38px; padding: 0 14px; border: 1px solid #0d5a46; border-radius: 10px; background: #0d5a46; color: white; cursor: pointer; font: inherit; font-size: 12px; font-weight: 700; }
+.common-install-dialog .common-install-status:empty { display: none; }
+.common-install-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
 .landing-hero { position: relative; display: grid; min-height: 560px; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); align-items: center; gap: 36px; overflow: hidden; padding: 68px clamp(24px, 7vw, 112px); background: linear-gradient(110deg, #f4f3e7 0%, #f4f3e7 44%, #e5e7d4 100%); }
 .hero-copy { position: relative; z-index: 1; max-width: 610px; }
 .eyebrow { margin: 0 0 14px; color: #4b8969; font-size: 11px; font-weight: 800; letter-spacing: .15em; }
@@ -84,6 +92,9 @@ a { color: inherit; }
   .landing-actions { gap: 7px; }
   .landing-language-select { max-width: 94px; min-height: 36px; padding-inline: 5px; font-size: 10px; }
   .landing-header .button { min-height: 39px; padding-inline: 11px; font-size: 11px; }
+  .landing-header .landing-install-button { width: 38px; min-width: 38px; padding: 0; overflow: hidden; font-size: 0; }
+  .landing-header .landing-install-button::before { content: "↓"; font-size: 16px; }
+  .landing-header .landing-install-button[data-installed]::before { content: "✓"; }
   .landing-hero { grid-template-columns: minmax(0, 1fr); gap: 25px; padding: 48px 22px 78px; }
   .hero-copy h1 { font-size: clamp(42px, 12vw, 61px); }
   .hero-image { min-height: 245px; border-radius: 18px 72px 18px 72px; }
