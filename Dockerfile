@@ -11,6 +11,7 @@ COPY model1/ ./model1/
 COPY irrigation_optimizer/ ./irrigation_optimizer/
 COPY weather_api/ ./weather_api/
 COPY model2/ ./model2/
+COPY alerts/ ./alerts/
 COPY model3/ ./model3/
 COPY model4/ ./model4/
 COPY templates/ ./templates/

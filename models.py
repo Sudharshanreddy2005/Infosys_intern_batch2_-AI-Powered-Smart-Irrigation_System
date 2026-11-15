@@ -10,9 +10,11 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy import Boolean
 
 
 class Base(DeclarativeBase):
@@ -30,6 +32,15 @@ class Farmer(Base):
     state: Mapped[str | None] = mapped_column(String(80))
     district: Mapped[str | None] = mapped_column(String(100))
     village: Mapped[str | None] = mapped_column(String(120))
+    web_push_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    sms_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    email_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -162,4 +173,113 @@ class IrrigationSchedule(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+class Alert(Base):
+    __tablename__ = "alerts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    farmer_id: Mapped[int] = mapped_column(
+        ForeignKey("farmers.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    field_id: Mapped[int] = mapped_column(
+        ForeignKey("farmer_fields.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    alert_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    severity: Mapped[str] = mapped_column(String(20), nullable=False)
+    message: Mapped[str] = mapped_column(String(500), nullable=False)
+    reason: Mapped[str] = mapped_column(String(1000), nullable=False)
+
+    is_read: Mapped[bool] = mapped_column(
+        default=False, nullable=False
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(20), default="unresolved", nullable=False
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+class LiveSensorReading(Base):
+    __tablename__ = "live_sensor_readings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    field_id: Mapped[int] = mapped_column(
+        ForeignKey("farmer_fields.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    sensor_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    soil_moisture: Mapped[float] = mapped_column(Float, nullable=False)
+
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+class SensorFieldMapping(Base):
+    __tablename__ = "sensor_field_mapping"
+    __table_args__ = (
+        UniqueConstraint("external_field_id", name="uq_sensor_field_mapping_external_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    external_field_id: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+    )
+
+    field_id: Mapped[int] = mapped_column(
+        ForeignKey("farmer_fields.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+class PushSubscription(Base):
+    __tablename__ = "push_subscriptions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    farmer_id: Mapped[int] = mapped_column(
+        ForeignKey("farmers.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    endpoint: Mapped[str] = mapped_column(
+        String(1000), nullable=False, unique=True
+    )
+
+    subscription_data: Mapped[dict] = mapped_column(
+        JSON, nullable=False
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
     )

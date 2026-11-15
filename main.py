@@ -1,8 +1,11 @@
 import hashlib
 import hmac
+import json
 import logging
 import math
 import os
+import base64
+from pywebpush import webpush, WebPushException
 import secrets
 import threading
 import time
@@ -29,12 +32,25 @@ from sqlalchemy.orm import Session
 
 from models import (
     AuthSession,
+    Alert,
     Base,
     Farmer,
     FarmerCrop,
     FarmerField,
     IrrigationReservoir,
     IrrigationSchedule,
+    LiveSensorReading,
+    PushSubscription,
+    SensorFieldMapping,
+)
+from alerts.database import (
+    get_farmer_alerts,
+    mark_alert_as_read,
+    resolve_alert,
+)
+from alerts.schemas import (
+    NotificationPreferencesUpdate,
+    PushSubscriptionRequest,
 )
 from schemas import (
     CropCreate,
@@ -145,6 +161,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+@app.get("/service-worker.js", include_in_schema=False)
+def service_worker():
+    return FileResponse(
+        STATIC_DIR / "service-worker.js",
+        media_type="application/javascript",
+        headers={"Service-Worker-Allowed": "/"},
+    )
 
 
 # --------------------------------------------------
@@ -2349,3 +2372,204 @@ def crop_stress_prediction(
         "prediction_timestamp": datetime.now(timezone.utc).isoformat(),
         **result,
     }
+# --------------------------------------------------
+# ALERT MANAGEMENT APIs
+# --------------------------------------------------
+
+@app.get("/api/alerts")
+def list_farmer_alerts(
+    unread_only: bool = Query(default=False),
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(get_auth_context),
+):
+    alerts = get_farmer_alerts(
+        db=db,
+        farmer_id=context[0].id,
+        unread_only=unread_only,
+    )
+
+    return [
+        {
+            "id": alert.id,
+            "farmer_id": alert.farmer_id,
+            "field_id": alert.field_id,
+            "alert_type": alert.alert_type,
+            "severity": alert.severity,
+            "message": alert.message,
+            "reason": alert.reason,
+            "is_read": alert.is_read,
+            "status": alert.status,
+            "created_at": alert.created_at,
+        }
+        for alert in alerts
+    ]
+
+
+@app.patch("/api/alerts/{alert_id}/read")
+def mark_farmer_alert_read(
+    alert_id: int,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    alert = mark_alert_as_read(
+        db=db,
+        alert_id=alert_id,
+        farmer_id=context[0].id,
+    )
+
+    if alert is None:
+        raise HTTPException(status_code=404, detail="Alert not found.")
+
+    return {"message": "Alert marked as read.", "alert_id": alert.id}
+
+
+@app.patch("/api/alerts/{alert_id}/resolve")
+def resolve_farmer_alert(
+    alert_id: int,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    alert = resolve_alert(
+        db=db,
+        alert_id=alert_id,
+        farmer_id=context[0].id,
+    )
+
+    if alert is None:
+        raise HTTPException(status_code=404, detail="Alert not found.")
+
+    return {"message": "Alert marked as resolved.", "alert_id": alert.id}
+
+@app.get("/api/notification-preferences")
+def get_notification_preferences(
+    context: tuple[Farmer, AuthSession] = Depends(get_auth_context),
+):
+    farmer = context[0]
+
+    return {
+        "web_push_enabled": farmer.web_push_enabled,
+        "sms_enabled": farmer.sms_enabled,
+        "email_enabled": farmer.email_enabled,
+    }
+
+
+@app.patch("/api/notification-preferences")
+def update_notification_preferences(
+    preferences: NotificationPreferencesUpdate,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    farmer = context[0]
+
+    updates = preferences.model_dump(exclude_unset=True)
+
+    for key, value in updates.items():
+        setattr(farmer, key, value)
+
+    db.commit()
+    db.refresh(farmer)
+
+    return {
+        "message": "Notification preferences updated successfully.",
+        "web_push_enabled": farmer.web_push_enabled,
+        "sms_enabled": farmer.sms_enabled,
+        "email_enabled": farmer.email_enabled,
+    }
+def send_web_push_notification(
+    db: Session,
+    farmer_id: int,
+    title: str,
+    message: str,
+):
+    subscriptions = (
+        db.query(PushSubscription)
+        .filter(PushSubscription.farmer_id == farmer_id)
+        .all()
+    )
+
+    private_key_path = os.getenv("VAPID_PRIVATE_KEY_PATH")
+
+    if not private_key_path:
+        logging.error("VAPID private key path is not configured.")
+        return
+
+    for subscription in subscriptions:
+        try:
+            webpush(
+                subscription_info=subscription.subscription_data,
+                data=json.dumps({
+                    "title": title,
+                    "body": message,
+                    "url": "/dashboard",
+                }),
+                vapid_private_key=private_key_path,
+                vapid_claims={
+                    "sub": os.getenv(
+                        "VAPID_SUBJECT",
+                        "mailto:admin@example.com",
+                    )
+                },
+            )
+
+            logging.info(
+                "Push notification sent to farmer %s",
+                farmer_id,
+            )
+
+        except WebPushException as error:
+            logging.error("Web Push failed: %s", error)
+
+            if error.response and error.response.status_code in (404, 410):
+                db.delete(subscription)
+
+    db.commit()
+
+@app.post("/api/push/subscribe")
+def subscribe_to_push_notifications(
+    subscription: PushSubscriptionRequest,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    farmer = context[0]
+
+    subscription_data = subscription.model_dump()
+
+    existing = (
+        db.query(PushSubscription)
+        .filter(PushSubscription.endpoint == subscription.endpoint)
+        .first()
+    )
+
+    if existing:
+        existing.farmer_id = farmer.id
+        existing.subscription_data = subscription_data
+    else:
+        new_subscription = PushSubscription(
+            farmer_id=farmer.id,
+            endpoint=subscription.endpoint,
+            subscription_data=subscription_data,
+        )
+        db.add(new_subscription)
+
+    db.commit()
+
+    return {
+        "message": "Browser push subscription saved successfully."
+    }
+@app.get("/api/push/public-key")
+def get_push_public_key():
+    public_key_hex = os.getenv("VAPID_PUBLIC_KEY")
+
+    if not public_key_hex:
+        raise HTTPException(
+            status_code=500,
+            detail="VAPID public key is not configured."
+        )
+
+    public_key_bytes = bytes.fromhex(public_key_hex)
+
+    public_key = base64.urlsafe_b64encode(
+        public_key_bytes
+    ).decode("utf-8").rstrip("=")
+
+    return {"public_key": public_key}

@@ -307,6 +307,7 @@ def get_forecast(location=None, hours=24, use_cache=True, timestep="1h"):
                         "precipitationProbability",
                         values.get("precipitationProbabilityAvg"),
                     ),
+                    "wind_speed_mps": values.get("windSpeed"),
                 }
             )
         if use_cache:
