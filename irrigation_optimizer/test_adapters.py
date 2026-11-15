@@ -161,6 +161,135 @@ def test_api_endpoint(monkeypatch=None):
     finally:
         wa.fetch_daily_forecast = orig
 
+def test_open_meteo_daily_conversion_uses_et0_and_ist_dates():
+    payload = {
+        "daily": {
+            "time": ["2026-11-11", "2026-11-12"],
+            "temperature_2m_min": [20.0, 21.0],
+            "temperature_2m_max": [29.0, 30.0],
+            "rain_sum": [1.5, 0.0],
+            "precipitation_probability_max": [60, 0],
+            "et0_fao_evapotranspiration": [4.2, 4.5],
+        }
+    }
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return payload
+
+    calls = {}
+    original_get = wa.requests.get
+
+    def fake_get(url, params, timeout):
+        calls["url"] = url
+        calls["params"] = params
+        calls["timeout"] = timeout
+        return FakeResponse()
+
+    wa.requests.get = fake_get
+    try:
+        daily = wa._fetch_open_meteo_daily_forecast(
+            "17.385,78.486", 2
+        )
+    finally:
+        wa.requests.get = original_get
+
+    assert len(daily) == 2
+    assert daily[0].date.isoformat() == "2026-11-11"
+    assert daily[0].temp_min == 20.0
+    assert daily[0].temp_max == 29.0
+    assert daily[0].rain_mm == 1.5
+    assert abs(daily[0].rain_prob - 0.6) < 1e-9
+    assert daily[0].et0_mm == 4.2
+    assert daily[1].et0_mm == 4.5
+    assert calls["params"]["timezone"] == "Asia/Kolkata"
+    assert calls["params"]["latitude"] == 17.385
+    assert calls["params"]["longitude"] == 78.486
+
+
+def test_open_meteo_fallback_is_used_when_tomorrow_is_unavailable():
+    import sys
+    import types
+
+    module_names = (
+        "weather_api",
+        "weather_api.integrations",
+        "weather_api.integrations.weather_api",
+    )
+    saved_modules = {name: sys.modules.get(name) for name in module_names}
+
+    package = types.ModuleType("weather_api")
+    package.__path__ = []
+
+    integrations = types.ModuleType("weather_api.integrations")
+    integrations.__path__ = []
+
+    weather_module = types.ModuleType(
+        "weather_api.integrations.weather_api"
+    )
+
+    def unavailable_forecast(*args, **kwargs):
+        raise ValueError("Tomorrow.io key is not configured.")
+
+    weather_module.get_forecast = unavailable_forecast
+
+    original_enabled = wa._open_meteo_enabled
+    original_fallback = wa._fetch_open_meteo_daily_forecast
+
+    expected_date = datetime(2026, 11, 11).date()
+    fallback_data = [
+        wa.DailyForecast(
+            date=expected_date,
+            temp_min=20.0,
+            temp_max=29.0,
+            rain_mm=1.5,
+            rain_prob=0.6,
+            et0_mm=4.2,
+        ),
+        wa.DailyForecast(
+            date=datetime(2026, 11, 12).date(),
+            temp_min=21.0,
+            temp_max=30.0,
+            rain_mm=0.0,
+            rain_prob=0.0,
+            et0_mm=4.5,
+        ),
+    ]
+
+    try:
+        sys.modules.update({
+            "weather_api": package,
+            "weather_api.integrations": integrations,
+            "weather_api.integrations.weather_api": weather_module,
+        })
+
+        wa._open_meteo_enabled = lambda: True
+        wa._fetch_open_meteo_daily_forecast = (
+            lambda location, days: fallback_data[:days]
+        )
+
+        daily, warnings = wa.fetch_daily_forecast(
+            "17.385,78.486", days=2
+        )
+
+    finally:
+        wa._open_meteo_enabled = original_enabled
+        wa._fetch_open_meteo_daily_forecast = original_fallback
+
+        for name, module in saved_modules.items():
+            if module is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = module
+
+    assert len(daily) == 2
+    assert daily[0].et0_mm == 4.2
+    assert any("Open-Meteo" in warning for warning in warnings)
+    assert any("Tomorrow.io was unavailable" in warning for warning in warnings)
+
 
 if __name__ == "__main__":
     n = 0

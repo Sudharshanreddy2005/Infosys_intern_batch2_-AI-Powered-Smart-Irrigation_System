@@ -5,7 +5,7 @@
   const DISPLAY_CACHE_KEY = "jalsaathi.weather.display-cache.v1";
   const CACHE_MILLISECONDS = 10 * 60 * 1000;
   const DISPLAY_CACHE_MAX_AGE = 24 * 60 * 60 * 1000;
-  const MAX_TRANSIENT_WEATHER_RETRIES = 2;
+  const MAX_TRANSIENT_WEATHER_RETRIES = 0;
   const MAX_WEATHER_RETRY_DELAY_MS = 2_000;
   const inFlight = new Map();
   const currentInFlight = new Map();
@@ -98,8 +98,8 @@
       return {
         data: {
           current: saved.current,
-          hourly: [],
-          daily: Array.isArray(saved.daily) ? saved.daily : [],
+          hourly: Array.isArray(saved.hourly) ? saved.hourly : [],
+daily: Array.isArray(saved.daily) ? saved.daily : [],
           selection: {},
         },
         source: "cached",
@@ -133,6 +133,10 @@
       Object.fromEntries(["time", "weather_code", "temperature_high_c", "temperature_low_c", "rain_probability_percent"]
         .filter((field) => item?.[field] !== undefined)
         .map((field) => [field, item[field]])));
+    const hourly = (Array.isArray(data.hourly) ? data.hourly : []).slice(0, 24).map((item) =>
+  Object.fromEntries(["time", "temperature_c", "feels_like_c", "rainfall_mm_per_hr", "rain_probability_percent"]
+    .filter((field) => item?.[field] !== undefined)
+    .map((field) => [field, item[field]])));
     const savedAt = Date.now();
     try {
       localStorage.setItem(DISPLAY_CACHE_KEY, JSON.stringify({
@@ -141,7 +145,8 @@
         locationLabel,
         savedAt,
         current: safeCurrent,
-        daily,
+hourly,
+daily,
       }));
     } catch (error) {
       console.warn("JalSaathi could not save its weather display cache:", error);
@@ -256,11 +261,14 @@
     const normalized = selection.coordinates
       ? { coordinates: validateCoordinates(selection.coordinates) }
       : { location: selection.location?.trim() || "" };
+
     const key = `${selectionKey(normalized)}|hourly:${includeHourly}|daily:${includeDaily}`;
     const existing = cache.get(key);
+
     if (!refresh && existing && Date.now() - existing.time < CACHE_MILLISECONDS) {
       return Promise.resolve(existing.data);
     }
+
     if (inFlight.has(key)) return inFlight.get(key);
 
     const request = Promise.allSettled([
@@ -268,10 +276,14 @@
       includeHourly ? forecast(normalized, "1h", 24) : Promise.resolve({ data: [] }),
       includeDaily ? forecast(normalized, "1d", 5) : Promise.resolve({ data: [] }),
     ]).then(([currentResult, hourlyResult, dailyResult]) => {
-      if (currentResult.status === "rejected") throw currentResult.reason;
+      if (currentResult.status === "rejected") {
+        throw currentResult.reason;
+      }
+
       if (!hasDisplayableWeather(currentResult.value)) {
         throw new Error("Weather service returned no usable current conditions.");
       }
+
       const data = {
         current: currentResult.value,
         hourly: hourlyResult.status === "fulfilled" && Array.isArray(hourlyResult.value.data)
@@ -284,9 +296,11 @@
         dailyError: dailyResult.status === "rejected" ? dailyResult.reason : null,
         selection: normalized,
       };
+
       cache.set(key, { time: Date.now(), data });
       return data;
     }).finally(() => inFlight.delete(key));
+
     inFlight.set(key, request);
     return request;
   };
@@ -825,21 +839,21 @@
             ? locationIssueMessage(result.locationIssue)
             : translate("weather.currentUnavailable");
 
-      if (result.source !== "cached" && hourlyRows instanceof HTMLElement) {
+      if (hourlyRows instanceof HTMLElement) {
         hourlyRows.innerHTML = (data?.hourly || []).map((item) => `<tr>
           <td>${escapeText(formatTime(item.time))}</td><td>${escapeText(formatCurrentTemperature(item.temperature_c))}</td>
           <td>${escapeText(formatCurrentTemperature(item.feels_like_c))}</td><td>${escapeText(formatNumber(item.rainfall_mm_per_hr, " mm/h"))}</td>
           <td>${escapeText(formatNumber(item.rain_probability_percent, "%"))}</td>
         </tr>`).join("");
       }
-      if (result.source !== "cached" && dailyRows instanceof HTMLElement) {
+      if (dailyRows instanceof HTMLElement) {
         dailyRows.innerHTML = (data?.daily || []).map((item) => `<tr>
           <td>${escapeText(formatTime(item.time))}</td><td>${escapeText(condition(item.weather_code))}</td>
           <td>${escapeText(formatCurrentTemperature(item.temperature_high_c))}</td><td>${escapeText(formatCurrentTemperature(item.temperature_low_c))}</td>
           <td>${escapeText(formatNumber(item.rain_probability_percent, "%"))}</td>
         </tr>`).join("");
       }
-      if (result.source !== "cached") {
+      {
         setValue(root, "[data-forecast-status]", data?.hourly?.length
           ? window.JalSaathiI18n.t("weather.hourlyPeriods", {
             value: window.JalSaathiI18n.formatNumber(data.hourly.length),
@@ -910,7 +924,7 @@
           "[data-weather-rain-probability]",
         ]) setValue(currentRoot, selector, "Loading…");
       }
-      load({ location }, { refresh: true }).then((data) => {
+      load({ location }, { refresh: false }).then((data) => {
         applyResult({ data, source: "manual" }, generation);
       }).catch((error) => renderFailure(error, generation));
     });

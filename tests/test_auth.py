@@ -1197,7 +1197,7 @@ def test_chart_assistant_uses_owned_schedule_weather_and_language(
             history=history,
             language_code=language_code,
         )
-        return "వాతావరణ సూచన అందుబాటులో ఉంది."
+        return "α░╡α░╛α░ñα░╛α░╡α░░α░ú α░╕α▒éα░Üα░¿ α░àα░éα░ªα▒üα░¼α░╛α░ƒα▒üα░▓α▒ï α░ëα░éα░ªα░┐."
 
     monkeypatch.setattr(main, "answer_chart_question_openai", mocked_chart_answer)
     response = client.post(
@@ -1218,7 +1218,7 @@ def test_chart_assistant_uses_owned_schedule_weather_and_language(
     )
 
     assert response.status_code == 200
-    assert response.json()["answer"] == "వాతావరణ సూచన అందుబాటులో ఉంది."
+    assert response.json()["answer"] == "α░╡α░╛α░ñα░╛α░╡α░░α░ú α░╕α▒éα░Üα░¿ α░àα░éα░ªα▒üα░¼α░╛α░ƒα▒üα░▓α▒ï α░ëα░éα░ªα░┐."
     assert response.json()["context"]["field"]["name"] == "North plot"
     assert response.json()["context"]["current_weather"]["values"]["temperature_c"] == 24
     assert response.json()["context"]["weather_forecast"]["data"][0]["temperature_c"] == 25
@@ -1551,3 +1551,289 @@ def test_image_chat_rejects_unsupported_media_and_large_uploads(client_pair, mon
         headers=headers,
     )
     assert oversized.status_code == 413
+
+def test_field_sensor_readings_are_created_and_returned_in_time_order(client_pair):
+    client, _ = client_pair
+    assert register(client).status_code == 201
+
+    field_id = create_prediction_field(client)
+    path = f"/api/fields/{field_id}/sensor-readings"
+
+    older = {
+        "soil_moisture_percent": 24.5,
+        "soil_temperature_c": 26.2,
+        "humidity_percent": 70.0,
+        "ph": 6.5,
+        "electrical_conductivity_us_cm": 850.0,
+        "recorded_at": "2026-11-10T07:00:00Z",
+    }
+    newer = {
+        "soil_moisture_percent": 31.5,
+        "recorded_at": "2026-11-10T08:00:00Z",
+    }
+
+    first = client.post(path, json=older, headers=csrf_headers(client))
+    second = client.post(path, json=newer, headers=csrf_headers(client))
+
+    assert first.status_code == 201, first.json()
+    assert second.status_code == 201, second.json()
+    assert first.json()["ph"] == 6.5
+    assert first.json()["electrical_conductivity_us_cm"] == 850.0
+    assert second.json()["ph"] is None
+    assert second.json()["soil_temperature_c"] is None
+
+    history = client.get(path)
+    assert history.status_code == 200, history.json()
+
+    readings = history.json()
+    assert len(readings) == 2
+    assert [row["soil_moisture_percent"] for row in readings] == [31.5, 24.5]
+
+
+def test_field_sensor_readings_require_auth_csrf_and_field_ownership(client_pair):
+    first, second = client_pair
+
+    assert first.get("/api/fields/1/sensor-readings").status_code == 401
+
+    assert register(first).status_code == 201
+    assert register(second, email="another@example.com").status_code == 201
+
+    field_id = create_prediction_field(first)
+    path = f"/api/fields/{field_id}/sensor-readings"
+    payload = {
+        "soil_moisture_percent": 35.0,
+        "recorded_at": "2026-11-10T09:00:00Z",
+    }
+
+    no_csrf = first.post(path, json=payload)
+    assert no_csrf.status_code == 403
+
+    created = first.post(
+        path,
+        json=payload,
+        headers=csrf_headers(first),
+    )
+    assert created.status_code == 201, created.json()
+
+    assert second.get(path).status_code == 404
+    foreign_write = second.post(
+        path,
+        json=payload,
+        headers=csrf_headers(second),
+    )
+    assert foreign_write.status_code == 404
+
+
+def test_field_sensor_readings_reject_invalid_values_and_timestamps(client_pair):
+    client, _ = client_pair
+    assert register(client).status_code == 201
+
+    field_id = create_prediction_field(client)
+    path = f"/api/fields/{field_id}/sensor-readings"
+    headers = csrf_headers(client)
+
+    invalid_moisture = client.post(
+        path,
+        json={
+            "soil_moisture_percent": 101,
+            "recorded_at": "2026-11-10T09:00:00Z",
+        },
+        headers=headers,
+    )
+    assert invalid_moisture.status_code == 422
+
+    invalid_ph = client.post(
+        path,
+        json={
+            "soil_moisture_percent": 35,
+            "ph": 15,
+            "recorded_at": "2026-11-10T09:00:00Z",
+        },
+        headers=headers,
+    )
+    assert invalid_ph.status_code == 422
+
+    missing_timezone = client.post(
+        path,
+        json={
+            "soil_moisture_percent": 35,
+            "recorded_at": "2026-11-10T09:00:00",
+        },
+        headers=headers,
+    )
+    assert missing_timezone.status_code == 422
+
+def test_sensor_device_registration_ingestion_and_owner_security(client_pair):
+    farmer, other = client_pair
+
+    assert register(farmer).status_code == 201
+    assert register(other, email="device-other@example.com").status_code == 201
+
+    field_id = create_prediction_field(farmer)
+    device_path = f"/api/fields/{field_id}/sensor-devices"
+
+    device_payload = {"name": "North Field Sensor"}
+
+    # Registration requires CSRF protection.
+    assert farmer.post(
+        device_path,
+        json=device_payload,
+    ).status_code == 403
+
+    registration = farmer.post(
+        device_path,
+        json=device_payload,
+        headers=csrf_headers(farmer),
+    )
+
+    assert registration.status_code == 201, registration.json()
+
+    device = registration.json()
+    token = device["token"]
+
+    assert device["field_id"] == field_id
+    assert device["device_id"].startswith("JAL-")
+    assert token
+
+    # Ordinary device listing must never reveal the secret token.
+    listed = farmer.get(device_path)
+    assert listed.status_code == 200
+    assert len(listed.json()) == 1
+    assert "token" not in listed.json()[0]
+    assert listed.json()[0]["is_active"] is True
+
+    # Another farmer cannot view or register devices for this field.
+    assert other.get(device_path).status_code == 404
+
+    foreign_registration = other.post(
+        device_path,
+        json=device_payload,
+        headers=csrf_headers(other),
+    )
+    assert foreign_registration.status_code == 404
+
+    # An active device cannot be registered twice for the same field.
+    duplicate = farmer.post(
+        device_path,
+        json=device_payload,
+        headers=csrf_headers(farmer),
+    )
+    assert duplicate.status_code == 409
+
+    reading_payload = {
+        "soil_moisture_percent": 27.5,
+        "soil_temperature_c": 26.0,
+        "humidity_percent": 68.0,
+        "ph": 6.5,
+        "electrical_conductivity_us_cm": 800.0,
+        "recorded_at": "2026-11-10T10:00:00Z",
+    }
+
+    # Device ingestion requires a valid bearer token.
+    assert farmer.post(
+        "/api/sensor-data",
+        json=reading_payload,
+    ).status_code == 401
+
+    assert farmer.post(
+        "/api/sensor-data",
+        json=reading_payload,
+        headers={"Authorization": "Bearer invalid-token"},
+    ).status_code == 401
+
+    # Valid device token submits a reading.
+    ingested = farmer.post(
+        "/api/sensor-data",
+        json=reading_payload,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert ingested.status_code == 201, ingested.json()
+    assert ingested.json()["field_id"] == field_id
+    assert ingested.json()["soil_moisture_percent"] == 27.5
+
+    # The reading is visible in the owning farmer's field history.
+    history = farmer.get(
+        f"/api/fields/{field_id}/sensor-readings"
+    )
+
+    assert history.status_code == 200
+    assert len(history.json()) == 1
+    assert history.json()[0]["soil_moisture_percent"] == 27.5
+
+    # Device activity timestamp should now be populated.
+    updated_device = farmer.get(device_path).json()[0]
+    assert updated_device["last_seen_at"] is not None
+
+
+def test_sensor_device_revocation_and_replacement(client_pair):
+    farmer, _ = client_pair
+
+    assert register(farmer).status_code == 201
+    field_id = create_prediction_field(farmer)
+    device_path = f"/api/fields/{field_id}/sensor-devices"
+
+    first_registration = farmer.post(
+        device_path,
+        json={"name": "First Sensor"},
+        headers=csrf_headers(farmer),
+    )
+
+    assert first_registration.status_code == 201
+    first_device = first_registration.json()
+    first_token = first_device["token"]
+
+    revoke_path = (
+        f"{device_path}/{first_device['id']}/revoke"
+    )
+
+    revoked = farmer.post(
+        revoke_path,
+        headers=csrf_headers(farmer),
+    )
+
+    assert revoked.status_code == 200
+    assert revoked.json()["is_active"] is False
+
+    reading_payload = {
+        "soil_moisture_percent": 30.0,
+        "recorded_at": "2026-11-10T11:00:00Z",
+    }
+
+    # Revoked credentials must no longer work.
+    old_token_response = farmer.post(
+        "/api/sensor-data",
+        json=reading_payload,
+        headers={"Authorization": f"Bearer {first_token}"},
+    )
+    assert old_token_response.status_code == 401
+
+    # Registering again replaces the revoked device credentials.
+    second_registration = farmer.post(
+        device_path,
+        json={"name": "Replacement Sensor"},
+        headers=csrf_headers(farmer),
+    )
+
+    assert second_registration.status_code == 201
+    second_device = second_registration.json()
+    second_token = second_device["token"]
+
+    assert second_token != first_token
+    assert second_device["id"] == first_device["id"]
+
+    # The old token remains invalid.
+    old_token_again = farmer.post(
+        "/api/sensor-data",
+        json=reading_payload,
+        headers={"Authorization": f"Bearer {first_token}"},
+    )
+    assert old_token_again.status_code == 401
+
+    # The replacement token works.
+    new_token_response = farmer.post(
+        "/api/sensor-data",
+        json=reading_payload,
+        headers={"Authorization": f"Bearer {second_token}"},
+    )
+    assert new_token_response.status_code == 201

@@ -244,7 +244,7 @@
         }, requestTimeoutMs);
       });
       state.promise = Promise.race([
-        Promise.resolve().then(() => apiRequest("/api/ml/reduced-weather-prediction", {
+        Promise.resolve().then(() => apiRequest("/api/ml/reduced-weather-experimental", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ field_id: fieldId }),

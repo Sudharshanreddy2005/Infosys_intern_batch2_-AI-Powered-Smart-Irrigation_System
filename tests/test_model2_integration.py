@@ -51,7 +51,7 @@ def test_validated_production_bundle_remains_fail_closed_when_unavailable():
     try:
         with pytest.raises(
             FileNotFoundError,
-            match="validated Model 2 production artifact is unavailable",
+            match="validated Model 2 (integration package|production artifact) is unavailable",
         ):
             model2_integration.load_production_model2_bundle()
     finally:

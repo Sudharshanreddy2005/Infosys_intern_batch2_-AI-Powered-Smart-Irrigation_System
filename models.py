@@ -14,6 +14,8 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     func,
+    Boolean,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -78,9 +80,9 @@ class FarmerField(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
-
 class FarmerSensorReading(Base):
     __tablename__ = "farmer_sensor_readings"
+
     __table_args__ = (
         ForeignKeyConstraint(
             ["field_id", "farmer_id"],
@@ -89,8 +91,11 @@ class FarmerSensorReading(Base):
             name="fk_farmer_sensor_readings_owned_field",
         ),
         CheckConstraint(
-            "soil_moisture_percent IS NOT NULL OR soil_temperature_c IS NOT NULL "
-            "OR humidity_percent IS NOT NULL",
+            "soil_moisture_percent IS NOT NULL "
+            "OR soil_temperature_c IS NOT NULL "
+            "OR humidity_percent IS NOT NULL "
+            "OR ph IS NOT NULL "
+            "OR electrical_conductivity_us_cm IS NOT NULL",
             name="ck_farmer_sensor_readings_has_measurement",
         ),
         CheckConstraint(
@@ -99,13 +104,23 @@ class FarmerSensorReading(Base):
             name="ck_farmer_sensor_readings_moisture_range",
         ),
         CheckConstraint(
-            "humidity_percent IS NULL OR (humidity_percent >= 0 AND humidity_percent <= 100)",
+            "humidity_percent IS NULL OR "
+            "(humidity_percent >= 0 AND humidity_percent <= 100)",
             name="ck_farmer_sensor_readings_humidity_range",
         ),
         CheckConstraint(
             "soil_temperature_c IS NULL OR "
             "(soil_temperature_c >= -50 AND soil_temperature_c <= 100)",
             name="ck_farmer_sensor_readings_temperature_range",
+        ),
+        CheckConstraint(
+            "ph IS NULL OR (ph >= 0 AND ph <= 14)",
+            name="ck_farmer_sensor_readings_ph_range",
+        ),
+        CheckConstraint(
+            "electrical_conductivity_us_cm IS NULL OR "
+            "electrical_conductivity_us_cm >= 0",
+            name="ck_farmer_sensor_readings_ec_nonnegative",
         ),
         CheckConstraint(
             "source IN ('sensor', 'farmer_entered', 'test_fixture')",
@@ -120,17 +135,91 @@ class FarmerSensorReading(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    farmer_id: Mapped[int] = mapped_column(
-        ForeignKey("farmers.id", ondelete="CASCADE"), nullable=False
-    )
+    farmer_id: Mapped[int] = mapped_column(Integer, nullable=False)
     field_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
     soil_moisture_percent: Mapped[float | None] = mapped_column(Float)
     soil_temperature_c: Mapped[float | None] = mapped_column(Float)
     humidity_percent: Mapped[float | None] = mapped_column(Float)
-    source: Mapped[str] = mapped_column(String(32), nullable=False, server_default="sensor")
+    ph: Mapped[float | None] = mapped_column(Float)
+    electrical_conductivity_us_cm: Mapped[float | None] = mapped_column(Float)
+
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+
+    source: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        server_default="sensor",
+    )
+
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
+class FarmerSensorDevice(Base):
+    __tablename__ = "farmer_sensor_devices"
+    __table_args__ = (
+        UniqueConstraint(
+            "field_id",
+            name="uq_farmer_sensor_device_field",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    farmer_id: Mapped[int] = mapped_column(
+        ForeignKey("farmers.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    field_id: Mapped[int] = mapped_column(
+        ForeignKey("farmer_fields.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+
+    device_id: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+
+    token_hash: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        unique=True,
+    )
+
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    last_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
     )
 
 

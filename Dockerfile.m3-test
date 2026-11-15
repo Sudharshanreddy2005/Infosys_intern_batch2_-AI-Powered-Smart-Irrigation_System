@@ -1,0 +1,29 @@
+
+FROM python:3.13-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+
+# Use the scikit-learn version compatible with the saved model artifacts.
+# This substitution happens inside the test image only.
+
+RUN python -c "from pathlib import Path; p=Path('requirements.txt'); s=p.read_text(encoding='utf-8'); old='scikit-learn==1.8.0'; assert s.count(old)==1, 'Expected exactly one scikit-learn pin'; p.write_text(s.replace(old, 'scikit-learn==1.6.1'), encoding='utf-8')" \
+    && grep -n '^scikit-learn==' requirements.txt \
+    && pip install --no-cache-dir -r requirements.txt \
+    && python -c "import sklearn; print('M3 test scikit-learn:', sklearn.__version__); assert sklearn.__version__ == '1.6.1'"
+
+
+COPY main.py models.py schemas.py farmer_assistant.py sarvam_translation.py model2_integration.py ./
+COPY model1/ ./model1/
+COPY irrigation_optimizer/ ./irrigation_optimizer/
+COPY weather_api/ ./weather_api/
+COPY model2/ ./model2/
+COPY model3/ ./model3/
+COPY model4/ ./model4/
+COPY templates/ ./templates/
+COPY static/ ./static/
+
+EXPOSE 8000
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

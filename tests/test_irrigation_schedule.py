@@ -340,6 +340,10 @@ def test_insufficient_water_is_reported_without_reservation_and_is_not_confirmab
     result = response.json()
     assert result["status"] == "insufficient_water"
     assert result["plan"]["action"] == "insufficient_water"
+    notes = " ".join(result["plan"]["notes"]).lower()
+    assert "no irrigation was scheduled" in notes
+    assert "min of irrigation could not be scheduled today" not in notes
+    assert "no free time slot found" not in notes
     assert result["plan"]["litres"] == 0
     assert result["plan"]["required_liters"] > reservoir["available_liters"]
     assert result["plan"]["water_shortage_liters"] > 0
@@ -569,3 +573,68 @@ def test_concurrent_confirmations_reserve_water_only_once(tmp_path, monkeypatch)
                 )
             )
     engine.dispose()
+def test_manual_schedule_creation_checks_water_and_reserves_only_on_confirmation(
+    irrigation_clients,
+):
+    farmer, _ = irrigation_clients
+    register(farmer, "manual-schedule@example.com")
+
+    field = add_field(farmer)
+    reservoir = add_reservoir(
+        farmer, field["id"], available=5_000, capacity=10_000
+    )
+
+    payload = {
+        "field_id": field["id"],
+        "reservoir_id": reservoir["id"],
+        "scheduled_date": (date.today() + timedelta(days=2)).isoformat(),
+        "start_time": "08:00",
+        "duration_minutes": 30,
+        "water_liters": 1_000,
+        "irrigation_method": "drip",
+    }
+
+    # Manual schedule creation requires CSRF protection.
+    no_csrf = farmer.post("/api/irrigation/schedules", json=payload)
+    assert no_csrf.status_code == 403
+
+    # Create a valid manual schedule.
+    created = farmer.post(
+        "/api/irrigation/schedules",
+        json=payload,
+        headers=csrf(farmer),
+    )
+    assert created.status_code == 201, created.json()
+
+    schedule = created.json()["schedule"]
+    schedule_id = schedule["id"]
+
+    assert schedule["status"] == "recommended"
+    assert schedule["water_liters"] == 1_000
+    assert schedule["irrigation_method"] == "drip"
+
+    # Creating the schedule must not reserve water.
+    assert created.json()["message"]
+    schedules = farmer.get("/api/irrigation/schedules").json()
+    assert schedules["summary"]["total_reserved_liters"] == 0
+
+    # Reject a manual schedule exceeding available water.
+    excessive = {
+        **payload,
+        "water_liters": 6_000,
+    }
+    rejected = farmer.post(
+        "/api/irrigation/schedules",
+        json=excessive,
+        headers=csrf(farmer),
+    )
+    assert rejected.status_code == 409
+
+    # Confirming the valid schedule reserves its water.
+    confirmed = farmer.post(
+        f"/api/irrigation/schedules/{schedule_id}/confirm",
+        headers=csrf(farmer),
+    )
+    assert confirmed.status_code == 200, confirmed.json()
+    assert confirmed.json()["schedule"]["status"] == "confirmed"
+    assert confirmed.json()["reservoir"]["reserved_liters"] == 1_000
