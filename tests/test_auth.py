@@ -321,7 +321,7 @@ def test_field_api_coordinates_reach_reduced_weather_prediction(client_pair, mon
     )
 
     prediction = client.post(
-        "/api/ml/reduced-weather-prediction",
+        "/api/ml/reduced-weather-experimental",
         json={"field_id": field_id},
         headers=csrf_headers(client),
     )
@@ -384,7 +384,7 @@ def test_each_field_prediction_uses_its_own_saved_coordinates(client_pair, monke
 
     for field in fields:
         response = client.post(
-            "/api/ml/reduced-weather-prediction",
+            "/api/ml/reduced-weather-experimental",
             json={"field_id": field["id"]},
             headers=csrf_headers(client),
         )
@@ -608,7 +608,7 @@ def test_reduced_weather_prediction_uses_owned_field_and_fresh_weather(
     )
 
     response = client.post(
-        "/api/ml/reduced-weather-prediction",
+        "/api/ml/reduced-weather-experimental",
         json={"field_id": field_id},
         headers=csrf_headers(client),
     )
@@ -641,7 +641,7 @@ def test_reduced_weather_endpoint_runs_the_saved_model_with_current_field_weathe
     )
 
     response = client.post(
-        "/api/ml/reduced-weather-prediction",
+        "/api/ml/reduced-weather-experimental",
         json={"field_id": field_id},
         headers=csrf_headers(client),
     )
@@ -683,7 +683,7 @@ def test_reduced_weather_prediction_enforces_field_ownership_and_coordinates(
     )
 
     foreign_response = second.post(
-        "/api/ml/reduced-weather-prediction",
+        "/api/ml/reduced-weather-experimental",
         json={"field_id": owned_field_id},
         headers=csrf_headers(second),
     )
@@ -692,7 +692,7 @@ def test_reduced_weather_prediction_enforces_field_ownership_and_coordinates(
 
     field_without_coordinates = create_prediction_field(first, coordinates=False)
     response = first.post(
-        "/api/ml/reduced-weather-prediction",
+        "/api/ml/reduced-weather-experimental",
         json={"field_id": field_without_coordinates},
         headers=csrf_headers(first),
     )
@@ -718,7 +718,7 @@ def test_reduced_weather_prediction_rejects_stale_and_out_of_training_range(
         lambda location: fresh_weather(is_stale=True),
     )
     stale = client.post(
-        "/api/ml/reduced-weather-prediction",
+        "/api/ml/reduced-weather-experimental",
         json={"field_id": field_id},
         headers=csrf_headers(client),
     )
@@ -731,7 +731,7 @@ def test_reduced_weather_prediction_rejects_stale_and_out_of_training_range(
         lambda location: fresh_weather(temperature_c=5.0),
     )
     outside_training_range = client.post(
-        "/api/ml/reduced-weather-prediction",
+        "/api/ml/reduced-weather-experimental",
         json={"field_id": field_id},
         headers=csrf_headers(client),
     )
