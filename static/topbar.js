@@ -36,6 +36,61 @@
     const notificationButton = header.querySelector("[data-notification-toggle]");
     const notificationPanel = header.querySelector("[data-notification-panel]");
 
+
+    const enablePushButton = header.querySelector("[data-enable-web-push]");
+
+    enablePushButton.addEventListener("click", async () => {
+      try {
+        if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+          throw new Error("Browser push notifications are not supported.");
+        }
+
+        const permission = await Notification.requestPermission();
+
+        if (permission !== "granted") {
+          throw new Error("Notification permission was not granted.");
+        }
+
+        const registration = await navigator.serviceWorker.ready;
+
+        const response = await profileApi.apiRequest("/api/push/public-key");
+        const publicKey = response.public_key;
+
+        const padding = "=".repeat((4 - publicKey.length % 4) % 4);
+
+        const applicationServerKey = Uint8Array.from(
+          atob(publicKey.replace(/-/g, "+").replace(/_/g, "/") + padding),
+          character => character.charCodeAt(0)
+        );
+
+        let subscription = await registration.pushManager.getSubscription();
+
+        if (!subscription) {
+          subscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey,
+          });
+        }
+
+        await profileApi.apiRequest("/api/push/subscribe", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(subscription.toJSON()),
+        });
+
+        enablePushButton.textContent = "Notifications Enabled";
+        enablePushButton.disabled = true;
+
+        window.alert("Browser notifications enabled successfully!");
+      } catch (error) {
+        console.error("Could not enable browser notifications:", error);
+        window.alert(error.message || "Could not enable browser notifications.");
+      }
+    });
+
+
     const selectedLanguage = () => {
       try {
         return profileApi?.getLanguage?.() || "en";
@@ -145,6 +200,61 @@
       notificationButton,
       "#notification-panel",
     ));
+    const notificationCount = header.querySelector("[data-notification-count]");
+    const notificationList = header.querySelector("[data-notification-list]");
+    const notificationEmpty = header.querySelector("[data-notification-empty]");
+    const notificationSummary = header.querySelector("[data-notification-summary]");
+
+    const loadNotifications = async () => {
+      try {
+        const alerts = await profileApi.apiRequest("/api/alerts");
+
+        const unreadCount = alerts.filter(alert => !alert.is_read).length;
+
+        notificationCount.textContent = unreadCount > 99 ? "99+" : String(unreadCount);
+        notificationCount.hidden = unreadCount === 0;
+
+        notificationSummary.textContent = `${unreadCount} unread notifications`;
+        notificationList.replaceChildren();
+        notificationEmpty.hidden = alerts.length > 0;
+
+        alerts.forEach(alert => {
+          const item = document.createElement("button");
+          item.type = "button";
+          item.className = "notification-item";
+          item.textContent = `${alert.severity.toUpperCase()}: ${alert.message}`;
+
+          if (!alert.is_read) {
+            item.style.fontWeight = "bold";
+          }
+
+          item.addEventListener("click", async () => {
+            if (alert.is_read) return;
+
+            try {
+              await profileApi.apiRequest(
+                `/api/alerts/${alert.id}/read`,
+                { method: "PATCH" }
+              );
+
+              await loadNotifications();
+            } catch (error) {
+              console.error("Could not mark alert as read:", error);
+            }
+          });
+
+          notificationList.append(item);
+        });
+      } catch (error) {
+        console.error("Could not load notifications:", error);
+      }
+    };
+
+    notificationButton.addEventListener("click", loadNotifications);
+
+    window.addEventListener("jalsaathi:auth-changed", loadNotifications);
+
+    loadNotifications();
     header.querySelector("[data-topbar-logout]").addEventListener("click", async () => {
       if (!window.confirm(window.JalSaathiI18n?.t("Log out of your JalSaathi account?") || "Log out of your JalSaathi account?")) return;
       try {

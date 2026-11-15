@@ -271,16 +271,22 @@
       `,
     },
     alerts: {
-      title: "Alerts",
-      subtitle: "No verified alert source is connected.",
-      render: `
+    title: "Alerts",
+    subtitle: "Live irrigation alerts and notifications.",
+    render: `
         <div class="portal-page-heading">
-          <div><h1>Alerts</h1><p>No live sensor, weather-alert, or notification feed is connected.</p></div>
-          <span class="portal-demo-tag">No verified alerts</span>
+            <div>
+                <h1>Alerts</h1>
+                <p>Live soil moisture and irrigation alerts.</p>
+            </div>
         </div>
-        <section class="portal-card portal-card--padded"><p class="portal-empty-note">No alerts are available.</p></section>
-      `,
-    },
+        <section class="portal-card portal-card--padded">
+            <div id="alerts-list">
+                <p class="portal-empty-note">Loading alerts...</p>
+            </div>
+        </section>
+    `,
+},
     weather: {
       title: "Weather",
       subtitle: "Current conditions and hourly forecasts from Tomorrow.io, when configured.",
@@ -456,6 +462,7 @@
   if (view === "weather") initializeWeatherView(content);
   if (view === "profile") initializeProfileView(content);
   if (view === "experimental-model") void initializeExperimentalModelView(content);
+  if (view === "alerts") void initializeAlertsView(content);
   if (view === "predictions") void window.JalSaathiModelPredictions?.initialize(content);
   if (view === "ai-model-predictions") void window.JalSaathiAIDashboard?.initialize(content);
 
@@ -1569,4 +1576,80 @@
     window.addEventListener("jalsaathi:profile-changed", syncProfile);
     window.addEventListener("jalsaathi:language-changed", syncProfile);
   }
+
+async function initializeAlertsView(root) {
+  const alertsList = root.querySelector("#alerts-list");
+
+  if (!alertsList) return;
+
+  const loadAlerts = async () => {
+    alertsList.textContent = "Loading alerts...";
+
+    try {
+      const alerts = await window.JalSaathiProfile.apiRequest("/api/alerts");
+
+      alertsList.replaceChildren();
+
+      if (!alerts.length) {
+        alertsList.textContent = "No alerts are available.";
+        return;
+      }
+
+      alerts.forEach((alert) => {
+        const card = document.createElement("div");
+        card.className = "portal-card";
+        card.style.padding = "16px";
+        card.style.marginBottom = "12px";
+
+        const heading = document.createElement("h3");
+        heading.textContent = `${alert.severity.toUpperCase()} - ${alert.alert_type}`;
+
+        const message = document.createElement("p");
+        message.textContent = alert.message;
+
+        const status = document.createElement("p");
+        status.textContent = `Status: ${alert.status} | ${alert.is_read ? "Read" : "Unread"}`;
+
+        card.append(heading, message, status);
+
+        if (!alert.is_read) {
+          const readButton = document.createElement("button");
+          readButton.textContent = "Mark as Read";
+
+          readButton.addEventListener("click", async () => {
+            await window.JalSaathiProfile.apiRequest(
+              `/api/alerts/${alert.id}/read`,
+              { method: "PATCH" }
+            );
+            await loadAlerts();
+          });
+
+          card.append(readButton);
+        }
+
+        if (alert.status !== "resolved") {
+          const resolveButton = document.createElement("button");
+          resolveButton.textContent = "Resolve";
+
+          resolveButton.addEventListener("click", async () => {
+            await window.JalSaathiProfile.apiRequest(
+              `/api/alerts/${alert.id}/resolve`,
+              { method: "PATCH" }
+            );
+            await loadAlerts();
+          });
+
+          card.append(resolveButton);
+        }
+
+        alertsList.append(card);
+      });
+    } catch (error) {
+      console.error("Could not load alerts:", error);
+      alertsList.textContent = "Could not load alerts. Please refresh the page.";
+    }
+  };
+
+  await loadAlerts();
+}
 })();

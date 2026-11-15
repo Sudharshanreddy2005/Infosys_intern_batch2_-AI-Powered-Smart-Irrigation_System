@@ -125,10 +125,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     const previous = card?.querySelector("[data-field-previous]");
     const next = card?.querySelector("[data-field-next]");
     if (!(root instanceof HTMLElement) || !(track instanceof HTMLElement) ||
-        !(card instanceof HTMLElement) ||
-        !(initialSlide instanceof HTMLElement) || !(controls instanceof HTMLElement) ||
-        !(pagination instanceof HTMLElement) ||
-        !(indicator instanceof HTMLElement) || !(dots instanceof HTMLElement)) return;
+      !(card instanceof HTMLElement) ||
+      !(initialSlide instanceof HTMLElement) || !(controls instanceof HTMLElement) ||
+      !(pagination instanceof HTMLElement) ||
+      !(indicator instanceof HTMLElement) || !(dots instanceof HTMLElement)) return;
 
     fieldCarouselCleanups.get(root)?.();
     const abortController = new AbortController();
@@ -149,9 +149,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     const fieldCoordinateKey = (field) => {
       const { latitude, longitude } = field || {};
       if (typeof latitude !== "number" || !Number.isFinite(latitude) ||
-          latitude < -90 || latitude > 90 ||
-          typeof longitude !== "number" || !Number.isFinite(longitude) ||
-          longitude < -180 || longitude > 180) return null;
+        latitude < -90 || latitude > 90 ||
+        typeof longitude !== "number" || !Number.isFinite(longitude) ||
+        longitude < -180 || longitude > 180) return null;
       return `${latitude},${longitude}`;
     };
     const loadFieldWeather = (field) => {
@@ -160,9 +160,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       const id = String(field.id);
       const existing = fieldWeather.get(id);
       if (existing?.coordinatesKey === coordinatesKey &&
-          (existing.status === "pending" ||
-            (existing.status === "loaded" && Date.now() < existing.expiresAt) ||
-            (existing.status === "unavailable" && Date.now() < existing.retryAt))) return;
+        (existing.status === "pending" ||
+          (existing.status === "loaded" && Date.now() < existing.expiresAt) ||
+          (existing.status === "unavailable" && Date.now() < existing.retryAt))) return;
 
       const state = {
         coordinatesKey,
@@ -193,8 +193,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         const age = Date.now() - observedAt;
         const temperature = Number(current?.temperature_c);
         if (current?.is_stale !== false || !Number.isFinite(observedAt) ||
-            age < -60 * 1000 || age >= 15 * 60 * 1000 ||
-            !Number.isFinite(temperature)) {
+          age < -60 * 1000 || age >= 15 * 60 * 1000 ||
+          !Number.isFinite(temperature)) {
           markUnavailable();
         } else {
           state.status = "loaded";
@@ -206,7 +206,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           );
         }
         if (String(currentFields[index]?.id) === id &&
-            fieldCoordinateKey(currentFields[index]) === coordinatesKey) {
+          fieldCoordinateKey(currentFields[index]) === coordinatesKey) {
           const weather = slides[index]?.querySelector("[data-recommendation-weather]");
           if (weather instanceof HTMLElement) {
             weather.textContent = state.status === "loaded"
@@ -235,10 +235,10 @@ document.addEventListener("DOMContentLoaded", async () => {
       const weather = slide.querySelector("[data-recommendation-weather]");
       const status = slide.querySelector("[data-recommendation-status]");
       if (!(name instanceof HTMLElement) || !(crop instanceof HTMLElement) ||
-          !(cropDetails instanceof HTMLElement) ||
-          !(thumbnail instanceof HTMLElement) || !(area instanceof HTMLElement) ||
-          !(moisture instanceof HTMLElement) || !(weather instanceof HTMLElement) ||
-          !(status instanceof HTMLElement)) return;
+        !(cropDetails instanceof HTMLElement) ||
+        !(thumbnail instanceof HTMLElement) || !(area instanceof HTMLElement) ||
+        !(moisture instanceof HTMLElement) || !(weather instanceof HTMLElement) ||
+        !(status instanceof HTMLElement)) return;
 
       if (!field) {
         name.textContent = fieldsUnavailable ? "Field records unavailable" : "No saved fields";
@@ -402,7 +402,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const startTimer = () => {
       clearTimer();
       if (!disposed && !paused && !reducedMotion.matches &&
-          document.visibilityState === "visible" && currentFields.length > 1) {
+        document.visibilityState === "visible" && currentFields.length > 1) {
         timer = window.setInterval(() => show(index + 1), 5000);
       }
     };
@@ -656,3 +656,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     root.append(overview);
   }
 });
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", async () => {
+    try {
+      const registration = await navigator.serviceWorker.register(
+        "/service-worker.js"
+      );
+
+      console.log("Service Worker registered successfully:", registration);
+    } catch (error) {
+      console.error("Service Worker registration failed:", error);
+    }
+  });
+}
