@@ -53,62 +53,22 @@
   };
 
   const initialize = async (root) => {
-    const model3Form = root.querySelector("[data-model3-form]");
-    const model4Form = root.querySelector("[data-model4-form]");
-    if (!(model3Form instanceof HTMLFormElement) || !(model4Form instanceof HTMLFormElement)) return;
+      let latestModel3Result = null;
+      let latestModel4Result = null;
 
+      const setSummaryCard = (name, status, message, state = "success") => {
+        const statusNode = root.querySelector(`[data-summary-${name}-status]`);
+        const resultNode = root.querySelector(`[data-summary-${name}-result]`);
 
-    let fields;
-    try {
-      fields = await window.JalSaathiFieldStore.loadServerFields();
-      const options = fields.map((field) =>
-        `<option value="${String(field.id)}">${String(field.name).replace(/[&<>"']/g, "")}</option>`
-      ).join("");
+        if (statusNode) {
+          statusNode.textContent = status;
+          statusNode.dataset.state = state;
+        }
 
-      root.querySelectorAll("[data-model-field]").forEach((select) => {
-        select.innerHTML = `<option value="">Select a field</option>${options}`;
-      });
-
-      const overviewField = root.querySelector("[data-overview-field]");
-      const updateOverview = (field) => {
-        const setValue = (selector, value) => {
-          const node = root.querySelector(selector);
-          if (node) node.textContent = value || "Not recorded";
-        };
-
-        setValue("[data-overview-crop]", field?.crop);
-        setValue(
-          "[data-overview-area]",
-          field ? `${field.area} ${field.areaUnit || ""}`.trim() : ""
-        );
-        setValue("[data-overview-location]", field?.location);
+        if (resultNode) {
+          resultNode.textContent = message;
+        }
       };
-
-      const sensorPanel = root.querySelector("[data-field-sensor-reading]");
-      const moistureInput = model3Form.elements.namedItem("current_moisture_percent");
-      let sensorRequestId = 0;
-let model3InputMode = "auto";
-let model4InputMode = "auto";
-let selectedOverviewField = null;
-let latestModel4SensorReading = null;
-
-let latestModel3Result = null;
-let latestModel4Result = null;
-
-const setSummaryCard = (name, status, message, state = "success") => {
-  const statusNode = root.querySelector(`[data-summary-${name}-status]`);
-  const resultNode = root.querySelector(`[data-summary-${name}-result]`);
-
-  if (statusNode) {
-    statusNode.textContent = status;
-    statusNode.dataset.state = state;
-  }
-
-  if (resultNode) {
-    resultNode.textContent = message;
-  }
-};
-
 const updateSummaryCards = () => {
   const model3 = latestModel3Result;
   const model4 = latestModel4Result;
@@ -204,6 +164,48 @@ const updateSummaryCards = () => {
     );
   }
 };
+
+    const model3Form = root.querySelector("[data-model3-form]");
+    const model4Form = root.querySelector("[data-model4-form]");
+    if (!(model3Form instanceof HTMLFormElement) || !(model4Form instanceof HTMLFormElement)) return;
+
+
+    let fields;
+    try {
+      fields = await window.JalSaathiFieldStore.loadServerFields();
+      const options = fields.map((field) =>
+        `<option value="${String(field.id)}">${String(field.name).replace(/[&<>"']/g, "")}</option>`
+      ).join("");
+
+      root.querySelectorAll("[data-model-field]").forEach((select) => {
+        select.innerHTML = `<option value="">Select a field</option>${options}`;
+      });
+
+      const overviewField = root.querySelector("[data-overview-field]");
+      const updateOverview = (field) => {
+        const setValue = (selector, value) => {
+          const node = root.querySelector(selector);
+          if (node) node.textContent = value || "Not recorded";
+        };
+
+        setValue("[data-overview-crop]", field?.crop);
+        setValue(
+          "[data-overview-area]",
+          field ? `${field.area} ${field.areaUnit || ""}`.trim() : ""
+        );
+        setValue("[data-overview-location]", field?.location);
+      };
+
+      const sensorPanel = root.querySelector("[data-field-sensor-reading]");
+      const moistureInput = model3Form.elements.namedItem("current_moisture_percent");
+      let sensorRequestId = 0;
+let model3InputMode = "auto";
+let model4InputMode = "auto";
+let selectedOverviewField = null;
+let latestModel4SensorReading = null;
+
+
+
 
 const model3ModePanel = root.querySelector("[data-model3-mode]");
 const model4ModePanel = root.querySelector("[data-model4-mode]");
@@ -463,10 +465,10 @@ if (model4InputMode === "auto") {
           showSensorLines([
             "Actual saved sensor reading",
             `Soil moisture: ${reading.soil_moisture_percent}%`,
-            `Soil temperature: ${reading.soil_temperature_c ?? "Not recorded"} °C`,
+            `Soil temperature: ${reading.soil_temperature_c ?? "Not recorded"} Â°C`,
             `Humidity: ${reading.humidity_percent ?? "Not recorded"}%`,
             `Soil pH: ${reading.ph ?? "Not recorded"}`,
-            `Electrical conductivity: ${reading.electrical_conductivity_us_cm ?? "Not recorded"} µS/cm`,
+            `Electrical conductivity: ${reading.electrical_conductivity_us_cm ?? "Not recorded"} ÂµS/cm`,
             `Recorded at: ${timestamp}`,
             "Status: Latest saved sensor reading",
 "The Model 3 moisture input has been filled automatically using this reading. You can still edit it."
@@ -603,7 +605,7 @@ if (model4InputMode === "auto") {
         if (current) {
           lines.push("Current weather observations:");
           lines.push(`Location: ${current.location_name || current.location || field.location || "Field location"}`);
-          lines.push(`Air temperature: ${current.temperature_c ?? "Not available"} °C`);
+          lines.push(`Air temperature: ${current.temperature_c ?? "Not available"} Â°C`);
           lines.push(`Humidity: ${current.humidity_percent ?? "Not available"}%`);
           lines.push(`Rainfall: ${current.rainfall_mm_per_hr ?? "Not available"} mm/hr`);
           lines.push(`Rain probability: ${current.precipitation_probability_percent ?? "Not available"}%`);
@@ -618,7 +620,7 @@ if (model4InputMode === "auto") {
         if (latestForecast) {
           lines.push("Next available hourly forecast:");
           lines.push(`Forecast time: ${latestForecast.time || "Not supplied"}`);
-          lines.push(`Forecast temperature: ${latestForecast.temperature_c ?? "Not available"} °C`);
+          lines.push(`Forecast temperature: ${latestForecast.temperature_c ?? "Not available"} Â°C`);
           lines.push(`Forecast rainfall: ${latestForecast.rainfall_mm_per_hr ?? "Not available"} mm/hr`);
           lines.push(`Forecast rain probability: ${latestForecast.rain_probability_percent ?? "Not available"}%`);
         } else {

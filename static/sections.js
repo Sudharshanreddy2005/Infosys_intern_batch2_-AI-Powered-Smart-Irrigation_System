@@ -306,6 +306,20 @@
         </div>
       `,
     },
+    "experimental-model": {
+      title: "Experimental Model Lab",
+      subtitle: "Explore the experimental irrigation prediction model.",
+      render: `
+        <div
+          class="portal-card portal-card--padded"
+          data-experimental-loading
+          role="status"
+          aria-live="polite"
+        >
+          Loading Experimental Model Lab...
+        </div>
+      `,
+    },
     crops: {
       title: "Crops",
       subtitle: "Crop information saved to your JalSaathi account.",
@@ -1368,6 +1382,9 @@
     if (view === "field-monitoring") {
     await initializeFieldMonitoringView(content);
   }
+    if (view === "experimental-model") {
+    await initializeExperimentalModelView(content);
+  }
   if (view === "field-details") await initializeFieldDetailsView(content);
   if (view === "fields") initializeFieldsView(content);
   if (view === "fields") initializeSensorHistory(content);
@@ -1432,6 +1449,66 @@
           error instanceof Error
             ? error.message
             : "Field Monitoring could not be loaded. Please reload the page.";
+      }
+    }
+  }
+
+  async function initializeExperimentalModelView(root) {
+    const loadingState = root.querySelector(
+      "[data-experimental-loading]"
+    );
+
+    if (!(loadingState instanceof HTMLElement)) return;
+
+    try {
+      const response = await fetch("/static/experimental-model.html", {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          `Experimental Model markup could not be loaded (${response.status}).`
+        );
+      }
+
+      const markup = await response.text();
+      loadingState.outerHTML = markup;
+
+      if (
+        !window.JalSaathiExperimentalModel ||
+        typeof window.JalSaathiExperimentalModel.initialize !== "function"
+      ) {
+        throw new Error(
+          "The Experimental Model JavaScript initializer is unavailable."
+        );
+      }
+
+      window.JalSaathiExperimentalModel.initialize();
+
+      if (
+        !window.JalSaathiFarmerAssistant ||
+        typeof window.JalSaathiFarmerAssistant.initialize !== "function"
+      ) {
+        throw new Error(
+          "The Farmer Assistant JavaScript initializer is unavailable."
+        );
+      }
+
+      window.JalSaathiFarmerAssistant.initialize();
+
+    } catch (error) {
+      console.error("Experimental Model could not be initialized:", error);
+
+      const message =
+        root.querySelector("#experimental-model") ||
+        root.querySelector("[data-experimental-loading]");
+
+      if (message) {
+        message.textContent =
+          error instanceof Error
+            ? error.message
+            : "Experimental Model could not be loaded. Please reload the page.";
       }
     }
   }

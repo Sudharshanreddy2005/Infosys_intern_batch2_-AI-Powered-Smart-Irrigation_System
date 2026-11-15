@@ -1,4 +1,3 @@
-
 services:
   db:
     container_name: jalsaathi_m3_test_db
@@ -15,6 +14,10 @@ services:
       - "8001:8000"
     environment:
       OPEN_METEO_FALLBACK_ENABLED: "true"
+
+  farmer-pwa:
+    ports: !override
+      - "8002:3000"
 
 volumes:
   postgres_data:

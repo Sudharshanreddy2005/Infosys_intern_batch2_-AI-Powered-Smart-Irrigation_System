@@ -294,6 +294,7 @@ export function FarmDataProvider({ children }: Readonly<{ children: React.ReactN
 
     return () => {
       active = false;
+      initialized.current = false;
     };
   }, [authRoute, discardLocalAccount, refresh]);
 

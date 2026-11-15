@@ -14,7 +14,7 @@ RUN python -c "from pathlib import Path; p=Path('requirements.txt'); s=p.read_te
     && python -c "import sklearn; print('M3 test scikit-learn:', sklearn.__version__); assert sklearn.__version__ == '1.6.1'"
 
 
-COPY main.py models.py schemas.py farmer_assistant.py sarvam_translation.py model2_integration.py ./
+COPY main.py models.py schemas.py farmer_assistant.py sarvam_translation.py model2_integration.py crop_disease_client.py chart_assistant.py ./
 COPY model1/ ./model1/
 COPY irrigation_optimizer/ ./irrigation_optimizer/
 COPY weather_api/ ./weather_api/

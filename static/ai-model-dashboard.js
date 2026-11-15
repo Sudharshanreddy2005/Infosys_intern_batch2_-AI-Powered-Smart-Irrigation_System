@@ -24,6 +24,15 @@
   })[character]);
   const finiteNumber = (value) =>
     typeof value === "number" && Number.isFinite(value);
+    const displayTime = (value) => {
+    if (!value) return "—";
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) return "—";
+
+    return date.toLocaleString();
+  };
 
   const initialize = async (root) => {
     const dashboard = root.querySelector("[data-ai-dashboard-loading]");
