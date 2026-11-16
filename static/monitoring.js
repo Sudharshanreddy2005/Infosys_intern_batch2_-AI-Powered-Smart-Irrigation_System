@@ -31,15 +31,6 @@
   const sensorRecordedAt = document.getElementById(
     "monitoring-sensor-recorded-at"
   );
-    const sensorReadingMode = document.getElementById(
-    "monitoring-reading-mode"
-  );
-  const sensorManualFields = document.getElementById(
-    "monitoring-manual-fields"
-  );
-  const sensorDemoNotice = document.getElementById(
-    "monitoring-demo-notice"
-  );
 
   if (
     !sensorSummary ||
@@ -64,6 +55,7 @@
   let schedules = [];
   let reservoirs = [];
   let registeredFields = [];
+  let latestSensorReading = null;
 
   const COLORS = {
     forest: "#355E3B",
@@ -267,7 +259,7 @@
   link.click();
   link.remove();
 
-  URL.revokeObjectURL(downloadUrl);
+  window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
 
   message.textContent =
     `CSV report downloaded for ${selectedFieldName}. ` +
@@ -400,6 +392,22 @@
           </tr>
         `;
 
+    const sensorRows = sensorMetrics.map((metric) => {
+      const value = latestSensorReading
+        ? latestSensorReading[metric.key]
+        : "Not available";
+      const formattedValue = value === "Not available"
+        ? value
+        : formatSensorValue(value, metric.unit, metric.decimals);
+
+      return `
+        <tr>
+          <td>${escapeHtml(metric.label)}</td>
+          <td>${escapeHtml(formattedValue)}</td>
+        </tr>
+      `;
+    }).join("");
+
     printDetails.innerHTML = `
       <div class="monitoring-report-heading">
         <h2>Field Monitoring Report</h2>
@@ -450,10 +458,19 @@
         <tbody>${reservoirRows}</tbody>
       </table>
 
-      <h3>Sensor Data Availability</h3>
-      <p>Verified sensor readings are not currently connected to registered fields.
-      Soil moisture, temperature and humidity measurements are therefore not included
-      as field readings in this report.</p>
+      <h3>Latest Recorded Sensor Reading</h3>
+      <p>Recorded at:
+        <strong>${displayValue(latestSensorReading?.recorded_at)}</strong>
+      </p>
+      <table class="monitoring-report-table">
+        <thead>
+          <tr>
+            <th>Measurement</th>
+            <th>Value</th>
+          </tr>
+        </thead>
+        <tbody>${sensorRows}</tbody>
+      </table>
 
       <p class="monitoring-report-disclaimer">
         This report uses the field, irrigation schedule and reservoir records
@@ -1333,9 +1350,11 @@
 
   const loadSensorReadings = async () => {
     const fieldId = fieldSelect.value;
+    latestSensorReading = null;
     await loadSensorDeviceStatus(fieldId);
 
     if (!fieldId) {
+      latestSensorReading = null;
       sensorSummary.innerHTML =
         '<p class="monitoring-empty">Select a field to view sensor readings.</p>';
       sensorCharts.innerHTML = "";
@@ -1360,16 +1379,22 @@
       `&end_at=${encodeURIComponent(end.toISOString())}` +
       "&limit=5000";
 
-    const readings = await requestJson(
-      `/api/fields/${encodeURIComponent(fieldId)}/sensor-readings${query}`
-    );
+    const [readings, latestReadings] = await Promise.all([
+      requestJson(
+        `/api/fields/${encodeURIComponent(fieldId)}/sensor-readings${query}`
+      ),
+      requestJson(
+        `/api/fields/${encodeURIComponent(fieldId)}/sensor-readings?limit=1`
+      ),
+    ]);
 
     if (fieldSelect.value !== fieldId) return;
 
-    if (!Array.isArray(readings)) {
+    if (!Array.isArray(readings) || !Array.isArray(latestReadings)) {
       throw new Error("Unexpected sensor API response.");
     }
 
+    latestSensorReading = latestReadings[0] || null;
     const chronological = [...readings].reverse();
 
     if (!readings.length) {
@@ -1445,71 +1470,6 @@
     return number;
   };
 
-    const updateSensorReadingMode = () => {
-    if (
-      !sensorReadingMode ||
-      !sensorManualFields ||
-      !sensorDemoNotice
-    ) return;
-
-    const automatic = sensorReadingMode.value === "automatic";
-
-    sensorManualFields.hidden = automatic;
-    sensorDemoNotice.hidden = !automatic;
-
-    sensorManualFields
-      .querySelectorAll("input")
-      .forEach((input) => {
-        input.required =
-          !automatic && input.name === "soil_moisture_percent";
-      });
-
-    if (sensorReadingSubmit) {
-      sensorReadingSubmit.textContent = automatic
-        ? "Generate & Save Demo Reading"
-        : "Save Sensor Reading";
-    }
-  };
-
-  if (sensorReadingMode) {
-    sensorReadingMode.addEventListener(
-      "change",
-      updateSensorReadingMode
-    );
-    updateSensorReadingMode();
-  }
-
-  const generateDemoSensorReading = (field) => {
-    const location = String(field?.location || "Unknown location")
-      .trim()
-      .toLowerCase();
-
-    let seed = 0;
-
-    for (let index = 0; index < location.length; index += 1) {
-      seed = (seed * 31 + location.charCodeAt(index)) >>> 0;
-    }
-
-    seed = (seed ^ Date.now()) >>> 0;
-
-    const random = () => {
-      seed = (seed * 1664525 + 1013904223) >>> 0;
-      return seed / 4294967296;
-    };
-
-    const between = (min, max, decimals = 1) =>
-      Number((min + random() * (max - min)).toFixed(decimals));
-
-    return {
-      soil_moisture_percent: between(25, 65),
-      soil_temperature_c: between(22, 36),
-      humidity_percent: between(40, 85),
-      ph: between(5.5, 7.5, 2),
-      electrical_conductivity_us_cm: between(150, 1200),
-      recorded_at: new Date().toISOString(),
-    };
-  };
-
   if (
     sensorReadingForm &&
     sensorReadingStatus &&
@@ -1532,63 +1492,54 @@
 
       if (!sensorReadingForm.reportValidity()) return;
 
-            try {
+      try {
         const selectedField = registeredFields.find(
           (field) => String(field.id) === String(fieldId)
         );
 
-        const automatic =
-          sensorReadingMode?.value === "automatic";
+        const formData = new FormData(sensorReadingForm);
 
-        let payload;
+        const moisture = Number(
+          formData.get("soil_moisture_percent")
+        );
 
-        if (automatic) {
-          payload = generateDemoSensorReading(selectedField);
-        } else {
-          const formData = new FormData(sensorReadingForm);
+        const recordedAt = new Date(
+          String(formData.get("recorded_at"))
+        );
 
-          const moisture = Number(
-            formData.get("soil_moisture_percent")
+        if (
+          !Number.isFinite(moisture) ||
+          moisture < 0 ||
+          moisture > 100
+        ) {
+          throw new Error(
+            "Soil moisture must be between 0 and 100%."
           );
-
-          const recordedAt = new Date(
-            String(formData.get("recorded_at"))
-          );
-
-          if (
-            !Number.isFinite(moisture) ||
-            moisture < 0 ||
-            moisture > 100
-          ) {
-            throw new Error(
-              "Soil moisture must be between 0 and 100%."
-            );
-          }
-
-          if (Number.isNaN(recordedAt.getTime())) {
-            throw new Error(
-              "Please enter a valid measurement date and time."
-            );
-          }
-
-          payload = {
-            soil_moisture_percent: moisture,
-            soil_temperature_c: optionalSensorNumber(
-              formData,
-              "soil_temperature_c"
-            ),
-            humidity_percent: optionalSensorNumber(
-              formData,
-              "humidity_percent"
-            ),
-            ph: optionalSensorNumber(formData, "ph"),
-            electrical_conductivity_us_cm: optionalSensorNumber(
-              formData,
-              "electrical_conductivity_us_cm"
-            ),
-            recorded_at: recordedAt.toISOString(),
-          };
         }
+
+        if (Number.isNaN(recordedAt.getTime())) {
+          throw new Error(
+            "Please enter a valid measurement date and time."
+          );
+        }
+
+        const payload = {
+          soil_moisture_percent: moisture,
+          soil_temperature_c: optionalSensorNumber(
+            formData,
+            "soil_temperature_c"
+          ),
+          humidity_percent: optionalSensorNumber(
+            formData,
+            "humidity_percent"
+          ),
+          ph: optionalSensorNumber(formData, "ph"),
+          electrical_conductivity_us_cm: optionalSensorNumber(
+            formData,
+            "electrical_conductivity_us_cm"
+          ),
+          recorded_at: recordedAt.toISOString(),
+        };
 
         sensorReadingSubmit.disabled = true;
         sensorReadingStatus.classList.remove("monitoring-error");
@@ -1610,11 +1561,8 @@
 
         sensorReadingForm.reset();
         setSensorRecordedAtDefault();
-        updateSensorReadingMode();
-
-        sensorReadingStatus.textContent = automatic
-          ? `Simulated demo reading saved successfully for ${selectedFieldName}.`
-          : `Manual sensor reading saved successfully for ${selectedFieldName}.`;
+        sensorReadingStatus.textContent =
+          `Sensor reading saved successfully for ${selectedFieldName}.`;
 
         if (fieldSelect.value === fieldId) {
           try {

@@ -4678,4 +4678,137 @@ irrigationNext.addEventListener("click", () => {
     window.addEventListener("jalsaathi:profile-changed", syncProfile);
     window.addEventListener("jalsaathi:language-changed", syncProfile);
   }
+
+  async function initializeAlertsView(root) {
+    const list = root.querySelector("[data-alert-list]");
+    const status = root.querySelector("[data-alert-status]");
+    const refresh = root.querySelector("[data-alert-refresh]");
+    if (!(list instanceof HTMLElement) || !(status instanceof HTMLElement)) return;
+
+    let alerts = [];
+    let activeFilter = "all";
+    const updateSummary = () => {
+      const active = alerts.filter((alert) => alert.status === "unresolved");
+      root.querySelector("[data-alert-total]").textContent = String(active.length);
+      root.querySelector("[data-alert-urgent]").textContent = String(
+        active.filter((alert) => alert.severity === "high").length,
+      );
+      root.querySelector("[data-alert-advisory]").textContent = String(
+        active.filter((alert) => alert.severity !== "high").length,
+      );
+    };
+
+    const matchesFilter = (alert) => {
+      const type = String(alert.alert_type || "").toLowerCase();
+      if (activeFilter === "emergency") return alert.severity === "high";
+      if (activeFilter === "soil") return /soil|water|moisture/.test(type);
+      if (activeFilter === "sensor") return type.includes("sensor");
+      if (activeFilter === "irrigation") return type.includes("irrigation");
+      if (activeFilter === "weather") return /weather|rain|heat|wind|frost/.test(type);
+      return true;
+    };
+
+    const render = () => {
+      updateSummary();
+      list.replaceChildren();
+      const visibleAlerts = alerts.filter(matchesFilter);
+      status.hidden = visibleAlerts.length > 0;
+      if (!visibleAlerts.length) {
+        status.textContent = alerts.length
+          ? "No alerts match this filter."
+          : "No alerts are available.";
+        return;
+      }
+
+      visibleAlerts.forEach((alert) => {
+        const card = document.createElement("article");
+        card.className = `portal-alert-card${alert.severity === "high" ? " portal-alert-card--critical" : ""}`;
+        const icon = document.createElement("span");
+        icon.className = `portal-alert-icon${alert.severity === "high" ? " portal-alert-icon--red" : ""}`;
+        icon.setAttribute("aria-hidden", "true");
+        icon.textContent = "!";
+
+        const content = document.createElement("div");
+        content.className = "portal-alert-content";
+        const heading = document.createElement("div");
+        heading.className = "portal-alert-heading";
+        const severity = document.createElement("span");
+        severity.className = "portal-alert-severity";
+        severity.textContent = alert.severity;
+        const title = document.createElement("h3");
+        title.textContent = String(alert.alert_type || "Field alert").replaceAll("_", " ");
+        heading.append(severity, title);
+        const message = document.createElement("p");
+        message.textContent = alert.message;
+        content.append(heading, message);
+        if (alert.reason) {
+          const reason = document.createElement("small");
+          reason.textContent = alert.reason;
+          content.append(reason);
+        }
+
+        const time = document.createElement("time");
+        time.className = "portal-alert-time";
+        const createdAt = new Date(alert.created_at);
+        if (!Number.isNaN(createdAt.getTime())) {
+          time.dateTime = createdAt.toISOString();
+          time.textContent = createdAt.toLocaleString();
+        }
+        const actions = document.createElement("div");
+        actions.className = "portal-alert-actions";
+        const addAction = (label, path) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "portal-button";
+          button.textContent = label;
+          button.addEventListener("click", async () => {
+            button.disabled = true;
+            try {
+              await window.JalSaathiProfile.apiRequest(path, { method: "PATCH" });
+              await loadAlerts();
+            } catch (error) {
+              status.hidden = false;
+              status.textContent = error instanceof Error ? error.message : "The alert could not be updated.";
+              button.disabled = false;
+            }
+          });
+          actions.append(button);
+        };
+        if (!alert.is_read) addAction("Mark as read", `/api/alerts/${alert.id}/read`);
+        if (alert.status !== "resolved") addAction("Resolve", `/api/alerts/${alert.id}/resolve`);
+        content.append(actions);
+        card.append(icon, content, time);
+        list.append(card);
+      });
+    };
+
+    const loadAlerts = async () => {
+      status.hidden = false;
+      status.textContent = "Loading field alerts...";
+      if (refresh instanceof HTMLButtonElement) refresh.disabled = true;
+      try {
+        alerts = await window.JalSaathiProfile.apiRequest("/api/alerts");
+        if (!Array.isArray(alerts)) throw new Error("The alerts response is invalid.");
+        render();
+      } catch (error) {
+        list.replaceChildren();
+        status.hidden = false;
+        status.textContent = error instanceof Error ? error.message : "Alerts could not be loaded.";
+      } finally {
+        if (refresh instanceof HTMLButtonElement) refresh.disabled = false;
+      }
+    };
+
+    root.querySelectorAll("[data-alert-filter]").forEach((button) => {
+      button.addEventListener("click", () => {
+        activeFilter = button.dataset.alertFilter || "all";
+        root.querySelectorAll("[data-alert-filter]").forEach((item) => {
+          item.classList.toggle("is-active", item === button);
+        });
+        render();
+      });
+    });
+    refresh?.addEventListener("click", loadAlerts);
+    await loadAlerts();
+  }
 })();

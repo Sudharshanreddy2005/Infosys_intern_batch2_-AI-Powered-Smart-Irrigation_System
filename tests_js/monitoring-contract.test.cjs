@@ -24,7 +24,7 @@ test("printed field report uses the latest saved sensor values and handles missi
   assert.match(script, /latestSensorReading\[metric\.key\]/);
   assert.match(script, /: "Not available"/);
   assert.doesNotMatch(script, /Verified sensor readings are not currently connected/);
-  assert.match(html, /Print \/ Save PDF Report/);
+  assert.match(html, /Download PDF Report/);
 });
 
 test("CSV download URL remains valid briefly after the browser starts downloading", () => {

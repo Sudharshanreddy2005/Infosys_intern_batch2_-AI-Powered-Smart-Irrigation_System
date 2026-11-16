@@ -1,8 +1,10 @@
 import hashlib
 import hmac
+import binascii
 import logging
 import math
 import os
+import base64
 import secrets
 import threading
 import time
@@ -40,15 +42,24 @@ from models import (
     FarmerCrop,
     FarmerField,
     FarmerSensorReading,
+    FarmerSensorDevice,
     IrrigationReservoir,
     IrrigationSchedule,
-    FarmerSensorDevice,
 )
 from crop_disease_client import (
     ALLOWED_IMAGE_TYPES,
     MAX_CROP_IMAGE_BYTES,
     CropDiseaseServiceError,
     predict_crop_disease,
+)
+from alerts.database import (
+    get_farmer_alerts,
+    mark_alert_as_read,
+    resolve_alert,
+)
+from alerts.schemas import (
+    NotificationPreferencesUpdate,
+    PushSubscriptionRequest,
 )
 from schemas import (
     AssistantConversationRenameRequest,
@@ -189,6 +200,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+@app.get("/service-worker.js", include_in_schema=False)
+def service_worker():
+    return FileResponse(
+        STATIC_DIR / "service-worker.js",
+        media_type="application/javascript",
+        headers={"Service-Worker-Allowed": "/"},
+    )
 
 
 # --------------------------------------------------
@@ -4529,3 +4547,186 @@ def crop_stress_prediction(
         "prediction_timestamp": datetime.now(timezone.utc).isoformat(),
         **result,
     }
+# --------------------------------------------------
+# ALERT MANAGEMENT APIs
+# --------------------------------------------------
+
+@app.get("/api/alerts")
+def list_farmer_alerts(
+    unread_only: bool = Query(default=False),
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(get_auth_context),
+):
+    alerts = get_farmer_alerts(
+        db=db,
+        farmer_id=context[0].id,
+        unread_only=unread_only,
+    )
+
+    return [
+        {
+            "id": alert.id,
+            "farmer_id": alert.farmer_id,
+            "field_id": alert.field_id,
+            "alert_type": alert.alert_type,
+            "severity": alert.severity,
+            "message": alert.message,
+            "reason": alert.reason,
+            "is_read": alert.is_read,
+            "status": alert.status,
+            "created_at": alert.created_at,
+        }
+        for alert in alerts
+    ]
+
+
+@app.patch("/api/alerts/{alert_id}/read")
+def mark_farmer_alert_read(
+    alert_id: int,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    alert = mark_alert_as_read(
+        db=db,
+        alert_id=alert_id,
+        farmer_id=context[0].id,
+    )
+
+    if alert is None:
+        raise HTTPException(status_code=404, detail="Alert not found.")
+
+    return {"message": "Alert marked as read.", "alert_id": alert.id}
+
+
+@app.patch("/api/alerts/{alert_id}/resolve")
+def resolve_farmer_alert(
+    alert_id: int,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    alert = resolve_alert(
+        db=db,
+        alert_id=alert_id,
+        farmer_id=context[0].id,
+    )
+
+    if alert is None:
+        raise HTTPException(status_code=404, detail="Alert not found.")
+
+    return {"message": "Alert marked as resolved.", "alert_id": alert.id}
+
+@app.get("/api/notification-preferences")
+def get_notification_preferences(
+    context: tuple[Farmer, AuthSession] = Depends(get_auth_context),
+):
+    farmer = context[0]
+
+    return {
+        "web_push_enabled": farmer.web_push_enabled,
+        "sms_enabled": farmer.sms_enabled,
+        "email_enabled": farmer.email_enabled,
+    }
+
+
+@app.patch("/api/notification-preferences")
+def update_notification_preferences(
+    preferences: NotificationPreferencesUpdate,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    farmer = context[0]
+
+    updates = preferences.model_dump(exclude_unset=True, exclude_none=True)
+
+    for key, value in updates.items():
+        setattr(farmer, key, value)
+
+    try:
+        db.commit()
+    except SQLAlchemyError as error:
+        db.rollback()
+        logging.error("Notification preference update failed (%s).", type(error).__name__)
+        raise HTTPException(status_code=500, detail="Notification preferences could not be saved.") from error
+    db.refresh(farmer)
+
+    return {
+        "message": "Notification preferences updated successfully.",
+        "web_push_enabled": farmer.web_push_enabled,
+        "sms_enabled": farmer.sms_enabled,
+        "email_enabled": farmer.email_enabled,
+    }
+
+@app.post("/api/push/subscribe")
+def subscribe_to_push_notifications(
+    subscription: PushSubscriptionRequest,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    farmer = context[0]
+
+    endpoint = urlsplit(subscription.endpoint)
+    if endpoint.scheme != "https" or not endpoint.netloc:
+        raise HTTPException(status_code=422, detail="Push endpoint must use HTTPS.")
+
+    existing = db.scalar(
+        select(FarmNotificationSubscription).where(
+            FarmNotificationSubscription.endpoint == subscription.endpoint
+        )
+    )
+    if existing:
+        if existing.farmer_id != farmer.id:
+            raise HTTPException(status_code=409, detail="Push endpoint is already registered.")
+        existing.p256dh = subscription.keys["p256dh"]
+        existing.auth = subscription.keys["auth"]
+        existing.revoked_at = None
+        existing.expires_at = (
+            datetime.fromtimestamp(subscription.expirationTime / 1000, timezone.utc)
+            if subscription.expirationTime is not None
+            else None
+        )
+    else:
+        db.add(FarmNotificationSubscription(
+            farmer_id=farmer.id,
+            endpoint=subscription.endpoint,
+            p256dh=subscription.keys["p256dh"],
+            auth=subscription.keys["auth"],
+            expires_at=(
+                datetime.fromtimestamp(subscription.expirationTime / 1000, timezone.utc)
+                if subscription.expirationTime is not None
+                else None
+            ),
+        ))
+
+    farmer.web_push_enabled = True
+    try:
+        db.commit()
+    except IntegrityError as error:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Push endpoint is already registered.") from error
+    except SQLAlchemyError as error:
+        db.rollback()
+        logging.error("Push subscription update failed (%s).", type(error).__name__)
+        raise HTTPException(status_code=500, detail="Push subscription could not be saved.") from error
+
+    return {"message": "Browser push subscription saved."}
+
+
+@app.get("/api/push/public-key")
+def get_push_public_key():
+    configured_key = os.getenv("VAPID_PUBLIC_KEY", "").strip()
+    if not configured_key:
+        raise HTTPException(status_code=503, detail="Browser push is not configured.")
+    try:
+        if len(configured_key) == 130 and all(char in "0123456789abcdefABCDEF" for char in configured_key):
+            key_bytes = bytes.fromhex(configured_key)
+        else:
+            encoded = configured_key.replace("-", "+").replace("_", "/")
+            key_bytes = base64.b64decode(encoded + "=" * (-len(encoded) % 4), validate=True)
+        if len(key_bytes) != 65 or key_bytes[0] != 4:
+            raise ValueError("Invalid public key.")
+    except (ValueError, binascii.Error) as error:
+        logging.error("VAPID public key configuration is invalid.")
+        raise HTTPException(status_code=503, detail="Browser push is not configured.") from error
+
+    public_key = base64.urlsafe_b64encode(key_bytes).decode("ascii").rstrip("=")
+    return {"public_key": public_key}

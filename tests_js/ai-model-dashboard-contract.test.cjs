@@ -33,21 +33,25 @@ test("AI dashboard does not depend on the removed page-specific topbar context",
   assert.match(dashboard, /data-ai-card="model4"/);
 });
 
-test("Model 1 exposes only the exact automatic model inputs with source metadata", () => {
+test("Model 1 exposes its automatic inputs with their actual data sources", () => {
   assert.match(dashboard, /<summary>Model Input Details<\/summary>/);
   assert.match(dashboard, /data-ai-input-list="model1"/);
-  assert.match(script, /feature_inputs/);
-  assert.match(script, /selected_field_current_weather_api/);
+  assert.match(script, /Latest saved sensor reading/);
+  assert.match(script, /result\.weather_source/);
+  assert.match(script, /Source: \$\{source\}/);
   assert.doesNotMatch(script, /apiRequest\("\/weather\/current"/);
 });
 
-test("dashboard requires observed inputs and does not invent Model 4 class labels", () => {
-  assert.match(dashboard, /name="current_moisture_percent"[^>]*required/);
-  assert.match(dashboard, /data-ai-zone4-inputs/);
-  assert.match(dashboard, /Enter actual soil and crop observations/);
+test("Model 4 identifies training defaults and does not invent output class labels", () => {
+  assert.match(dashboard, /name="current_moisture_percent"[^>]*readonly/);
+  assert.match(script, /latest\.soil_moisture_percent/);
+  assert.match(script, /Select a field with a saved soil-moisture reading/);
+  assert.match(dashboard, /data-ai-model4-form/);
+  assert.match(script, /Training defaults are populated/);
+  assert.match(script, /fitted training defaults/);
   assert.match(script, /class_label_status !== "unverified"/);
   assert.doesNotMatch(dashboard, /Low Stress|Moderate Stress|High Stress/);
-  assert.match(dashboard, /Class mapping requires verification/);
+  assert.match(dashboard, /Class meanings are unverified/);
 });
 
 test("Model 4 form exposes the artifact's full 20-feature input contract", () => {

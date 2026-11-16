@@ -1,35 +1,37 @@
-
+import os
 import random
-from datetime import datetime
+from datetime import datetime, timezone
 
 import requests
 
-API_URL = "http://127.0.0.1:8000/sensor-data"
 
+def main() -> int:
+    sensor_id = os.getenv("SENSOR_ID", "").strip()
+    field_id = os.getenv("SENSOR_FIELD_ID", "").strip()
+    sensor_token = os.getenv("SENSOR_TOKEN", "")
+    if not sensor_id or not field_id.isdigit() or not sensor_token:
+        raise RuntimeError(
+            "Set SENSOR_ID, SENSOR_FIELD_ID, and SENSOR_TOKEN for a registered device."
+        )
 
-sensor_data = {
-    "sensor_id": "SM_001",
-    "field_id": "FIELD_001",
-    "soil_moisture": round(random.uniform(20, 80), 2),
-    "timestamp": datetime.now().isoformat(),
-}
+    api_url = os.getenv("SENSOR_API_URL", "http://127.0.0.1:8003").rstrip("/")
+    payload = {
+        "sensor_id": sensor_id,
+        "field_id": int(field_id),
+        "soil_moisture": round(random.uniform(20, 80), 2),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
 
-
-print("Sending sensor data:")
-print(sensor_data)
-
-try:
     response = requests.post(
-        API_URL,
-        json=sensor_data,
+        f"{api_url}/sensor-data",
+        json=payload,
+        headers={"X-Sensor-Token": sensor_token},
         timeout=10,
     )
+    response.raise_for_status()
+    print({"status_code": response.status_code, "response": response.json()})
+    return 0
 
-    print("\nAPI response status:", response.status_code)
-    print(response.json())
 
-except requests.RequestException as error:
-    print("Could not connect to the API:", error)
-    
-#The simulator generates one random moisture reading between 20 and 80 and sends it to the API. 
-#It uses simulated data, so you do not need a physical sensor.
+if __name__ == "__main__":
+    raise SystemExit(main())

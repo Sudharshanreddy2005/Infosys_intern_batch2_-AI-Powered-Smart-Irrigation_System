@@ -6,7 +6,7 @@
     if (!(mount instanceof HTMLElement)) return;
 
     try {
-      const response = await fetch("/static/topbar.html?v=20261114-main-assistant-pwa1", {
+      const response = await fetch("/static/topbar.html?v=20261116-notifications1", {
         credentials: "same-origin",
       });
       if (!response.ok) throw new Error(`Header component request failed (${response.status}).`);
@@ -35,6 +35,12 @@
     const profileMenu = header.querySelector("[data-profile-menu]");
     const notificationButton = header.querySelector("[data-notification-toggle]");
     const notificationPanel = header.querySelector("[data-notification-panel]");
+    const notificationCount = header.querySelector("[data-notification-count]");
+    const notificationList = header.querySelector("[data-notification-list]");
+    const notificationEmpty = header.querySelector("[data-notification-empty]");
+    const notificationSummary = header.querySelector("[data-notification-summary]");
+    const notificationFeedback = header.querySelector("[data-notification-feedback]");
+    const enablePushButton = header.querySelector("[data-enable-web-push]");
 
     const selectedLanguage = () => {
       try {
@@ -145,6 +151,99 @@
       notificationButton,
       "#notification-panel",
     ));
+    const loadNotifications = async () => {
+      try {
+        const alerts = await profileApi.apiRequest("/api/alerts");
+        if (!Array.isArray(alerts)) throw new Error("The notifications response is invalid.");
+        const unreadCount = alerts.filter((alert) => !alert.is_read).length;
+        notificationCount.textContent = unreadCount > 99 ? "99+" : String(unreadCount);
+        notificationCount.hidden = unreadCount === 0;
+        notificationSummary.textContent = `${unreadCount} unread notifications`;
+        notificationList.replaceChildren();
+        notificationEmpty.hidden = alerts.length > 0;
+        alerts.forEach((alert) => {
+          const item = document.createElement("button");
+          item.type = "button";
+          item.className = "notification-item";
+          item.textContent = `${String(alert.severity).toUpperCase()}: ${alert.message}`;
+          item.setAttribute("aria-label", `${alert.message}${alert.is_read ? "" : " (unread)"}`);
+          item.addEventListener("click", async () => {
+            if (!alert.is_read) {
+              try {
+                await profileApi.apiRequest(`/api/alerts/${alert.id}/read`, { method: "PATCH" });
+              } catch (error) {
+                notificationFeedback.hidden = false;
+                notificationFeedback.textContent = error instanceof Error
+                  ? error.message
+                  : "The notification could not be marked as read.";
+                return;
+              }
+            }
+            window.location.href = "/static/sections.html?view=alerts";
+          });
+          notificationList.append(item);
+        });
+      } catch (error) {
+        notificationFeedback.hidden = false;
+        notificationFeedback.textContent = error instanceof Error
+          ? error.message
+          : "Notifications could not be loaded.";
+      }
+    };
+    notificationButton.addEventListener("click", () => {
+      notificationFeedback.hidden = true;
+      void loadNotifications();
+    });
+
+    if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+      enablePushButton.hidden = true;
+    } else {
+      enablePushButton.addEventListener("click", async () => {
+        enablePushButton.disabled = true;
+        notificationFeedback.hidden = false;
+        notificationFeedback.textContent = "Requesting browser notification permission...";
+        try {
+          const keyResponse = await profileApi.apiRequest("/api/push/public-key");
+          const publicKey = keyResponse.public_key;
+          if (typeof publicKey !== "string" || !publicKey) {
+            throw new Error("Browser notifications are not configured.");
+          }
+          const permission = await window.Notification.requestPermission();
+          if (permission !== "granted") {
+            notificationFeedback.textContent = permission === "denied"
+              ? "Notifications are blocked in browser settings."
+              : "Browser notification permission was not granted.";
+            return;
+          }
+          const registration = await navigator.serviceWorker.ready;
+          const padding = "=".repeat((4 - publicKey.length % 4) % 4);
+          const applicationServerKey = Uint8Array.from(
+            atob(publicKey.replace(/-/g, "+").replace(/_/g, "/") + padding),
+            (character) => character.charCodeAt(0),
+          );
+          let subscription = await registration.pushManager.getSubscription();
+          if (!subscription) {
+            subscription = await registration.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey,
+            });
+          }
+          await profileApi.apiRequest("/api/push/subscribe", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(subscription.toJSON()),
+          });
+          notificationFeedback.textContent = "Browser notifications are enabled.";
+        } catch (error) {
+          console.error("Could not enable JalSaathi browser notifications:", error);
+          notificationFeedback.textContent = error instanceof Error
+            ? error.message
+            : "Browser notifications could not be enabled.";
+        } finally {
+          enablePushButton.disabled = false;
+        }
+      });
+    }
     header.querySelectorAll("[data-chart-assistant-open], [data-install-app]")
       .forEach((button) => button.addEventListener("click", closeMenus));
     header.querySelector("[data-topbar-logout]").addEventListener("click", async () => {

@@ -14,8 +14,8 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     func,
-    Boolean,
-    UniqueConstraint,
+    Text,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -35,6 +35,9 @@ class Farmer(Base):
     state: Mapped[str | None] = mapped_column(String(80))
     district: Mapped[str | None] = mapped_column(String(100))
     village: Mapped[str | None] = mapped_column(String(120))
+    web_push_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    sms_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    email_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -384,6 +387,15 @@ class DailyFarmReminderSetting(Base):
 
 class FarmNotificationSubscription(Base):
     __tablename__ = "farm_notification_subscriptions"
+    __table_args__ = (
+        Index(
+            "uq_farm_notification_active_endpoint",
+            "endpoint",
+            unique=True,
+            postgresql_where=text("revoked_at IS NULL"),
+            sqlite_where=text("revoked_at IS NULL"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     farmer_id: Mapped[int] = mapped_column(
@@ -399,4 +411,47 @@ class FarmNotificationSubscription(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class Alert(Base):
+    __tablename__ = "alerts"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["field_id", "farmer_id"],
+            ["farmer_fields.id", "farmer_fields.farmer_id"],
+            ondelete="CASCADE",
+            name="fk_alerts_owned_field",
+        ),
+        CheckConstraint(
+            "severity IN ('low', 'medium', 'high')",
+            name="ck_alerts_severity",
+        ),
+        CheckConstraint(
+            "status IN ('unresolved', 'resolved')",
+            name="ck_alerts_status",
+        ),
+        Index(
+            "uq_alerts_unresolved_field_type",
+            "farmer_id",
+            "field_id",
+            "alert_type",
+            unique=True,
+            postgresql_where=text("status = 'unresolved'"),
+            sqlite_where=text("status = 'unresolved'"),
+        ),
+        Index("ix_alerts_farmer_created", "farmer_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    farmer_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    field_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    alert_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False)
+    message: Mapped[str] = mapped_column(String(500), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="unresolved", server_default="unresolved")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )

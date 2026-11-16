@@ -140,6 +140,10 @@ body.sidebar-open .common-topbar-menu { position: relative; z-index: 56; }
 .common-dropdown-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 13px 10px; border-bottom: 1px solid #edf0eb; color: #244332; font-size: 12px; }
 .common-dropdown-heading span { color: #78857a; font-size: 10px; }
 .common-notification-empty { margin: 0; padding: 18px 14px; color: #6f7d71; font-size: 12px; line-height: 1.5; }
+.notification-enable-button { display: block; width: calc(100% - 24px); margin: 10px 12px; padding: 9px 11px; border: 1px solid #dce8dd; border-radius: 9px; background: #f3f8f2; color: #285d3d; font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; }
+.notification-enable-button:disabled { cursor: wait; opacity: .65; }
+.notification-item { display: block; width: 100%; padding: 11px 14px; border: 0; border-top: 1px solid #edf0eb; background: #fff; color: #405344; text-align: left; font: inherit; font-size: 11px; line-height: 1.45; cursor: pointer; }
+.notification-item:hover { background: #f5f8f2; }
 .common-topbar [hidden] { display: none !important; }
 
 .common-modal-backdrop {

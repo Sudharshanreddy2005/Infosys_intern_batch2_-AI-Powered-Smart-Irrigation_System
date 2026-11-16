@@ -4,21 +4,19 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class SensorData(BaseModel):
-    sensor_id: str
-    field_id: str
+    sensor_id: str = Field(min_length=1, max_length=40)
+    field_id: int = Field(gt=0)
     soil_moisture: float = Field(ge=0, le=100)
     timestamp: datetime
 
     @field_validator("sensor_id", "field_id")
     @classmethod
     def validate_ids(cls, value):
-        value = value.strip()
+        return value.strip() if isinstance(value, str) else value
 
-        if not value:
-            raise ValueError("ID cannot be empty")
-
+    @field_validator("soil_moisture")
+    @classmethod
+    def validate_finite_moisture(cls, value: float) -> float:
+        if not float("-inf") < value < float("inf"):
+            raise ValueError("Soil moisture must be a finite number.")
         return value
-#What this code does:Requires all four sensor fields.Checks that the moisture reading is between 0 and 100.
-#Removes leading and trailing spaces from sensor and field IDs.Rejects empty IDs.
-#Checks that the timestamp is a valid date and time.
-#For example, "  SM_001  " becomes "SM_001". A moisture value of 150 or a missing timestamp will be rejected.

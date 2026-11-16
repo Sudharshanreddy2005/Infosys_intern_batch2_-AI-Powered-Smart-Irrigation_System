@@ -901,7 +901,7 @@ const runModel4Demo = async () => {
       void refresh();
     });
     refreshButton.addEventListener("click", () => { void refresh(); });
-   
+
     window.addEventListener("jalsaathi:language-changed", () => {
       updateFieldDetails();
       updateSummary();
@@ -1026,16 +1026,31 @@ void refresh();
 
   if (!(list instanceof HTMLElement) || !(status instanceof HTMLElement)) return;
 
+  const weatherSource = result.weather_source === "tomorrow_io"
+    ? "Tomorrow.io forecast"
+    : "Open-Meteo forecast";
   const measurements = [
-    { name: "Soil Moisture", value: `${result.soil_moisture_percent}%` },
-    { name: "Rainfall", value: `${result.rainfall_mm} mm` },
-    { name: "Rain Probability", value: `${result.rain_probability_percent}%` },
-    { name: "Reference Evapotranspiration (ET0)", value: `${result.et0_mm} mm` }
+    {
+      name: "Soil Moisture",
+      value: `${result.soil_moisture_percent}%`,
+      source: "Latest saved sensor reading",
+    },
+    { name: "Rainfall", value: `${result.rainfall_mm} mm`, source: weatherSource },
+    {
+      name: "Rain Probability",
+      value: `${result.rain_probability_percent}%`,
+      source: weatherSource,
+    },
+    {
+      name: "Reference Evapotranspiration (ET0)",
+      value: `${result.et0_mm} mm`,
+      source: `Calculated using ${weatherSource}`,
+    }
   ];
 
   const fragment = document.createDocumentFragment();
 
-  measurements.forEach(({ name, value }) => {
+  measurements.forEach(({ name, value, source }) => {
     const row = document.createElement("section");
     row.className = "ai-input-row";
 
@@ -1047,7 +1062,11 @@ void refresh();
     measurement.className = "ai-input-value";
     measurement.textContent = value;
 
-    row.append(feature, measurement);
+    const sourceDetails = document.createElement("small");
+    sourceDetails.className = "ai-input-source";
+    sourceDetails.textContent = `Source: ${source}`;
+
+    row.append(feature, measurement, sourceDetails);
     fragment.append(row);
   });
 

@@ -17,7 +17,16 @@ services:
 
   farmer-pwa:
     ports: !override
-      - "8002:3000"
+      - "8000:3000"
+
+  sensor-ingestion:
+    container_name: jalsaathi_m3_test_sensor
+    image: jalsaathi-m3-test-backend:local
+    build:
+      context: .
+      dockerfile: Dockerfile.m3-test
+    ports: !override
+      - "8003:8000"
 
 volumes:
   postgres_data:

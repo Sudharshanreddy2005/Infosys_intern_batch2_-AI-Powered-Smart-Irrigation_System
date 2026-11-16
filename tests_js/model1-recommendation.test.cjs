@@ -129,7 +129,7 @@ test("reduced-model response validation requires the proxy and verified sources"
   );
 });
 
-test("dashboard requests only a server-side prediction for the selected field", async () => {
+test("dashboard requests the server-side experimental model for the selected field", async () => {
   const model = createModel();
   const status = createStatus();
   let requestUrl = "";
@@ -146,7 +146,7 @@ test("dashboard requests only a server-side prediction for the selected field", 
     },
   );
 
-  assert.equal(requestUrl, "/api/ml/reduced-weather-prediction");
+  assert.equal(requestUrl, "/api/ml/reduced-weather-experimental");
   assert.equal(requestOptions.method, "POST");
   assert.deepEqual(JSON.parse(requestOptions.body), { field_id: 17 });
   const text = textContent(status);
