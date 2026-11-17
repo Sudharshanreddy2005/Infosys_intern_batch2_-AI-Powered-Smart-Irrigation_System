@@ -1,10 +1,12 @@
 import hashlib
 import hmac
 import binascii
+import json
 import logging
 import math
 import os
 import base64
+import re
 import secrets
 import threading
 import time
@@ -14,7 +16,7 @@ from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
@@ -25,7 +27,7 @@ from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 import joblib
 import pandas as pd
-from sqlalchemy import create_engine, select, text, update
+from sqlalchemy import create_engine, func, or_, select, text, update
 from sqlalchemy.engine import URL
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -38,6 +40,7 @@ from models import (
     DailyFarmReminderSetting,
     DailyFarmTask,
     FarmNotificationSubscription,
+    Alert,
     Farmer,
     FarmerCrop,
     FarmerField,
@@ -45,6 +48,7 @@ from models import (
     FarmerSensorDevice,
     IrrigationReservoir,
     IrrigationSchedule,
+    NotificationDelivery,
 )
 from crop_disease_client import (
     ALLOWED_IMAGE_TYPES,
@@ -53,10 +57,14 @@ from crop_disease_client import (
     predict_crop_disease,
 )
 from alerts.database import (
-    get_farmer_alerts,
+    create_alert,
     mark_alert_as_read,
+    mark_alert_as_unread,
+    mark_all_alerts_as_read,
     resolve_alert,
 )
+from alerts.delivery import dispatch_alert_notifications
+from alerts.service import process_drought_risk, process_sensor_failure, process_weather_forecast
 from alerts.schemas import (
     NotificationPreferencesUpdate,
     PushSubscriptionRequest,
@@ -123,7 +131,7 @@ from farmer_assistant import (
     answer_farmer_question,
     explain_model2_prediction,
 )
-from chart_assistant import answer_chart_question, answer_chart_question_openai
+from chart_assistant import answer_chart_question
 from model2_integration import load_production_model2_bundle
 from irrigation_optimizer import config as irrigation_config
 from irrigation_optimizer import water_calc as irrigation_water_calc
@@ -160,6 +168,8 @@ auth_attempts = OrderedDict()
 auth_attempts_lock = threading.Lock()
 weather_attempts = OrderedDict()
 weather_attempts_lock = threading.Lock()
+weather_alert_attempts = OrderedDict()
+weather_alert_attempts_lock = threading.Lock()
 public_weather_attempts = OrderedDict()
 public_weather_attempts_lock = threading.Lock()
 assistant_attempts = OrderedDict()
@@ -179,7 +189,7 @@ CSRF_COOKIE = "jalsaathi_csrf"
 PROJECT_ROOT = Path(__file__).resolve().parent
 STATIC_DIR = PROJECT_ROOT / "static"
 TEMPLATES_DIR = PROJECT_ROOT / "templates"
-PWA_ICONS_DIR = PROJECT_ROOT / "farmer-pwa" / "public" / "icons"
+PWA_ICONS_DIR = STATIC_DIR / "main-pwa-icons"
 PWA_ICON_FILES = {
     "icon-192.png",
     "icon-512.png",
@@ -200,13 +210,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-@app.get("/service-worker.js", include_in_schema=False)
-def service_worker():
-    return FileResponse(
-        STATIC_DIR / "service-worker.js",
-        media_type="application/javascript",
-        headers={"Service-Worker-Allowed": "/"},
-    )
 
 
 # --------------------------------------------------
@@ -1546,6 +1549,9 @@ def update_farmer_profile(
         raise HTTPException(status_code=422, detail="Name cannot be empty.")
     if not values:
         raise HTTPException(status_code=422, detail="At least one profile field is required.")
+    if "phone" in values and values["phone"] != farmer.phone:
+        farmer.phone_verified_at = None
+        farmer.sms_enabled = False
     for key, value in values.items():
         setattr(farmer, key, value)
     db.commit()
@@ -2393,6 +2399,14 @@ async def farmer_assistant_chat(
             payload,
             selected_crop,
         )
+        field_data.update(
+            _assistant_chart_payloads(
+                field_data,
+                question,
+                history,
+                payload.chart_mode,
+            )
+        )
         if conversation is not None:
             previous_disease = _latest_verified_crop_disease(conversation.messages)
             if previous_disease is not None:
@@ -2405,14 +2419,9 @@ async def farmer_assistant_chat(
             "village": farmer.village,
         }
         try:
-            answer_provider = (
-                answer_chart_question
-                if payload.persist_conversation or conversation is not None
-                else answer_chart_question_openai
-            )
-            answer = await answer_provider(
+            answer = await answer_chart_question(
                 question,
-                field_data,
+                _assistant_gemini_context(field_data),
                 history,
                 payload.language_code,
             )
@@ -2426,7 +2435,12 @@ async def farmer_assistant_chat(
                 detail=error.detail,
                 headers=headers,
             ) from error
-        result: dict[str, object] = {"answer": answer, "context": field_data}
+        result: dict[str, object] = {
+            "answer": answer,
+            "context": field_data,
+            "charts": field_data["charts"],
+            "chart_availability": field_data["chart_availability"],
+        }
         if payload.persist_conversation or conversation is not None:
             if conversation is None:
                 title = " ".join(question.split())
@@ -2492,6 +2506,7 @@ async def farmer_assistant_image(
     field_id: int | None = Form(None, gt=0),
     crop_id: int | None = Form(None, gt=0),
     chart_period: Literal["24h", "7d", "30d"] = Form("7d"),
+    chart_mode: Literal["auto", "text", "chart"] = Form("auto"),
     conversation_id: int | None = Form(None, gt=0),
     db: Session = Depends(get_db),
     context: tuple[Farmer, AuthSession] = Depends(require_csrf),
@@ -2505,6 +2520,7 @@ async def farmer_assistant_image(
         field_id=field_id,
         crop_id=crop_id,
         chart_period=chart_period,
+        chart_mode=chart_mode,
         persist_conversation=True,
         conversation_id=conversation_id,
     )
@@ -2567,10 +2583,18 @@ async def farmer_assistant_image(
         "source": "crop_disease_model",
         "prediction": prediction,
     }
+    field_data.update(
+        _assistant_chart_payloads(
+            field_data,
+            payload.question,
+            history,
+            payload.chart_mode,
+        )
+    )
     try:
         answer = await answer_chart_question(
             payload.question,
-            field_data,
+            _assistant_gemini_context(field_data),
             history,
             payload.language_code,
         )
@@ -2615,6 +2639,8 @@ async def farmer_assistant_image(
     return {
         "answer": answer,
         "context": field_data,
+        "charts": field_data["charts"],
+        "chart_availability": field_data["chart_availability"],
         "conversation_id": conversation.id,
     }
 
@@ -2749,6 +2775,150 @@ def _assistant_chart_number(value, *, minimum=None, maximum=None):
     ):
         return None
     return float(value)
+
+
+_ASSISTANT_SENSOR_STALE_AFTER_HOURS = 24
+_ASSISTANT_GEMINI_CONTEXT_MAX_CHARACTERS = 18000
+
+
+def _assistant_gemini_context(field_data: dict) -> dict:
+    excluded_keys = {
+        "farmer_id",
+        "farmer_profile",
+        "field_id",
+        "crop_id",
+        "device_id",
+        "reservoir_id",
+        "id",
+        "latitude",
+        "longitude",
+    }
+
+    def remove_internal_values(value):
+        if isinstance(value, dict):
+            return {
+                key: remove_internal_values(item)
+                for key, item in value.items()
+                if key not in excluded_keys
+            }
+        if isinstance(value, list):
+            return [remove_internal_values(item) for item in value]
+        return value
+
+    context = remove_internal_values(field_data)
+    truncated_sections = []
+
+    def trim_list(container: dict, key: str, limit: int, label: str, *, keep: str = "last") -> None:
+        values = container.get(key)
+        if not isinstance(values, list) or len(values) <= limit:
+            return
+        container[key] = values[-limit:] if keep == "last" else values[:limit]
+        container["truncated"] = True
+        truncated_sections.append(label)
+
+    sensor_history_keys = (
+        "soil_moisture_history",
+        "soil_temperature_history",
+        "humidity_history",
+        "soil_ph_history",
+        "electrical_conductivity_history",
+    )
+    for history_key in sensor_history_keys:
+        section = context.get(history_key)
+        if isinstance(section, dict):
+            trim_list(section, "data", 60, history_key)
+    schedule = context.get("planned_irrigation")
+    if isinstance(schedule, dict):
+        trim_list(schedule, "data", 60, "planned_irrigation")
+    forecast = context.get("weather_forecast")
+    if isinstance(forecast, dict):
+        trim_list(forecast, "data", 24, "weather_forecast", keep="first")
+    latest = context.get("latest_sensor_readings")
+
+    def size() -> int:
+        return len(json.dumps(context, allow_nan=False, ensure_ascii=False, sort_keys=True))
+
+    if size() > _ASSISTANT_GEMINI_CONTEXT_MAX_CHARACTERS:
+        for history_key in sensor_history_keys:
+            section = context.get(history_key)
+            if isinstance(section, dict):
+                trim_list(section, "data", 24, history_key)
+        if isinstance(schedule, dict):
+            trim_list(schedule, "data", 24, "planned_irrigation")
+        if isinstance(forecast, dict):
+            trim_list(forecast, "data", 12, "weather_forecast", keep="first")
+        if isinstance(latest, dict):
+            trim_list(latest, "fields", 30, "latest_sensor_readings")
+        fields = context.get("fields")
+        if isinstance(fields, list) and len(fields) > 30:
+            context["fields"] = fields[:30]
+            context["fields_truncated"] = True
+            truncated_sections.append("fields")
+        elif isinstance(context.get("field"), dict):
+            crop_records = context["field"].get("saved_crop_records")
+            if isinstance(crop_records, list) and len(crop_records) > 30:
+                context["field"]["saved_crop_records"] = crop_records[:30]
+                context["field"]["crops_truncated"] = True
+                truncated_sections.append("saved_crop_records")
+
+    if size() > _ASSISTANT_GEMINI_CONTEXT_MAX_CHARACTERS:
+        fields = context.get("fields")
+        if isinstance(fields, list):
+            for field in fields:
+                trim_list(field, "saved_crop_records", 2, "saved_crop_records")
+            if len(fields) > 20:
+                context["fields"] = fields[:20]
+                context["fields_truncated"] = True
+                truncated_sections.append("fields")
+        elif isinstance(context.get("field"), dict):
+            trim_list(
+                context["field"],
+                "saved_crop_records",
+                2,
+                "saved_crop_records",
+            )
+        unassigned = context.get("unassigned_saved_crop_records")
+        if isinstance(unassigned, list) and len(unassigned) > 10:
+            context["unassigned_saved_crop_records"] = unassigned[:10]
+            context["crops_truncated"] = True
+            truncated_sections.append("unassigned_saved_crop_records")
+        if isinstance(latest, dict):
+            trim_list(latest, "fields", 20, "latest_sensor_readings")
+
+    if size() > _ASSISTANT_GEMINI_CONTEXT_MAX_CHARACTERS:
+        for history_key in sensor_history_keys:
+            section = context.get(history_key)
+            if isinstance(section, dict):
+                trim_list(section, "data", 12, history_key)
+        if isinstance(schedule, dict):
+            trim_list(schedule, "data", 12, "planned_irrigation")
+        if isinstance(forecast, dict):
+            trim_list(forecast, "data", 8, "weather_forecast", keep="first")
+        if isinstance(latest, dict):
+            trim_list(latest, "fields", 10, "latest_sensor_readings")
+        fields = context.get("fields")
+        if isinstance(fields, list):
+            if len(fields) > 10:
+                context["fields"] = fields[:10]
+                context["fields_truncated"] = True
+                truncated_sections.append("fields")
+            for field in context["fields"]:
+                trim_list(field, "saved_crop_records", 1, "saved_crop_records")
+        elif isinstance(context.get("field"), dict):
+            crop_records = context["field"].get("saved_crop_records")
+            if isinstance(crop_records, list) and len(crop_records) > 1:
+                context["field"]["saved_crop_records"] = crop_records[:1]
+                context["field"]["crops_truncated"] = True
+                truncated_sections.append("saved_crop_records")
+
+    if size() > _ASSISTANT_GEMINI_CONTEXT_MAX_CHARACTERS:
+        raise AssistantServiceError(
+            413,
+            "The available farm data is too large to explain in one request.",
+        )
+    if truncated_sections:
+        context["context_truncated_sections"] = sorted(set(truncated_sections))
+    return context
 
 
 def _assistant_chart_period(payload: ChartAssistantRequest) -> tuple[date, date]:
@@ -2895,6 +3065,8 @@ def _assistant_chart_weather(farmer_id: int, field: FarmerField) -> dict:
                 maximum=100,
             ),
             "wind_speed_mps": _assistant_chart_number(item.get("wind_speed_mps"), minimum=0),
+            "is_stale": bool(item.get("is_stale", False)),
+            "data_age_minutes": _assistant_chart_number(item.get("data_age_minutes"), minimum=0),
         })
 
     if not isinstance(rainfall_history, list):
@@ -2915,6 +3087,7 @@ def _assistant_chart_weather(farmer_id: int, field: FarmerField) -> dict:
             "rain_intensity_mm_per_hr": _assistant_chart_number(
                 item.get("rain_intensity_mm_per_hr"), minimum=0
             ),
+            "is_stale": bool(item.get("is_stale", False)),
         })
     accumulation_values = [
         item["rain_accumulation_mm"] for item in observed_rainfall
@@ -2996,6 +3169,124 @@ def _assistant_chart_weather(farmer_id: int, field: FarmerField) -> dict:
     }
 
 
+def _assistant_chart_latest_sensors(
+    db: Session,
+    farmer_id: int,
+    fields_by_id: dict[int, FarmerField],
+) -> dict:
+    if not fields_by_id:
+        return {
+            "latest_sensor_readings": {
+                "status": "unavailable",
+                "source": "farmer_sensor_readings",
+                "freshness_horizon_hours": _ASSISTANT_SENSOR_STALE_AFTER_HOURS,
+                "fields": [],
+                "reason": "No saved farmer-owned fields are available.",
+            },
+        }
+
+    ranked_readings = (
+        select(
+            FarmerSensorReading.id.label("reading_id"),
+            func.row_number().over(
+                partition_by=FarmerSensorReading.field_id,
+                order_by=(
+                    FarmerSensorReading.recorded_at.desc(),
+                    FarmerSensorReading.id.desc(),
+                ),
+            ).label("reading_rank"),
+        )
+        .where(
+            FarmerSensorReading.farmer_id == farmer_id,
+            FarmerSensorReading.field_id.in_(fields_by_id),
+            FarmerSensorReading.source != "test_fixture",
+        )
+        .subquery()
+    )
+    readings = db.scalars(
+        select(FarmerSensorReading)
+        .join(ranked_readings, FarmerSensorReading.id == ranked_readings.c.reading_id)
+        .where(ranked_readings.c.reading_rank == 1)
+    ).all()
+    readings_by_field = {reading.field_id: reading for reading in readings}
+    now = datetime.now(timezone.utc)
+    field_data = []
+    for field_id, field in fields_by_id.items():
+        reading = readings_by_field.get(field_id)
+        if reading is None:
+            field_data.append({
+                "field_id": field_id,
+                "field_name": field.name,
+                "status": "unavailable",
+                "freshness": "no_reading",
+                "values": {},
+            })
+            continue
+
+        recorded_at = reading.recorded_at
+        if recorded_at.tzinfo is None:
+            recorded_at = recorded_at.replace(tzinfo=timezone.utc)
+        age_seconds = (now - recorded_at).total_seconds()
+        is_future = age_seconds < 0
+        age_hours = max(0, age_seconds / 3600)
+        freshness = (
+            "future_timestamp"
+            if is_future
+            else "outdated"
+            if age_hours > _ASSISTANT_SENSOR_STALE_AFTER_HOURS
+            else "current"
+        )
+        values = {
+            "soil_moisture_percent": _assistant_chart_number(
+                reading.soil_moisture_percent, minimum=0, maximum=100
+            ),
+            "soil_temperature_c": _assistant_chart_number(
+                reading.soil_temperature_c, minimum=-50, maximum=100
+            ),
+            "humidity_percent": _assistant_chart_number(
+                reading.humidity_percent, minimum=0, maximum=100
+            ),
+            "ph": _assistant_chart_number(reading.ph, minimum=0, maximum=14),
+            "electrical_conductivity_us_cm": _assistant_chart_number(
+                reading.electrical_conductivity_us_cm, minimum=0
+            ),
+        }
+        field_data.append({
+            "field_id": field_id,
+            "field_name": field.name,
+            "status": "available" if any(value is not None for value in values.values()) else "unavailable",
+            "freshness": freshness,
+            "recorded_at": reading.recorded_at.isoformat(),
+            "data_age_hours": age_hours if not is_future else None,
+            "values": values,
+            "source": reading.source,
+        })
+
+    fresh_count = sum(
+        item["status"] == "available" and item["freshness"] == "current"
+        for item in field_data
+    )
+    outdated_count = sum(
+        item["status"] == "available" and item["freshness"] == "outdated"
+        for item in field_data
+    )
+    return {
+        "latest_sensor_readings": {
+            "status": "available" if fresh_count or outdated_count else "unavailable",
+            "source": "farmer_sensor_readings",
+            "freshness_horizon_hours": _ASSISTANT_SENSOR_STALE_AFTER_HOURS,
+            "current_field_count": fresh_count,
+            "outdated_field_count": outdated_count,
+            "fields": field_data,
+            **(
+                {}
+                if fresh_count or outdated_count
+                else {"reason": "No verified sensor readings are available for these fields."}
+            ),
+        },
+    }
+
+
 def _assistant_chart_soil_history(
     db: Session,
     farmer_id: int,
@@ -3016,6 +3307,24 @@ def _assistant_chart_soil_history(
             "unit": "°C",
             "data": [],
         },
+        "humidity_history": {
+            "status": "unavailable",
+            "reason": "No verified farmer-owned humidity readings are available for this date range.",
+            "unit": "%",
+            "data": [],
+        },
+        "soil_ph_history": {
+            "status": "unavailable",
+            "reason": "No verified farmer-owned pH readings are available for this date range.",
+            "unit": "pH",
+            "data": [],
+        },
+        "electrical_conductivity_history": {
+            "status": "unavailable",
+            "reason": "No verified farmer-owned electrical-conductivity readings are available for this date range.",
+            "unit": "µS/cm",
+            "data": [],
+        },
     }
     if not fields_by_id:
         return unavailable
@@ -3028,6 +3337,7 @@ def _assistant_chart_soil_history(
             FarmerSensorReading.field_id.in_(fields_by_id),
             FarmerSensorReading.recorded_at >= start_time,
             FarmerSensorReading.recorded_at < end_time,
+            FarmerSensorReading.source != "test_fixture",
         )
         .order_by(FarmerSensorReading.recorded_at.desc(), FarmerSensorReading.id.desc())
         .limit(501)
@@ -3052,6 +3362,10 @@ def _assistant_chart_soil_history(
                 minimum=0,
                 maximum=100,
             ),
+            "ph": _assistant_chart_number(reading.ph, minimum=0, maximum=14),
+            "electrical_conductivity_us_cm": _assistant_chart_number(
+                reading.electrical_conductivity_us_cm, minimum=0
+            ),
             "source": reading.source,
         }
         for reading in reversed(readings[:500])
@@ -3070,6 +3384,24 @@ def _assistant_chart_soil_history(
             "soil_temperature_c",
             "°C",
             unavailable["soil_temperature_history"]["reason"],
+        ),
+        (
+            "humidity_history",
+            "humidity_percent",
+            "%",
+            unavailable["humidity_history"]["reason"],
+        ),
+        (
+            "soil_ph_history",
+            "ph",
+            "pH",
+            unavailable["soil_ph_history"]["reason"],
+        ),
+        (
+            "electrical_conductivity_history",
+            "electrical_conductivity_us_cm",
+            "µS/cm",
+            unavailable["electrical_conductivity_history"]["reason"],
         ),
     ):
         data = [record for record in records if record[metric_key] is not None]
@@ -3132,8 +3464,13 @@ def _assistant_chart_context(
         ).all()
         schedule_data = [
             {
+                "field_id": field.id,
+                "field_name": field.name,
+                "crop_name": schedule.crop_name,
                 "scheduled_date": schedule.scheduled_date.isoformat(),
                 "water_liters": water_liters,
+                "duration_minutes": schedule.duration_minutes,
+                "irrigation_method": schedule.irrigation_method,
                 "status": schedule.status,
             }
             for schedule in schedules[:500]
@@ -3169,6 +3506,7 @@ def _assistant_chart_context(
                 ],
                 "crops_truncated": len(crops) > 100,
             },
+            **_assistant_chart_latest_sensors(db, farmer_id, {field.id: field}),
             **soil_history,
             "actual_water_usage": {
                 "status": "unavailable",
@@ -3261,6 +3599,8 @@ def _assistant_chart_context(
             "crop_name": schedule.crop_name,
             "scheduled_date": schedule.scheduled_date.isoformat(),
             "water_liters": water_liters,
+            "duration_minutes": schedule.duration_minutes,
+            "irrigation_method": schedule.irrigation_method,
             "status": schedule.status,
         }
         for schedule in schedules[:500]
@@ -3293,6 +3633,7 @@ def _assistant_chart_context(
         "unassigned_saved_crop_records": crops_by_field.get(None, []),
         "fields_truncated": fields_truncated,
         "crops_truncated": crops_truncated,
+        **_assistant_chart_latest_sensors(db, farmer_id, field_by_id),
         "current_weather": {
             "status": "unavailable",
             "classification": "current_observation",
@@ -3354,6 +3695,503 @@ def _assistant_chart_context(
             if selected_crop.expected_harvest_date else None,
         }
     return result
+
+
+def _assistant_chart_question_intent(question: str, history: list[dict]) -> dict:
+    normalized = question.casefold()
+    previous_user_messages = [
+        item["content"]
+        for item in history
+        if isinstance(item, dict)
+        and item.get("role") == "user"
+        and isinstance(item.get("content"), str)
+    ]
+    if previous_user_messages and re.search(
+        r"\b(?:it|that|those|them|same|also|then|what about|and)\b|"
+        r"(?:దాని|అదే|उन|उस|ಅದರ|அது|അത്)",
+        normalized,
+    ):
+        normalized = f"{previous_user_messages[-1]} {normalized}"
+
+    def matches(pattern: str) -> bool:
+        return re.search(pattern, normalized, re.IGNORECASE) is not None
+
+    categories = []
+    category_patterns = {
+        "fields": r"\b(?:field|fields|plot|plots|land)\b|పొలం|పొలాలు|खेत|खेती|ಜಮೀನು|ಹೊಲ|வயல்|കൃഷിയിടം",
+        "crops": r"\b(?:crop|crops|variety|planting|harvest)\b|పంట|పంటలు|फसल|ಬೆಳೆ|பயிர்|വിള",
+        "sensor_readings": r"\b(?:sensor|moisture|humidity|pH|EC|conductivity|soil temperature|soil temp)\b|తేమ|ఉష్ణోగ్రత|नमी|मिट्टी|ತೇವಾಂಶ|ஈரப்பதம்|ഈർപ്പം",
+        "weather": r"\b(?:weather|rain|rainfall|forecast|precipitation|wind|humidity)\b|వర్షం|వర్షపాతం|వాతావరణం|बारिश|वर्षा|मौसम|ಮಳೆ|ಹವಾಮಾನ|மழை|வானிலை|മഴ|കാലാവസ്ഥ",
+        "irrigation": r"\b(?:irrigation|water|schedule|watering)\b|నీటిపారుదల|सिंचाई|ನೀರಾವರಿ|பாசனம்|ജലസേചനം",
+    }
+    for category, pattern in category_patterns.items():
+        if matches(pattern):
+            categories.append(category)
+    if not categories:
+        categories.append("general")
+
+    comparison = matches(
+        r"\b(?:compare|comparison|across|lowest|highest|least|most|which field|"
+        r"which fields|difference|rank|ranking)\b|పోల్చి|తులన|तुलना|ಹೋಲಿಸಿ|ஒப்பிடு|താരതമ്യം"
+    )
+    fieldwise_comparison = matches(
+        r"\b(?:for|in|across|between)\s+(?:my\s+|the\s+|all\s+)?fields\b|"
+        r"\b(?:each|every)\s+field\b"
+    )
+    historical = matches(
+        r"\b(?:trend|history|historical|over time|last \d+\s*(?:hours?|days?|weeks?)|"
+        r"past \d+\s*(?:hours?|days?|weeks?)|last week|past week)\b|చరిత్ర|గత వారం|इतिहास|पिछले|ಇತಿಹಾಸ|கடந்த|ചരിത്രം|കഴിഞ്ഞ"
+    )
+    forecast = matches(
+        r"\b(?:forecast|expected|tomorrow|upcoming|next \d+\s*(?:hours?|days?))\b|రేపు|అంచనా|पूर्वानुमान|कल|ನಾಳೆ|முன்னறிவிப்பு|നാളെ"
+    )
+    recommendation_requested = matches(
+        r"\b(?:recommend(?:ation)?s?|suggest(?:ion)?s?|advise|advice|should i|"
+        r"what should|next steps?)\b|సలహా|సూచించండి|सलाह|सुझाव|ಸಲಹೆ|பரிந்துரை|ഉപദേശം"
+    )
+    explicit_recent_rain = matches(
+        r"\b(?:last|past)\s*24\s*hours?\b|\btoday\b|గత 24 గంటలు|पिछले 24 घंटे|ಕಳೆದ 24 ಗಂಟೆ|கடந்த 24 மணிநேரம்|കഴിഞ്ഞ 24 മണിക്കൂർ"
+    )
+    chart_language = matches(
+        r"\b(?:chart|graph|plot|visuali[sz]e|distribution|breakdown|trend)\b|"
+        r"చార్ట్|గ్రాఫ్|వివరణాత్మక చార్ట్|चार्ट|ग्राफ|ವಿವರಣೆ|ಚಾರ್ಟ್|ಗ್ರಾಃ|"
+        r"விளக்கப்படம்|வரைபடம்|ചാർട്ട്|ഗ്രാഫ്"
+    )
+    metrics = []
+    if matches(r"\b(?:moisture|soil moisture)\b|నేల తేమ|మట్టి తేమ|मिट्टी की नमी|ಮಣ್ಣಿನ ತೇವಾಂಶ|மண் ஈரப்பதம்|മണ്ണിലെ ഈർപ്പം"):
+        metrics.append("soil_moisture")
+    if matches(r"\bsoil\s+(?:temperature|temp)\b|నేల ఉష్ణోగ్రత|मिट्टी का तापमान|ಮಣ್ಣಿನ ತಾಪಮಾನ|மண் வெப்பநிலை|മണ്ണിന്റെ താപനില"):
+        metrics.append("soil_temperature")
+    if matches(r"\bpH\b|ఆమ్లత్వం|पीएच|ಪಿಎಚ್|அமிலத்தன்மை"):
+        metrics.append("soil_ph")
+    if matches(r"\bEC\b|electrical conductivity|విద్యుత్ వాహకత|विद्युत चालकता|ವಿದ್ಯುತ್ ವಾಹಕತೆ|மின் கடத்துத்திறன்|വൈദ്യുത ചാലകത"):
+        metrics.append("electrical_conductivity")
+    if matches(r"\bhumidity\b|తేమ|आर्द्रता|ಆರ್ದ್ರತೆ|ஈரப்பதம்|ഈർപ്പം"):
+        metrics.append("humidity")
+    if matches(r"\b(?:rain|rainfall|precipitation)\b|వర్షం|వర్షపాతం|बारिश|वर्षा|ಮಳೆ|மழை|മഴ"):
+        metrics.append("rainfall")
+    if matches(r"\b(?:temperature|temp)\b|ఉష్ణోగ్రత|तापमान|ಉಷ್ಣಾಂಶ|வெப்பநிலை|താപനില") and (
+        "soil_temperature" not in metrics
+    ):
+        metrics.append("weather_temperature")
+    if matches(r"\b(?:irrigation|watering|water schedule|planned water)\b|నీటిపారుదల|सिंचाई|ನೀರಾವರಿ|பாசனம்|ജലസേചനം"):
+        metrics.append("planned_irrigation")
+    if matches(r"\b(?:crop distribution|crop breakdown|crop mix|crop share)\b|పంటల పంపిణీ|फसल वितरण|ಬೆಳೆ ಹಂಚಿಕೆ|பயிர் பகிர்வு|വിള വിതരണം"):
+        metrics.append("crop_distribution")
+    elif matches(r"\bcrops?\b|పంటలు?|फसलें?|ಬೆಳೆಗಳು?|பயிர்கள்?|വിളകൾ") and (
+        comparison or fieldwise_comparison
+    ):
+        metrics.append("crop_distribution")
+    if matches(r"\b(?:field area|field size|land area)\b|పొలం విస్తీర్ణం|खेत का क्षेत्रफल|ಹೊಲದ ವಿಸ್ತೀರ್ಣ|வயல் பரப்பளவு|കൃഷിയിടത്തിന്റെ വിസ്തീർണ്ണം"):
+        metrics.append("field_area")
+    if matches(r"\b(?:water usage|water use|water consumption|actual water used|water used|water consumed)\b"):
+        metrics.append("actual_water_usage")
+    if (
+        forecast
+        and "weather" in categories
+        and chart_language
+        and "weather_temperature" not in metrics
+        and "rainfall" not in metrics
+    ):
+        metrics.extend(["weather_temperature", "rainfall"])
+    actual_usage_requested = "actual_water_usage" in metrics
+    return {
+        "categories": categories,
+        "metrics": metrics,
+        "comparison": comparison,
+        "historical": historical,
+        "forecast": forecast,
+        "recommendation_requested": recommendation_requested,
+        "explicit_recent_rain": explicit_recent_rain,
+        "fieldwise_comparison": fieldwise_comparison,
+        "chart_requested": chart_language or comparison or historical or (
+            fieldwise_comparison and bool(metrics)
+        ),
+        "actual_usage_requested": actual_usage_requested,
+    }
+
+
+def _assistant_chart_sample_points(points: list[dict], maximum: int = 24) -> list[dict]:
+    if len(points) <= maximum:
+        return points
+    indexes = {
+        round(index * (len(points) - 1) / (maximum - 1))
+        for index in range(maximum)
+    }
+    return [point for index, point in enumerate(points) if index in indexes]
+
+
+def _assistant_chart_spec(
+    *,
+    chart_id: str,
+    chart_type: str,
+    title_key: str,
+    labels: list[str],
+    values: list[float],
+    unit: str,
+    source: str,
+    caption_key: str,
+    range_data: dict | None,
+    axis_type: str = "category",
+    field_name: str | None = None,
+    caption_values: dict | None = None,
+) -> dict:
+    dataset = {"label_key": title_key, "data": values}
+    return {
+        "id": chart_id,
+        "type": chart_type,
+        "axis_type": axis_type,
+        "title_key": title_key,
+        "labels": labels,
+        "datasets": [dataset],
+        "unit": unit,
+        "source": source,
+        "caption_key": caption_key,
+        "caption_values": caption_values or {},
+        "range": range_data,
+        **({"field_name": field_name} if field_name else {}),
+    }
+
+
+def _assistant_chart_payloads(
+    field_data: dict,
+    question: str,
+    history: list[dict],
+    chart_mode: str,
+) -> dict:
+    intent = _assistant_chart_question_intent(question, history)
+    should_chart = chart_mode == "chart" or (
+        chart_mode == "auto" and intent["chart_requested"]
+    )
+    if chart_mode == "text" or not should_chart:
+        return {
+            "question_analysis": intent,
+            "charts": [],
+            "chart_availability": {"status": "not_requested", "reason": None},
+        }
+
+    charts = []
+    missing_metrics = []
+    range_data = field_data.get("range")
+
+    def unavailable(metric_key: str, reason: str) -> None:
+        missing_metrics.append({"metric_key": metric_key, "reason": reason})
+
+    sensor_metrics = {
+        "soil_moisture": (
+            "soil_moisture_percent", "chartAssistant.soilMoisture", "%",
+            "soil_moisture_history",
+        ),
+        "soil_temperature": (
+            "soil_temperature_c", "chartAssistant.soilTemperature", "°C",
+            "soil_temperature_history",
+        ),
+        "soil_ph": (
+            "ph", "chartAssistant.soilPH", "pH", "soil_ph_history",
+        ),
+        "electrical_conductivity": (
+            "electrical_conductivity_us_cm", "chartAssistant.electricalConductivity",
+            "µS/cm", "electrical_conductivity_history",
+        ),
+        "humidity": (
+            "humidity_percent", "chartAssistant.humidity", "%",
+            "humidity_history",
+        ),
+    }
+    for metric in intent["metrics"]:
+        if metric not in sensor_metrics:
+            continue
+        value_key, title_key, unit, history_key = sensor_metrics[metric]
+        if intent["historical"]:
+            history_data = field_data.get(history_key, {})
+            records = history_data.get("data", []) if history_data.get("status") == "available" else []
+            grouped_records: dict[int | None, list[dict]] = {}
+            chart_count_before = len(charts)
+            for record in records:
+                if (
+                    isinstance(record.get(value_key), (int, float))
+                    and isinstance(record.get("recorded_at"), str)
+                ):
+                    grouped_records.setdefault(record.get("field_id"), []).append(record)
+            for _, field_records in list(grouped_records.items())[:5]:
+                points = _assistant_chart_sample_points([
+                    {"time": item["recorded_at"], "value": float(item[value_key])}
+                    for item in field_records
+                ])
+                if len(points) < 2:
+                    continue
+                charts.append(_assistant_chart_spec(
+                    chart_id=f"{metric}-history-{len(charts) + 1}",
+                    chart_type="line",
+                    title_key=title_key,
+                    labels=[item["time"] for item in points],
+                    values=[item["value"] for item in points],
+                    unit=unit,
+                    source=history_data.get("source", "farmer_sensor_readings"),
+                    caption_key="aiChat.chartHistoryCaption",
+                    range_data=range_data,
+                    axis_type="time",
+                    field_name=field_records[0].get("field_name"),
+                ))
+            if len(charts) == chart_count_before:
+                unavailable(
+                    title_key,
+                    "No verified history with at least two measurements is available for this range.",
+                )
+            continue
+
+        latest = field_data.get("latest_sensor_readings", {})
+        readings = latest.get("fields", []) if isinstance(latest, dict) else []
+        current = [
+            item for item in readings
+            if item.get("status") == "available"
+            and item.get("freshness") == "current"
+            and isinstance(item.get("values"), dict)
+            and isinstance(item["values"].get(value_key), (int, float))
+        ]
+        if (
+            intent["comparison"] or intent["fieldwise_comparison"]
+        ) and len(current) < 2:
+            unavailable(
+                title_key,
+                "At least two current verified readings are required for a field comparison.",
+            )
+            continue
+        if not current:
+            unavailable(title_key, "No current verified sensor readings are available.")
+            continue
+        current = current[:24]
+        charts.append(_assistant_chart_spec(
+            chart_id=f"{metric}-latest-by-field",
+            chart_type="bar",
+            title_key=title_key,
+            labels=[item["field_name"] for item in current],
+            values=[float(item["values"][value_key]) for item in current],
+            unit=unit,
+            source=latest.get("source", "farmer_sensor_readings"),
+            caption_key="aiChat.chartLatestSensorCaption",
+            range_data=range_data,
+            caption_values={
+                "staleCount": latest.get("outdated_field_count", 0),
+            },
+        ))
+
+    if "crop_distribution" in intent["metrics"]:
+        crop_counts: dict[str, int] = {}
+        field_records = field_data.get("fields")
+        if not isinstance(field_records, list):
+            field_records = [field_data.get("field", {})]
+        crop_records = [
+            crop
+            for field in field_records
+            for crop in field.get("saved_crop_records", [])
+        ]
+        crop_records.extend(field_data.get("unassigned_saved_crop_records", []))
+        for crop in crop_records:
+            name = crop.get("name")
+            if isinstance(name, str) and name.strip():
+                crop_counts[name.strip()] = crop_counts.get(name.strip(), 0) + 1
+        if len(crop_counts) >= 2:
+            labels = list(crop_counts)
+            charts.append(_assistant_chart_spec(
+                chart_id="saved-crop-distribution",
+                chart_type="pie",
+                title_key="chartAssistant.cropDistribution",
+                labels=labels,
+                values=[float(crop_counts[label]) for label in labels],
+                unit="records",
+                source="farmer_crop_records",
+                caption_key="aiChat.chartCropDistributionCaption",
+                range_data=range_data,
+            ))
+        else:
+            unavailable(
+                "chartAssistant.cropDistribution",
+                "At least two saved crop categories are required for a distribution chart.",
+            )
+
+    if "field_area" in intent["metrics"]:
+        field_records = field_data.get("fields")
+        if not isinstance(field_records, list):
+            field_records = [field_data.get("field", {})]
+        areas = [
+            item for item in field_records
+            if isinstance(item.get("name"), str)
+            and isinstance(item.get("area"), (int, float))
+            and item["area"] > 0
+            and isinstance(item.get("area_unit"), str)
+        ]
+        units = {item["area_unit"] for item in areas}
+        if len(areas) >= 2 and len(units) == 1:
+            charts.append(_assistant_chart_spec(
+                chart_id="field-area-comparison",
+                chart_type="bar",
+                title_key="chartAssistant.fieldAreaDistribution",
+                labels=[item["name"] for item in areas[:24]],
+                values=[float(item["area"]) for item in areas[:24]],
+                unit=next(iter(units)),
+                source="farmer_field_records",
+                caption_key="aiChat.chartFieldAreaCaption",
+                range_data=range_data,
+            ))
+        else:
+            unavailable(
+                "chartAssistant.fieldAreaDistribution",
+                "At least two saved fields with matching area units are required.",
+            )
+
+    if intent["actual_usage_requested"]:
+        unavailable(
+            "chartAssistant.actualUsageUnavailable",
+            "Measured water-usage records are not available; schedules are planned amounts.",
+        )
+    elif "planned_irrigation" in intent["metrics"]:
+        schedule = field_data.get("planned_irrigation", {})
+        schedule_data = schedule.get("data", []) if isinstance(schedule, dict) else []
+        points = [
+            item for item in schedule_data
+            if isinstance(item.get("water_liters"), (int, float))
+            and isinstance(item.get("scheduled_date"), str)
+        ]
+        if points:
+            labels = [
+                f"{item.get('field_name', '')} · {item['scheduled_date']}".strip(" ·")
+                for item in points[-24:]
+            ]
+            charts.append(_assistant_chart_spec(
+                chart_id="planned-irrigation-by-field",
+                chart_type="bar",
+                title_key="chartAssistant.plannedIrrigation",
+                labels=labels,
+                values=[float(item["water_liters"]) for item in points[-24:]],
+                unit="L",
+                source=schedule.get("source", "farmer_irrigation_schedules"),
+                caption_key="aiChat.chartPlannedIrrigationCaption",
+                range_data=range_data,
+            ))
+        else:
+            unavailable(
+                "chartAssistant.plannedIrrigation",
+                "No saved planned-irrigation schedule volumes are available for this range.",
+            )
+
+    if "rainfall" in intent["metrics"]:
+        if intent["forecast"]:
+            forecast_data = field_data.get("weather_forecast", {})
+            values = forecast_data.get("data", []) if forecast_data.get("status") == "available" else []
+            points = [
+                item for item in values
+                if isinstance(item.get("rainfall_mm_per_hr"), (int, float))
+                and isinstance(item.get("time"), str)
+                and item.get("is_stale") is not True
+            ]
+            points = _assistant_chart_sample_points(points)
+            if len(points) >= 2:
+                charts.append(_assistant_chart_spec(
+                    chart_id="rainfall-forecast",
+                    chart_type="line",
+                    title_key="chartAssistant.rainfall",
+                    labels=[item["time"] for item in points],
+                    values=[float(item["rainfall_mm_per_hr"]) for item in points],
+                    unit="mm/h",
+                    source=forecast_data.get("source", "selected_field_weather_forecast_api"),
+                    caption_key="aiChat.chartForecastCaption",
+                    range_data=forecast_data.get("range") or range_data,
+                    axis_type="time",
+                ))
+            else:
+                unavailable(
+                    "chartAssistant.rainfall",
+                    "At least two verified field-specific forecast values are required.",
+                )
+        else:
+            rainfall = field_data.get("recent_rainfall_history", {})
+            period = range_data.get("period") if isinstance(range_data, dict) else None
+            if period != "24h" and not intent["explicit_recent_rain"]:
+                unavailable(
+                    "chartAssistant.rainfall",
+                    "Observed rainfall history is available for at most 24 hours, not the selected longer period.",
+                )
+            elif rainfall.get("status") != "available" or rainfall.get("is_stale") is True:
+                unavailable(
+                    "chartAssistant.rainfall",
+                    "A complete verified 24-hour observed-rainfall history is not available.",
+                )
+            else:
+                points = [
+                    item for item in rainfall.get("data", [])
+                    if isinstance(item.get("rain_accumulation_mm"), (int, float))
+                    and isinstance(item.get("time"), str)
+                ]
+                if len(points) >= 2:
+                    charts.append(_assistant_chart_spec(
+                        chart_id="observed-rainfall-24h",
+                        chart_type="bar",
+                        title_key="chartAssistant.rainfall",
+                        labels=[item["time"] for item in points],
+                        values=[float(item["rain_accumulation_mm"]) for item in points],
+                        unit="mm",
+                        source=rainfall.get("source", "selected_field_recent_weather_history_api"),
+                        caption_key="aiChat.chartObservedRainCaption",
+                        range_data=rainfall.get("range") or range_data,
+                        axis_type="time",
+                    ))
+                else:
+                    unavailable(
+                        "chartAssistant.rainfall",
+                        "At least two verified observed-rainfall values are required.",
+                    )
+
+    if "weather_temperature" in intent["metrics"] and intent["forecast"]:
+        forecast_data = field_data.get("weather_forecast", {})
+        values = forecast_data.get("data", []) if forecast_data.get("status") == "available" else []
+        points = [
+            item for item in values
+            if isinstance(item.get("temperature_c"), (int, float))
+            and isinstance(item.get("time"), str)
+            and item.get("is_stale") is not True
+        ]
+        points = _assistant_chart_sample_points(points)
+        if len(points) >= 2:
+            charts.append(_assistant_chart_spec(
+                chart_id="temperature-forecast",
+                chart_type="line",
+                title_key="chartAssistant.temperature",
+                labels=[item["time"] for item in points],
+                values=[float(item["temperature_c"]) for item in points],
+                unit="°C",
+                source=forecast_data.get("source", "selected_field_weather_forecast_api"),
+                caption_key="aiChat.chartForecastCaption",
+                range_data=forecast_data.get("range") or range_data,
+                axis_type="time",
+            ))
+        else:
+            unavailable(
+                "chartAssistant.temperature",
+                "At least two verified field-specific forecast values are required.",
+            )
+
+    if not intent["metrics"] and should_chart:
+        unavailable(
+            "chartAssistant.chartLabel",
+            "Specify a measurement, crop distribution, field-area comparison, or irrigation schedule.",
+        )
+
+    if charts and missing_metrics:
+        status = "partial"
+    elif charts:
+        status = "available"
+    else:
+        status = "unavailable"
+    return {
+        "question_analysis": intent,
+        "charts": charts,
+        "chart_availability": {
+            "status": status,
+            "missing_metrics": missing_metrics,
+            "reason": None if charts else "insufficient_verified_data",
+        },
+    }
 
 
 @app.post("/api/assistant/model2-explanation")
@@ -3561,9 +4399,17 @@ def home():
 
 
 @app.get("/manifest.webmanifest", include_in_schema=False)
-def main_app_manifest():
-    return FileResponse(
-        STATIC_DIR / "main-app.webmanifest",
+def main_app_manifest(request: Request):
+    manifest = json.loads(
+        (STATIC_DIR / "main-app.webmanifest").read_text(encoding="utf-8")
+    )
+    manifest["related_applications"] = [{
+        "platform": "webapp",
+        "url": str(request.url_for("main_app_manifest")),
+        "id": urljoin(str(request.base_url), manifest.get("id", "/")),
+    }]
+    return Response(
+        content=json.dumps(manifest),
         media_type="application/manifest+json",
         headers={"Cache-Control": "no-cache"},
     )
@@ -4551,33 +5397,304 @@ def crop_stress_prediction(
 # ALERT MANAGEMENT APIs
 # --------------------------------------------------
 
+ALERT_REFRESH_INTERVAL_SECONDS = 15 * 60
+
+
+def _alert_category(alert_type: str) -> str:
+    normalized = alert_type.casefold()
+    if any(term in normalized for term in ("weather", "rain", "heat", "temperature", "wind", "frost", "storm", "drought")):
+        return "weather"
+    if any(term in normalized for term in ("sensor", "device")):
+        return "sensors"
+    if any(term in normalized for term in ("crop", "disease", "pest")):
+        return "crops"
+    if any(term in normalized for term in ("irrigation", "watering", "water", "moisture", "overwatering")):
+        return "irrigation"
+    if any(term in normalized for term in ("system", "report", "prediction")):
+        return "system"
+    return "fields"
+
+
+def _alert_category_conditions(category: str):
+    patterns = {
+        "weather": ("%weather%", "%rain%", "%heat%", "%temperature%", "%wind%", "%frost%", "%storm%", "%drought%"),
+        "sensors": ("%sensor%", "%device%"),
+        "crops": ("%crop%", "%disease%", "%pest%"),
+        "irrigation": ("%irrigation%", "%watering%", "%water%", "%moisture%", "%overwatering%"),
+        "system": ("%system%", "%report%", "%prediction%"),
+    }
+    if category == "fields":
+        categorized_patterns = tuple(
+            pattern
+            for category_patterns in patterns.values()
+            for pattern in category_patterns
+        )
+        return ~or_(*(func.lower(Alert.alert_type).like(pattern) for pattern in categorized_patterns))
+    return or_(*(func.lower(Alert.alert_type).like(pattern) for pattern in patterns[category]))
+
+
+def _utc_datetime(value: datetime) -> datetime:
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
+def _refresh_automated_alerts(db: Session, farmer_id: int) -> int:
+    now = datetime.now(timezone.utc)
+    created_count = 0
+    created_alert_ids: list[int] = []
+    fields = db.scalars(
+        select(FarmerField).where(FarmerField.farmer_id == farmer_id)
+    ).all()
+
+    for field in fields:
+        if field.latitude is None or field.longitude is None:
+            continue
+        key = (farmer_id, field.id)
+        monotonic_now = time.monotonic()
+        with weather_alert_attempts_lock:
+            last_checked = weather_alert_attempts.get(key)
+            if last_checked is not None and monotonic_now - last_checked < ALERT_REFRESH_INTERVAL_SECONDS:
+                continue
+            if len(weather_alert_attempts) >= 4096:
+                weather_alert_attempts.popitem(last=False)
+            weather_alert_attempts[key] = monotonic_now
+            weather_alert_attempts.move_to_end(key)
+
+        try:
+            forecast = get_forecast(
+                f"{field.latitude:.6f},{field.longitude:.6f}",
+                hours=24,
+                timestep="1h",
+            )
+        except (ValueError, WeatherUnavailableError, WeatherAuthError) as error:
+            logger.warning(
+                "Weather alert evaluation skipped for field %s (%s).",
+                field.id,
+                type(error).__name__,
+            )
+            continue
+
+        weather_result = process_weather_forecast(str(field.id), forecast)
+        generated = list(weather_result.get("alerts", []))
+        usable_periods = [
+            period for period in forecast
+            if isinstance(period, dict) and not period.get("is_stale", False)
+        ]
+        latest_reading = db.scalar(
+            select(FarmerSensorReading)
+            .where(
+                FarmerSensorReading.farmer_id == farmer_id,
+                FarmerSensorReading.field_id == field.id,
+                FarmerSensorReading.source == "sensor",
+                FarmerSensorReading.soil_moisture_percent.is_not(None),
+            )
+            .order_by(FarmerSensorReading.recorded_at.desc())
+            .limit(1)
+        )
+        if latest_reading is not None and usable_periods:
+            recorded_at = _utc_datetime(latest_reading.recorded_at)
+            rainfall = sum(
+                max(0.0, float(period["rainfall_mm_per_hr"]))
+                for period in usable_periods
+                if isinstance(period.get("rainfall_mm_per_hr"), (int, float))
+                and math.isfinite(float(period["rainfall_mm_per_hr"]))
+            )
+            if now - recorded_at <= timedelta(hours=24):
+                drought_result = process_drought_risk(
+                    str(field.id),
+                    float(latest_reading.soil_moisture_percent),
+                    rainfall,
+                )
+                if drought_result.get("alert_generated"):
+                    generated.append(drought_result["alert"])
+
+        for alert_data in generated:
+            values = dict(alert_data)
+            values.update(farmer_id=farmer_id, field_id=field.id, is_read=False)
+            values.pop("created_at", None)
+            alert, was_created = create_alert(db, values)
+            if was_created:
+                if alert is None:
+                    raise RuntimeError("New alert was not returned by the alert store.")
+                created_alert_ids.append(alert.id)
+                created_count += 1
+
+    devices = db.scalars(
+        select(FarmerSensorDevice).where(
+            FarmerSensorDevice.farmer_id == farmer_id,
+            FarmerSensorDevice.is_active.is_(True),
+        )
+    ).all()
+    for device in devices:
+        last_seen = device.last_seen_at or device.created_at
+        if last_seen is None:
+            continue
+        stale_hours = (now - _utc_datetime(last_seen)).total_seconds() / 3600
+        failure_result = process_sensor_failure(
+            str(device.field_id),
+            device.device_id,
+            stale_hours,
+        )
+        if not failure_result.get("alert_generated"):
+            continue
+        values = dict(failure_result["alert"])
+        values.update(farmer_id=farmer_id, field_id=device.field_id, is_read=False)
+        values.pop("created_at", None)
+        alert, was_created = create_alert(db, values)
+        if was_created:
+            if alert is None:
+                raise RuntimeError("New alert was not returned by the alert store.")
+            created_alert_ids.append(alert.id)
+            created_count += 1
+
+    schedules = db.scalars(
+        select(IrrigationSchedule).where(
+            IrrigationSchedule.farmer_id == farmer_id,
+            IrrigationSchedule.status.in_(("confirmed", "completed")),
+        )
+    ).all()
+    for schedule in schedules:
+        event_type = "irrigation_scheduled" if schedule.status == "confirmed" else "irrigation_completed"
+        message = (
+            f"Irrigation is confirmed for {schedule.field_name} on {schedule.scheduled_date}."
+            if schedule.status == "confirmed"
+            else f"Irrigation was completed for {schedule.field_name} on {schedule.scheduled_date}."
+        )
+        values = {
+            "farmer_id": farmer_id,
+            "field_id": schedule.field_id,
+            "alert_type": f"{event_type}_{schedule.id}",
+            "severity": "low",
+            "message": message,
+            "reason": (
+                f"{schedule.water_liters:g} liters planned for "
+                f"{schedule.duration_minutes} minutes via {schedule.irrigation_method}."
+            ),
+            "is_read": False,
+        }
+        alert, was_created = create_alert(db, values)
+        if was_created:
+            if alert is None:
+                raise RuntimeError("New alert was not returned by the alert store.")
+            created_alert_ids.append(alert.id)
+            created_count += 1
+
+    if created_alert_ids:
+        db.commit()
+        for alert_id in created_alert_ids:
+            dispatch_alert_notifications(db, alert_id)
+    return created_count
+
+
+def _visible_in_app_alert_filter():
+    return ~Alert.id.in_(
+        select(NotificationDelivery.alert_id).where(
+            NotificationDelivery.channel == "in_app",
+            NotificationDelivery.status == "skipped",
+        )
+    )
+
+
 @app.get("/api/alerts")
 def list_farmer_alerts(
     unread_only: bool = Query(default=False),
+    read_status: Literal["all", "read", "unread"] = Query(default="all"),
+    category: Literal["weather", "irrigation", "sensors", "crops", "system", "fields"] | None = Query(default=None),
+    limit: int | None = Query(default=None, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     context: tuple[Farmer, AuthSession] = Depends(get_auth_context),
 ):
-    alerts = get_farmer_alerts(
-        db=db,
-        farmer_id=context[0].id,
-        unread_only=unread_only,
+    query = (
+        select(Alert, FarmerField.name)
+        .join(
+            FarmerField,
+            (FarmerField.id == Alert.field_id) & (FarmerField.farmer_id == Alert.farmer_id),
+        )
+        .where(Alert.farmer_id == context[0].id, _visible_in_app_alert_filter())
     )
+    if unread_only or read_status == "unread":
+        query = query.where(Alert.is_read.is_(False))
+    elif read_status == "read":
+        query = query.where(Alert.is_read.is_(True))
+    if category is not None:
+        query = query.where(_alert_category_conditions(category))
+    query = query.order_by(Alert.created_at.desc(), Alert.id.desc())
+    if limit is not None:
+        query = query.limit(limit).offset(offset)
+    rows = db.execute(query).all()
 
     return [
         {
             "id": alert.id,
-            "farmer_id": alert.farmer_id,
             "field_id": alert.field_id,
+            "field_name": field_name,
             "alert_type": alert.alert_type,
+            "category": _alert_category(alert.alert_type),
             "severity": alert.severity,
+            "title": alert.alert_type.replace("_", " ").title(),
+            "source": {
+                "weather": "Weather service",
+                "irrigation": "Irrigation schedule and monitoring",
+                "sensors": "Sensor monitoring",
+                "crops": "Crop monitoring",
+                "system": "JalSaathi",
+                "fields": "Field monitoring",
+            }[_alert_category(alert.alert_type)],
             "message": alert.message,
             "reason": alert.reason,
             "is_read": alert.is_read,
             "status": alert.status,
             "created_at": alert.created_at,
         }
-        for alert in alerts
+        for alert, field_name in rows
     ]
+
+
+@app.get("/api/alerts/counts")
+def get_farmer_alert_counts(
+    read_status: Literal["all", "read", "unread"] = Query(default="all"),
+    category: Literal["weather", "irrigation", "sensors", "crops", "system", "fields"] | None = Query(default=None),
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(get_auth_context),
+):
+    farmer_id = context[0].id
+    base = select(Alert.id).where(
+        Alert.farmer_id == farmer_id,
+        _visible_in_app_alert_filter(),
+    )
+    total = db.scalar(select(func.count()).select_from(base.subquery())) or 0
+    unread = db.scalar(
+        select(func.count(Alert.id)).where(
+            Alert.farmer_id == farmer_id,
+            Alert.is_read.is_(False),
+            _visible_in_app_alert_filter(),
+        )
+    ) or 0
+    matching = base
+    if read_status == "unread":
+        matching = matching.where(Alert.is_read.is_(False))
+    elif read_status == "read":
+        matching = matching.where(Alert.is_read.is_(True))
+    if category is not None:
+        matching = matching.where(_alert_category_conditions(category))
+    matching_count = db.scalar(
+        select(func.count()).select_from(matching.subquery())
+    ) or 0
+    return {
+        "total": total,
+        "unread": unread,
+        "read": total - unread,
+        "matching": matching_count,
+    }
+
+
+@app.post("/api/alerts/refresh")
+def refresh_farmer_alerts(
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    created = _refresh_automated_alerts(db, context[0].id)
+    return {"created": created}
 
 
 @app.patch("/api/alerts/{alert_id}/read")
@@ -4598,6 +5715,33 @@ def mark_farmer_alert_read(
     return {"message": "Alert marked as read.", "alert_id": alert.id}
 
 
+@app.patch("/api/alerts/{alert_id}/unread")
+def mark_farmer_alert_unread(
+    alert_id: int,
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    alert = mark_alert_as_unread(
+        db=db,
+        alert_id=alert_id,
+        farmer_id=context[0].id,
+    )
+
+    if alert is None:
+        raise HTTPException(status_code=404, detail="Alert not found.")
+
+    return {"message": "Alert marked as unread.", "alert_id": alert.id}
+
+
+@app.patch("/api/alerts/read-all")
+def mark_all_farmer_alerts_read(
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(require_csrf),
+):
+    updated = mark_all_alerts_as_read(db, context[0].id)
+    return {"message": "Unread alerts marked as read.", "updated_count": updated}
+
+
 @app.patch("/api/alerts/{alert_id}/resolve")
 def resolve_farmer_alert(
     alert_id: int,
@@ -4615,17 +5759,49 @@ def resolve_farmer_alert(
 
     return {"message": "Alert marked as resolved.", "alert_id": alert.id}
 
-@app.get("/api/notification-preferences")
-def get_notification_preferences(
-    context: tuple[Farmer, AuthSession] = Depends(get_auth_context),
-):
-    farmer = context[0]
+def _has_active_push_subscription(db: Session, farmer_id: int) -> bool:
+    now = datetime.now(timezone.utc)
+    subscription_id = db.scalar(
+        select(FarmNotificationSubscription.id)
+        .where(
+            FarmNotificationSubscription.farmer_id == farmer_id,
+            FarmNotificationSubscription.revoked_at.is_(None),
+            FarmNotificationSubscription.p256dh != "",
+            FarmNotificationSubscription.auth != "",
+            or_(
+                FarmNotificationSubscription.expires_at.is_(None),
+                FarmNotificationSubscription.expires_at > now,
+            ),
+        )
+        .limit(1)
+    )
+    return subscription_id is not None
 
+
+def _notification_preferences_payload(
+    db: Session, farmer: Farmer
+) -> dict[str, bool | str | None]:
+    sms_available = bool(farmer.phone and farmer.phone_verified_at)
     return {
+        "in_app_notifications_enabled": farmer.in_app_notifications_enabled,
         "web_push_enabled": farmer.web_push_enabled,
+        "push_subscription_available": _has_active_push_subscription(db, farmer.id),
         "sms_enabled": farmer.sms_enabled,
         "email_enabled": farmer.email_enabled,
+        "sms_available": sms_available,
+        "sms_unavailable_reason": (
+            None if sms_available
+            else "SMS is unavailable until a phone number is verified."
+        ),
     }
+
+
+@app.get("/api/notification-preferences")
+def get_notification_preferences(
+    db: Session = Depends(get_db),
+    context: tuple[Farmer, AuthSession] = Depends(get_auth_context),
+):
+    return _notification_preferences_payload(db, context[0])
 
 
 @app.patch("/api/notification-preferences")
@@ -4637,6 +5813,18 @@ def update_notification_preferences(
     farmer = context[0]
 
     updates = preferences.model_dump(exclude_unset=True, exclude_none=True)
+    if not updates:
+        raise HTTPException(status_code=422, detail="At least one preference is required.")
+    if updates.get("sms_enabled") and not (farmer.phone and farmer.phone_verified_at):
+        raise HTTPException(
+            status_code=422,
+            detail="SMS notifications require a verified phone number.",
+        )
+    if updates.get("web_push_enabled") and not _has_active_push_subscription(db, farmer.id):
+        raise HTTPException(
+            status_code=422,
+            detail="Browser push notifications require an active subscription.",
+        )
 
     for key, value in updates.items():
         setattr(farmer, key, value)
@@ -4651,9 +5839,7 @@ def update_notification_preferences(
 
     return {
         "message": "Notification preferences updated successfully.",
-        "web_push_enabled": farmer.web_push_enabled,
-        "sms_enabled": farmer.sms_enabled,
-        "email_enabled": farmer.email_enabled,
+        **_notification_preferences_payload(db, farmer),
     }
 
 @app.post("/api/push/subscribe")
@@ -4667,6 +5853,13 @@ def subscribe_to_push_notifications(
     endpoint = urlsplit(subscription.endpoint)
     if endpoint.scheme != "https" or not endpoint.netloc:
         raise HTTPException(status_code=422, detail="Push endpoint must use HTTPS.")
+    subscription_expires_at = (
+        datetime.fromtimestamp(subscription.expirationTime / 1000, timezone.utc)
+        if subscription.expirationTime is not None
+        else None
+    )
+    if subscription_expires_at is not None and subscription_expires_at <= datetime.now(timezone.utc):
+        raise HTTPException(status_code=422, detail="Push subscription has expired.")
 
     existing = db.scalar(
         select(FarmNotificationSubscription).where(
@@ -4679,22 +5872,14 @@ def subscribe_to_push_notifications(
         existing.p256dh = subscription.keys["p256dh"]
         existing.auth = subscription.keys["auth"]
         existing.revoked_at = None
-        existing.expires_at = (
-            datetime.fromtimestamp(subscription.expirationTime / 1000, timezone.utc)
-            if subscription.expirationTime is not None
-            else None
-        )
+        existing.expires_at = subscription_expires_at
     else:
         db.add(FarmNotificationSubscription(
             farmer_id=farmer.id,
             endpoint=subscription.endpoint,
             p256dh=subscription.keys["p256dh"],
             auth=subscription.keys["auth"],
-            expires_at=(
-                datetime.fromtimestamp(subscription.expirationTime / 1000, timezone.utc)
-                if subscription.expirationTime is not None
-                else None
-            ),
+            expires_at=subscription_expires_at,
         ))
 
     farmer.web_push_enabled = True

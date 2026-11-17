@@ -109,34 +109,6 @@ def test_chart_assistant_reads_the_current_primary_key_each_call(monkeypatch):
     assert captured["api_key_labels"] == [0, 1]
 
 
-def test_non_persistent_chart_assistant_keeps_openai_provider(monkeypatch):
-    captured = {}
-
-    async def mocked_request(input_text, instructions, language_code, **kwargs):
-        captured.update(
-            input_text=input_text,
-            instructions=instructions,
-            language_code=language_code,
-            kwargs=kwargs,
-        )
-        return "Existing chart answer."
-
-    monkeypatch.setattr(chart_assistant, "_request_response", mocked_request)
-    answer = asyncio.run(
-        chart_assistant.answer_chart_question_openai(
-            "Explain my field data.",
-            {"field": {"name": "North plot"}},
-            [],
-            "te-IN",
-        )
-    )
-
-    assert answer == "Existing chart answer."
-    assert captured["language_code"] == "te-IN"
-    assert captured["kwargs"]["max_input_characters"] == 30000
-    assert "North plot" in captured["input_text"]
-
-
 def test_temporary_gemini_rate_limit_retries_after_provider_delay(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
     calls = []

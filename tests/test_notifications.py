@@ -19,6 +19,7 @@ sys.path.insert(0, str(SENSOR_DIR))
 import app.main as sensor_api  # type: ignore[reportMissingImports]
 import email_notifications
 import alerts.config as alert_config
+import alerts.delivery as notification_delivery
 import push_notifications
 import sms_notifications
 from models import (
@@ -29,6 +30,7 @@ from models import (
     FarmerField,
     FarmerSensorDevice,
     FarmerSensorReading,
+    NotificationDelivery,
 )
 
 SENSOR_TOKEN = "test-only-device-token"
@@ -225,13 +227,15 @@ def test_duplicate_unresolved_alert_notifies_only_once(
         farmer = db.scalar(select(Farmer))
         farmer.web_push_enabled = True
         farmer.sms_enabled = True
+        farmer.email_enabled = True
+        farmer.phone_verified_at = datetime.now(timezone.utc)
         db.commit()
-    push = Mock(return_value={"status": "sent", "sent": 1, "failed": 0})
-    email = Mock(return_value={"status": "sent"})
-    sms = Mock(return_value={"status": "sent"})
-    monkeypatch.setattr(sensor_api, "send_web_push_notification", push)
-    monkeypatch.setattr(sensor_api, "send_email", email)
-    monkeypatch.setattr(sensor_api, "send_sms", sms)
+    push = Mock(return_value={"status": "sent", "reason": "provider_accepted", "sent": 1, "failed": 0})
+    email = Mock(return_value={"status": "sent", "reason": "provider_accepted"})
+    sms = Mock(return_value={"status": "sent", "reason": "provider_accepted"})
+    monkeypatch.setattr(notification_delivery, "send_web_push_notification", push)
+    monkeypatch.setattr(notification_delivery, "send_email", email)
+    monkeypatch.setattr(notification_delivery, "send_sms", sms)
 
     first = post_reading(client, moisture=20)
     second = post_reading(client, moisture=19)
@@ -239,8 +243,11 @@ def test_duplicate_unresolved_alert_notifies_only_once(
     assert first.json()["alert_generated"] is True
     assert second.json()["alert_generated"] is False
     assert push.call_count == email.call_count == sms.call_count == 1
+    email.assert_called_once()
+    assert email.call_args.args[0] == "test-farmer@example.test"
     with database() as db:
         assert db.scalar(select(func.count()).select_from(Alert)) == 1
+        assert db.scalar(select(func.count()).select_from(NotificationDelivery)) == 4
 
 
 def test_push_delivery_is_disabled_by_default(database, monkeypatch):
@@ -320,18 +327,67 @@ def test_sms_skips_when_configuration_is_missing(monkeypatch):
 
 
 def test_sms_preference_disabled_skips_notification(
-    client, monkeypatch
+    client, database, monkeypatch
 ):
     monkeypatch.setattr(sensor_api, "FIELD_THRESHOLDS", {
         "1": {"irrigation_trigger": 30, "is_validated": True},
     })
     sms = Mock()
-    monkeypatch.setattr(sensor_api, "send_sms", sms)
+    monkeypatch.setattr(notification_delivery, "send_sms", sms)
     response = post_reading(client, moisture=20)
 
     assert response.status_code == 200
     assert response.json()["notifications"]["sms"]["reason"] == "preference_disabled"
     sms.assert_not_called()
+    with database() as db:
+        delivery = db.scalar(
+            select(NotificationDelivery).where(NotificationDelivery.channel == "sms")
+        )
+        assert delivery is not None
+        assert delivery.status == "skipped"
+        assert delivery.reason == "preference_disabled"
+
+
+def test_unverified_sms_and_disabled_channels_are_not_dispatched(
+    database, monkeypatch
+):
+    with database() as db:
+        farmer = db.scalar(select(Farmer))
+        farmer.email_enabled = True
+        farmer.sms_enabled = True
+        farmer.web_push_enabled = False
+        field = db.scalar(select(FarmerField))
+        alert = Alert(
+            farmer_id=farmer.id,
+            field_id=field.id,
+            alert_type="low_moisture",
+            severity="high",
+            message="Soil moisture is low.",
+            reason="The threshold was crossed.",
+        )
+        db.add(alert)
+        db.commit()
+        alert_id = alert.id
+
+    email = Mock(return_value={"status": "sent", "reason": "provider_accepted"})
+    sms = Mock()
+    push = Mock()
+    monkeypatch.setattr(notification_delivery, "send_email", email)
+    monkeypatch.setattr(notification_delivery, "send_sms", sms)
+    monkeypatch.setattr(notification_delivery, "send_web_push_notification", push)
+
+    with database() as db:
+        first_result = notification_delivery.dispatch_alert_notifications(db, alert_id)
+        repeated_result = notification_delivery.dispatch_alert_notifications(db, alert_id)
+
+    assert first_result == repeated_result
+    assert first_result["in_app"] == {"status": "sent", "reason": "stored_in_app"}
+    assert first_result["sms"] == {"status": "skipped", "reason": "phone_unverified"}
+    assert first_result["push"] == {"status": "skipped", "reason": "preference_disabled"}
+    email.assert_called_once()
+    assert email.call_args.args[0] == "test-farmer@example.test"
+    sms.assert_not_called()
+    push.assert_not_called()
 
 
 def test_email_provider_failure_is_reported_without_network(
@@ -473,9 +529,9 @@ def test_database_transaction_failure_does_not_notify(
             db.close()
 
     sensor_api.app.dependency_overrides[sensor_api.get_db] = failing_db
-    monkeypatch.setattr(sensor_api, "send_web_push_notification", notifications)
-    monkeypatch.setattr(sensor_api, "send_email", notifications)
-    monkeypatch.setattr(sensor_api, "send_sms", notifications)
+    monkeypatch.setattr(notification_delivery, "send_web_push_notification", notifications)
+    monkeypatch.setattr(notification_delivery, "send_email", notifications)
+    monkeypatch.setattr(notification_delivery, "send_sms", notifications)
     with TestClient(sensor_api.app) as test_client:
         response = post_reading(test_client, moisture=20)
 

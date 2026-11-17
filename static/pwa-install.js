@@ -4,7 +4,10 @@
   const LANGUAGE_KEY = "jalsaathi.main.pwa-language.v1";
   let deferredPrompt = null;
   let installed = false;
-  let workerAvailable = "serviceWorker" in navigator;
+  let installedByEvent = false;
+  let promptInProgress = false;
+  let manualOptions = false;
+  let workerAvailable = Boolean(window.isSecureContext && "serviceWorker" in navigator);
   let dialog;
   let status;
   let instructions;
@@ -31,23 +34,38 @@
       return "install.ios";
     }
     if (/Android/i.test(userAgent)) return "install.android";
-    if (/Safari/i.test(userAgent) && !/Chrome|Chromium|Edg/i.test(userAgent)) {
+    if (/Electron/i.test(userAgent)) return "install.embedded";
+    if (/Edg\//i.test(userAgent)) return "install.edge";
+    if (/Safari/i.test(userAgent) && !/Chrome|Chromium/i.test(userAgent)) {
       return "install.safariDesktop";
     }
+    if (/Firefox/i.test(userAgent)) return "install.firefox";
+    if (/Chrome|Chromium/i.test(userAgent)) return "install.chrome";
     return "install.generic";
   };
 
+  const stateForButton = () => {
+    if (promptInProgress) return { state: "installing", key: "install.installing" };
+    if (installed) return { state: "installed", key: "install.alreadyInstalled" };
+    if (!workerAvailable || manualOptions) return { state: "unavailable", key: "install.options" };
+    return { state: "ready", key: "install.button" };
+  };
+
   const syncButtons = () => {
+    const { state, key } = stateForButton();
     document.querySelectorAll("[data-install-app]").forEach((button) => {
       const label = button.querySelector("[data-install-label]");
       if (label) {
-        const key = installed ? "install.alreadyInstalled" : "install.button";
         label.dataset.i18nKey = key;
         label.textContent = translate(key);
       }
+      button.dataset.installState = state;
       button.toggleAttribute("data-installed", installed);
-      button.setAttribute("aria-label", translate(installed ? "install.alreadyInstalled" : "install.button"));
-      button.title = translate(installed ? "install.alreadyInstalled" : "install.button");
+      button.disabled = promptInProgress;
+      if (promptInProgress) button.setAttribute("aria-busy", "true");
+      else button.removeAttribute("aria-busy");
+      button.setAttribute("aria-label", translate(key));
+      button.title = translate(key);
     });
   };
 
@@ -82,16 +100,9 @@
     document.body.append(dialog);
   };
 
-  const openInstructions = () => {
+  const showInstallDialog = (statusKey, includeInstructions = true) => {
     ensureDialog();
-    const statusKey = installed
-      ? "install.statusInstalled"
-      : !navigator.onLine
-        ? "install.onlineRequired"
-        : !workerAvailable
-          ? "install.unavailable"
-          : "";
-    const instruction = statusKey ? "" : instructionKey();
+    const instruction = includeInstructions ? instructionKey() : "";
     if (instruction) instructions.dataset.i18nKey = instruction;
     else delete instructions.dataset.i18nKey;
     instructions.textContent = instruction ? translate(instruction) : "";
@@ -103,50 +114,114 @@
     dialog.querySelector("button")?.focus();
   };
 
-  const updateInstalled = (value) => {
-    installed = Boolean(value);
+  const detectRelatedInstallation = async () => {
+    if (!window.isSecureContext ||
+        typeof navigator.getInstalledRelatedApps !== "function") return null;
+    try {
+      const response = await fetch("/manifest.webmanifest", { cache: "no-store" });
+      if (!response.ok) throw new Error(`Manifest request failed with status ${response.status}.`);
+      const manifest = await response.json();
+      const manifestId = new URL(manifest.id || "/", response.url).href;
+      const installedApps = await navigator.getInstalledRelatedApps();
+      return installedApps.some((app) =>
+        app.platform === "webapp" &&
+        (app.id === manifestId ||
+          (typeof app.url === "string" &&
+            new URL(app.url, location.href).href === response.url))
+      );
+    } catch (error) {
+      console.warn("JalSaathi installed-app status could not be checked.", error);
+      return null;
+    }
+  };
+
+  const refreshInstalledState = async ({ recheckAfterReturn = false } = {}) => {
+    const relatedInstallation = await detectRelatedInstallation();
+    if (relatedInstallation === null) {
+      if (recheckAfterReturn) installedByEvent = false;
+      installed = isStandalone() || installedByEvent;
+    } else {
+      installed = isStandalone() || relatedInstallation;
+      if (!installed) installedByEvent = false;
+    }
+    if (installed) {
+      deferredPrompt = null;
+      manualOptions = false;
+    }
     syncButtons();
+    return installed;
   };
 
   const requestInstall = async () => {
-    if (installed) {
-      openInstructions();
+    if (promptInProgress) return;
+    if (installed || isStandalone()) {
+      showInstallDialog("install.statusInstalled", false);
       return;
     }
     if (!navigator.onLine) {
-      openInstructions();
+      showInstallDialog("install.onlineRequired", false);
       return;
     }
-    if (!deferredPrompt || !workerAvailable) {
-      openInstructions();
+    if (!window.isSecureContext || !workerAvailable) {
+      manualOptions = true;
+      syncButtons();
+      showInstallDialog("install.unavailable", false);
       return;
     }
+    if (!deferredPrompt) {
+      manualOptions = true;
+      syncButtons();
+      showInstallDialog("install.statusManual");
+      void refreshInstalledState();
+      return;
+    }
+
     const prompt = deferredPrompt;
     deferredPrompt = null;
+    manualOptions = false;
+    promptInProgress = true;
+    syncButtons();
     try {
       await prompt.prompt();
       const choice = await prompt.userChoice;
-      if (choice.outcome === "accepted") updateInstalled(true);
+      if (choice?.outcome === "accepted") {
+        if (await refreshInstalledState()) {
+          showInstallDialog("install.statusInstalled", false);
+        } else {
+          manualOptions = true;
+          showInstallDialog("install.statusAccepted", false);
+        }
+      } else if (choice?.outcome === "dismissed") {
+        await refreshInstalledState();
+        if (!installed) {
+          manualOptions = true;
+          showInstallDialog("install.statusCancelled");
+        }
+      } else {
+        showInstallDialog("install.promptError");
+      }
     } catch (error) {
       console.error("JalSaathi installation prompt could not be opened.", error);
-      openInstructions();
-      ensureDialog();
-      status.dataset.i18nKey = "install.promptError";
-      status.textContent = translate("install.promptError");
-      window.JalSaathiI18n?.translate(dialog);
+      manualOptions = true;
+      showInstallDialog("install.promptError");
+    } finally {
+      promptInProgress = false;
+      syncButtons();
     }
   };
 
-  const registerWorker = () => {
+  const registerWorker = async () => {
     if (!workerAvailable) {
-      console.warn("This browser does not support service workers; offline installation is unavailable.");
+      syncButtons();
       return;
     }
-    navigator.serviceWorker.register("/service-worker.js", { scope: "/" })
-      .catch((error) => {
-        workerAvailable = false;
-        console.error("JalSaathi main-app service worker could not be registered.", error);
-      });
+    try {
+      await navigator.serviceWorker.register("/service-worker.js", { scope: "/" });
+    } catch (error) {
+      workerAvailable = false;
+      console.error("JalSaathi main-app service worker could not be registered.", error);
+      syncButtons();
+    }
   };
 
   document.addEventListener("click", (event) => {
@@ -154,10 +229,20 @@
     void requestInstall();
   });
   window.addEventListener("beforeinstallprompt", (event) => {
+    if (installed || isStandalone()) return;
     event.preventDefault();
     deferredPrompt = event;
+    manualOptions = false;
+    syncButtons();
   });
-  window.addEventListener("appinstalled", () => updateInstalled(true));
+  window.addEventListener("appinstalled", () => {
+    installedByEvent = true;
+    installed = true;
+    deferredPrompt = null;
+    manualOptions = false;
+    syncButtons();
+    showInstallDialog("install.statusInstalled", false);
+  });
   window.addEventListener("jalsaathi:language-changed", () => {
     storeLanguage();
     syncButtons();
@@ -166,27 +251,25 @@
   window.addEventListener("jalsaathi:auth-changed", storeLanguage);
   window.addEventListener("jalsaathi:profile-changed", storeLanguage);
   window.addEventListener("jalsaathi:topbar-mounted", syncButtons);
+  window.addEventListener("focus", () => {
+    void refreshInstalledState({ recheckAfterReturn: true });
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) void refreshInstalledState({ recheckAfterReturn: true });
+  });
   const displayMode = window.matchMedia?.("(display-mode: standalone)");
   if (displayMode?.addEventListener) {
-    displayMode.addEventListener("change", (event) => {
-      if (event.matches) updateInstalled(true);
+    displayMode.addEventListener("change", () => {
+      void refreshInstalledState({ recheckAfterReturn: true });
     });
   } else {
-    displayMode?.addListener?.((event) => {
-      if (event.matches) updateInstalled(true);
-    });
-  }
-
-  const relatedApps = navigator.getInstalledRelatedApps;
-  if (!isStandalone() && typeof relatedApps === "function") {
-    void relatedApps.call(navigator).then((apps) => {
-      if (apps.length) updateInstalled(true);
-    }).catch((error) => {
-      console.warn("JalSaathi installed-app status could not be checked.", error);
+    displayMode?.addListener?.(() => {
+      void refreshInstalledState({ recheckAfterReturn: true });
     });
   }
 
   storeLanguage();
-  updateInstalled(isStandalone());
-  registerWorker();
+  syncButtons();
+  void refreshInstalledState();
+  void registerWorker();
 })();

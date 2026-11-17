@@ -677,6 +677,7 @@ class FarmerAssistantHistoryEntry(BaseModel):
 
 class ChartAssistantRequest(FarmerAssistantRequest):
     assistant_mode: Literal["chart"]
+    chart_mode: Literal["auto", "text", "chart"] = "auto"
     field_id: int | None = Field(default=None, gt=0)
     crop_id: int | None = Field(default=None, gt=0)
     conversation_id: int | None = Field(default=None, gt=0)

@@ -1,5 +1,5 @@
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
@@ -101,6 +101,40 @@ def mark_alert_as_read(
     db.refresh(alert)
 
     return alert
+
+
+def mark_alert_as_unread(
+    db: Session,
+    alert_id: int,
+    farmer_id: int,
+):
+    alert = db.scalar(
+        select(Alert).where(
+            Alert.id == alert_id,
+            Alert.farmer_id == farmer_id,
+        )
+    )
+
+    if alert is None:
+        return None
+
+    alert.is_read = False
+    db.commit()
+    db.refresh(alert)
+    return alert
+
+
+def mark_all_alerts_as_read(db: Session, farmer_id: int) -> int:
+    result = db.execute(
+        update(Alert)
+        .where(
+            Alert.farmer_id == farmer_id,
+            Alert.is_read.is_(False),
+        )
+        .values(is_read=True)
+    )
+    db.commit()
+    return result.rowcount or 0
 
 
 def resolve_alert(

@@ -59,6 +59,7 @@ WEATHER_ALERT_THRESHOLDS = {
         "rain_probability_percent": 70,
         "rainfall_mm_per_hr": 5.0,
     },
+    "high_temperature": {"temperature_c": 35.0},
     "heatwave": {"temperature_c": 40.0},
     "strong_wind": {"wind_speed_mps": 15.0},
     "frost": {"temperature_c": 2.0},

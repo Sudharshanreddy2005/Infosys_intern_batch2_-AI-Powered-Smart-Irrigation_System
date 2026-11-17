@@ -11,8 +11,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+Assamese:wght@400;500;600;700&family=Noto+Sans+Bengali:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600;700&family=Noto+Sans+Gujarati:wght@400;500;600;700&family=Noto+Sans+Gurmukhi:wght@400;500;600;700&family=Noto+Sans+Kannada:wght@400;500;600;700&family=Noto+Sans+Malayalam:wght@400;500;600;700&family=Noto+Sans+Oriya:wght@400;500;600;700&family=Noto+Sans+Tamil:wght@400;500;600;700&family=Noto+Sans+Telugu:wght@400;500;600;700&family=Noto+Nastaliq+Urdu&display=swap" rel="stylesheet" />
 
-    <link rel="stylesheet" href="/static/sections.css?v=20261122-ai-multimodal1" />
-    <link rel="stylesheet" href="/static/topbar.css?v=20261120-calendar-assistant-pages1" />
+    <link rel="stylesheet" href="/static/sections.css?v=20261117-notification-channels1" />
+    <link rel="stylesheet" href="/static/topbar.css?v=20261117-notification-channels1" />
     <link rel="stylesheet" href="/static/monitoring.css?v=3" />
 
   </head>
@@ -27,25 +27,17 @@
           <a class="portal-nav-link" data-view-link="fields" href="/static/sections.html?view=fields">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21V9" /><path d="M11 14C6 14 4 11 4 7c5 0 8 2 9 6 1-5 4-8 9-8 0 6-3 10-9 11z" /></svg><span data-i18n-key="nav.fields">My Fields</span>
           </a>
-          <a class="portal-nav-link"
-            data-view-link="field-monitoring"
-            href="/static/sections.html?view=field-monitoring">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M3 12h4l3-8 4 16 3-8h4" />
-          </svg>
-          <span>Field Monitoring</span>
-         </a>
           <a class="portal-nav-link" data-view-link="crops" href="/static/sections.html?view=crops">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21V9" /><path d="M11 14C6 14 4 11 4 7c5 0 8 2 9 6 1-5 4-8 9-8 0 6-3 10-9 11z" /></svg><span data-i18n-key="nav.crops">Crops</span>
           </a>
+          <a class="portal-nav-link" data-view-link="field-monitoring" href="/static/sections.html?view=field-monitoring">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 12h4l3-8 4 16 3-8h4" />
+            </svg>
+            <span>Field Monitoring</span>
+          </a>
           <a class="portal-nav-link" data-view-link="schedule" href="/static/sections.html?view=schedule">
             <svg class="portal-nav-outline" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v3m10-3v3M4 9h16M6 5h12a2 2 0 0 1 2 2v12H4V7a2 2 0 0 1 2-2z" /><path d="M8 13h2m4 0h2m-8 4h2m4 0h2" /></svg><span data-i18n-key="nav.schedule">Irrigation Schedule</span>
-          </a>
-          <a class="portal-nav-link" data-view-link="calendar" href="/static/sections.html?view=calendar">
-            <svg class="portal-nav-outline" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v3m10-3v3M4 9h16M6 5h12a2 2 0 0 1 2 2v12H4V7a2 2 0 0 1 2-2z" /><path d="M8 13h.01M12 13h.01M16 13h.01M8 17h.01M12 17h.01" /></svg><span data-i18n-key="nav.calendar">Calendar</span>
-          </a>
-          <a class="portal-nav-link" data-view-link="chart-assistant" href="/static/sections.html?view=chart-assistant">
-            <svg class="portal-nav-outline" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16M6 16l4-5 3 2 5-7" /><circle cx="6" cy="16" r="1" /><circle cx="10" cy="11" r="1" /><circle cx="13" cy="13" r="1" /><circle cx="18" cy="6" r="1" /></svg><span data-i18n-key="chartAssistant.open">Chart Assistant</span>
           </a>
           <a class="portal-nav-link" data-view-link="reports" href="/static/sections.html?view=reports">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h3v-5H4zm6 0h3V9h-3zm6 0h3V5h-3" /></svg><span data-i18n-key="nav.reports">Reports</span>
@@ -62,10 +54,6 @@
           <a class="portal-nav-link" data-view-link="ai-model-predictions" href="/static/sections.html?view=ai-model-predictions">
             <svg class="portal-nav-outline" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3a3 3 0 0 0-3 3v1a3 3 0 0 0-2 3v1a3 3 0 0 0 1 2.2V15a3 3 0 0 0 3 3h1v3h6v-3h1a3 3 0 0 0 3-3v-1.8a3 3 0 0 0 1-2.2v-1a3 3 0 0 0-2-3V6a3 3 0 0 0-3-3H9Z" /><path d="M9 8v8m6-8v8m-6-4h6" /></svg><span>AI Model Predictions</span>
           </a>
-          <a class="portal-nav-link" data-view-link="experimental-model" href="/static/sections.html?view=experimental-model">
-            <svg class="portal-nav-outline" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1m0-12.8-2.1 2.1m-8.6 8.6-2.1 2.1" /><circle cx="12" cy="12" r="4" /></svg>
-            <span>Experimental Model</span>
-          </a>
         </nav>
       </aside>
 
@@ -77,20 +65,20 @@
       </main>
     </div>
     <script src="/static/profile-store.js?v=20261114-complete-translations3"></script>
-    <script src="/static/i18n/en.js?v=20261122-ai-multimodal1"></script>
-    <script src="/static/i18n/te.js?v=20261122-ai-multimodal1"></script>
-    <script src="/static/i18n/hi.js?v=20261122-ai-multimodal1"></script>
-    <script src="/static/i18n/kn.js?v=20261122-ai-multimodal1"></script>
-    <script src="/static/i18n/ta.js?v=20261122-ai-multimodal1"></script>
-    <script src="/static/i18n/ml.js?v=20261122-ai-multimodal1"></script>
+    <script src="/static/i18n/en.js?v=20261123-gemini-chart2"></script>
+    <script src="/static/i18n/te.js?v=20261123-gemini-chart2"></script>
+    <script src="/static/i18n/hi.js?v=20261123-gemini-chart2"></script>
+    <script src="/static/i18n/kn.js?v=20261123-gemini-chart2"></script>
+    <script src="/static/i18n/ta.js?v=20261123-gemini-chart2"></script>
+    <script src="/static/i18n/ml.js?v=20261123-gemini-chart2"></script>
     <script src="/static/number-format.js?v=20261115-latin-digits2"></script>
     <script src="/static/i18n.js?v=20261115-numeric-measurements1"></script>
-    <script src="/static/pwa-install.js?v=20261114-main-pwa1"></script>
+    <script src="/static/pwa-install.js?v=20261116-main-pwa3"></script>
     <script src="/static/sidebar.js?v=20261104-sidebar-toggle-fix1"></script>
-    <script src="/static/topbar.js?v=20261114-main-assistant-pwa1"></script>
-    <script src="/static/chart-assistant.js?v=20261122-ai-multimodal1"></script>
+    <script src="/static/topbar.js?v=20261117-notification-channels1"></script>
+    <script src="/static/chart-assistant.js?v=20261123-gemini-chart1"></script>
     <script src="/static/calendar.js?v=20261115-latin-digits1"></script>
-    <script src="/static/ai-chat-page.js?v=20261115-latin-digits1"></script>
+    <script src="/static/ai-chat-page.js?v=20261123-gemini-chart2"></script>
     <script src="/static/field-numbering.js?v=20261028-field-numbering1"></script>
     <script src="/static/field-store.js?v=20261028-field-coordinates1"></script>
     <script src="/static/weather.js?v=20261114-complete-translations3"></script>
@@ -102,6 +90,6 @@
     <script src="/static/model-predictions.js?v=20261031-model34"></script>
     <script src="/static/ai-model-dashboard.js?v=20261104-model1-input-details1"></script>
     <script src="/static/monitoring.js?v=5"></script>
-    <script src="/static/sections.js?v=20261122-ai-multimodal1"></script>
+    <script src="/static/sections.js?v=20261117-notification-channels1"></script>
   </body>
 </html>

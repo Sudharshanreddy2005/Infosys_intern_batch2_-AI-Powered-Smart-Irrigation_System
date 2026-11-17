@@ -32,9 +32,13 @@ class Farmer(Base):
     email: Mapped[str] = mapped_column(String(254), nullable=False, unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
     phone: Mapped[str | None] = mapped_column(String(32))
+    phone_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     state: Mapped[str | None] = mapped_column(String(80))
     district: Mapped[str | None] = mapped_column(String(100))
     village: Mapped[str | None] = mapped_column(String(120))
+    in_app_notifications_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
     web_push_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     sms_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     email_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
@@ -455,3 +459,34 @@ class Alert(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class NotificationDelivery(Base):
+    __tablename__ = "notification_deliveries"
+    __table_args__ = (
+        CheckConstraint(
+            "channel IN ('in_app', 'email', 'sms', 'push')",
+            name="ck_notification_deliveries_channel",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'sent', 'partial', 'skipped', 'failed')",
+            name="ck_notification_deliveries_status",
+        ),
+        UniqueConstraint("alert_id", "channel", name="uq_notification_deliveries_alert_channel"),
+        Index("ix_notification_deliveries_farmer_created", "farmer_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    alert_id: Mapped[int] = mapped_column(
+        ForeignKey("alerts.id", ondelete="CASCADE"), nullable=False
+    )
+    farmer_id: Mapped[int] = mapped_column(
+        ForeignKey("farmers.id", ondelete="CASCADE"), nullable=False
+    )
+    channel: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    reason: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

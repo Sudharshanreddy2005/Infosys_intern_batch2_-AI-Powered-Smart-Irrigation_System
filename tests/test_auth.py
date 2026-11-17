@@ -1,16 +1,28 @@
 import os
-from datetime import datetime, timezone
+import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import urljoin
 
 os.environ["DATABASE_URL"] = "sqlite://"
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.pool import StaticPool
 
 import main
-from models import AuthSession, FarmerSensorReading, IrrigationSchedule
+from models import (
+    Alert,
+    AuthSession,
+    FarmerField,
+    FarmerSensorDevice,
+    FarmerSensorReading,
+    IrrigationReservoir,
+    IrrigationSchedule,
+    Farmer,
+    NotificationDelivery,
+)
 
 
 @pytest.fixture
@@ -130,18 +142,40 @@ def test_main_application_pwa_assets_are_served_from_the_app_origin(client_pair)
     manifest = client.get("/manifest.webmanifest")
     assert manifest.status_code == 200
     assert manifest.headers["content-type"].startswith("application/manifest+json")
-    assert manifest.json()["start_url"] == "/"
-    assert manifest.json()["icons"][0]["src"] == "/pwa-icons/icon-192.png"
+    manifest_data = manifest.json()
+    assert manifest_data["start_url"] == "/"
+    assert manifest_data["scope"] == "/"
+    assert manifest_data["display"] == "standalone"
+    assert manifest_data["icons"][0]["src"] == "/pwa-icons/icon-192.png"
+    related_app = manifest_data["related_applications"][0]
+    assert related_app["platform"] == "webapp"
+    manifest_url = str(manifest.url)
+    assert related_app["url"] == manifest_url
+    assert related_app["id"] == urljoin(manifest_url, manifest_data["id"])
 
     worker = client.get("/service-worker.js")
     assert worker.status_code == 200
     assert worker.headers["service-worker-allowed"] == "/"
     assert "jalsaathi-main-" in worker.text
+    assert 'self.addEventListener("push"' in worker.text
+    assert 'self.addEventListener("notificationclick"' in worker.text
 
     offline = client.get("/offline.html")
     assert offline.status_code == 200
     assert "Your account data is not available offline." in offline.text
-    assert client.get("/pwa-icons/icon-192.png").headers["content-type"].startswith("image/png")
+    for icon_name, expected_size in (
+        ("icon-192.png", 192),
+        ("icon-512.png", 512),
+        ("icon-maskable-192.png", 192),
+        ("icon-maskable-512.png", 512),
+        ("apple-touch-icon.png", 180),
+    ):
+        icon = client.get(f"/pwa-icons/{icon_name}")
+        assert icon.status_code == 200
+        assert icon.headers["content-type"].startswith("image/png")
+        assert icon.content[:8] == b"\x89PNG\r\n\x1a\n"
+        assert int.from_bytes(icon.content[16:20], "big") == expected_size
+        assert int.from_bytes(icon.content[20:24], "big") == expected_size
     assert client.get("/pwa-icons/not-an-app-icon.png").status_code == 404
 
 
@@ -992,8 +1026,9 @@ def test_experimental_dashboard_is_separate_and_does_not_change_recommendations(
     assert "experimental-lab-card" not in template
     assert "/static/experimental-model.js" in template
     assert "/static/model1-recommendation.js" in template
-    assert 'href="/static/sections.html?view=experimental-model"' in template
-    assert 'data-view-link="experimental-model"' in sections
+    assert 'href="/static/sections.html?view=experimental-model"' not in template
+    assert 'data-view-link="experimental-model"' not in sections
+    assert '"experimental-model": {' in sections_script
     assert "/static/experimental-model.js" in sections
     assert "/static/experimental-model.html" in sections_script
     assert "/static/weather.js?v=" in sections
@@ -1047,6 +1082,221 @@ def test_authenticated_profile_can_be_updated(client_pair):
     assert updated.status_code == 200
     assert updated.json()["name"] == "Asha N Rao"
     assert updated.json()["village"] == "Hunsur Town"
+
+
+def test_notification_preferences_are_persisted_and_owner_scoped(client_pair):
+    first, second = client_pair
+    assert register(first, "first@example.com").status_code == 201
+    assert register(second, "second@example.com").status_code == 201
+
+    defaults = first.get("/api/notification-preferences")
+    assert defaults.status_code == 200
+    assert defaults.json() == {
+        "in_app_notifications_enabled": True,
+        "web_push_enabled": False,
+        "push_subscription_available": False,
+        "sms_enabled": False,
+        "email_enabled": False,
+        "sms_available": False,
+        "sms_unavailable_reason": "SMS is unavailable until a phone number is verified.",
+    }
+
+    unavailable_push = second.patch(
+        "/api/notification-preferences",
+        json={"web_push_enabled": True},
+        headers=csrf_headers(second),
+    )
+    assert unavailable_push.status_code == 422
+    expired_push = second.post(
+        "/api/push/subscribe",
+        json={
+            "endpoint": "https://push.example.test/expired",
+            "expirationTime": int((datetime.now(timezone.utc).timestamp() - 60) * 1000),
+            "keys": {"p256dh": "test-key", "auth": "test-auth"},
+        },
+        headers=csrf_headers(second),
+    )
+    assert expired_push.status_code == 422
+
+    subscription = first.post(
+        "/api/push/subscribe",
+        json={
+            "endpoint": "https://push.example.test/first",
+            "keys": {"p256dh": "test-key", "auth": "test-auth"},
+        },
+        headers=csrf_headers(first),
+    )
+    assert subscription.status_code == 200
+
+    updated = first.patch(
+        "/api/notification-preferences",
+        json={
+            "in_app_notifications_enabled": False,
+            "email_enabled": True,
+            "web_push_enabled": True,
+        },
+        headers=csrf_headers(first),
+    )
+    assert updated.status_code == 200
+    assert updated.json()["in_app_notifications_enabled"] is False
+    assert updated.json()["email_enabled"] is True
+    assert updated.json()["web_push_enabled"] is True
+    assert updated.json()["push_subscription_available"] is True
+    assert first.get("/api/notification-preferences").json()["email_enabled"] is True
+
+    second_preferences = second.get("/api/notification-preferences")
+    assert second_preferences.status_code == 200
+    assert second_preferences.json()["in_app_notifications_enabled"] is True
+    assert second_preferences.json()["email_enabled"] is False
+    assert second_preferences.json()["web_push_enabled"] is False
+    assert second_preferences.json()["push_subscription_available"] is False
+
+
+def test_skipped_in_app_alerts_are_hidden_without_removing_legacy_history(client_pair):
+    farmer, _ = client_pair
+    assert register(farmer).status_code == 201
+    field_id = create_prediction_field(farmer)
+    farmer_id = farmer.get("/api/auth/me").json()["id"]
+    with main.Session(main.engine) as db:
+        legacy_alert = Alert(
+            farmer_id=farmer_id,
+            field_id=field_id,
+            alert_type="heavy_rain",
+            severity="high",
+            message="Legacy alert remains visible.",
+            reason="Created before in-app delivery tracking.",
+        )
+        hidden_alert = Alert(
+            farmer_id=farmer_id,
+            field_id=field_id,
+            alert_type="heatwave",
+            severity="high",
+            message="In-app delivery is disabled.",
+            reason="The user disabled in-app notifications.",
+        )
+        db.add_all([legacy_alert, hidden_alert])
+        db.flush()
+        db.add(NotificationDelivery(
+            alert_id=hidden_alert.id,
+            farmer_id=farmer_id,
+            channel="in_app",
+            status="skipped",
+            reason="preference_disabled",
+        ))
+        db.commit()
+        legacy_alert_id = legacy_alert.id
+
+    history = farmer.get("/api/alerts")
+    assert history.status_code == 200
+    assert [alert["id"] for alert in history.json()] == [legacy_alert_id]
+    assert farmer.get("/api/alerts/counts").json() == {
+        "total": 1,
+        "unread": 1,
+        "read": 0,
+        "matching": 1,
+    }
+
+
+def test_sms_preferences_require_verified_phone_and_reject_invalid_updates(client_pair):
+    client, _ = client_pair
+    assert register(client).status_code == 201
+
+    unavailable = client.patch(
+        "/api/notification-preferences",
+        json={"sms_enabled": True},
+        headers=csrf_headers(client),
+    )
+    assert unavailable.status_code == 422
+
+    for payload in ({}, {"email_enabled": None}, {"unexpected": True}, {"email_enabled": "yes"}):
+        response = client.patch(
+            "/api/notification-preferences",
+            json=payload,
+            headers=csrf_headers(client),
+        )
+        assert response.status_code == 422
+
+    with main.Session(main.engine) as db:
+        farmer = db.scalar(select(Farmer))
+        farmer.phone_verified_at = datetime.now(timezone.utc)
+        db.commit()
+
+    verified = client.patch(
+        "/api/notification-preferences",
+        json={"sms_enabled": True},
+        headers=csrf_headers(client),
+    )
+    assert verified.status_code == 200
+    assert verified.json()["sms_enabled"] is True
+    assert verified.json()["sms_available"] is True
+
+
+def test_changing_phone_clears_sms_preference_and_verification(client_pair):
+    client, _ = client_pair
+    assert register(client).status_code == 201
+    with main.Session(main.engine) as db:
+        farmer = db.scalar(select(Farmer))
+        farmer.phone_verified_at = datetime.now(timezone.utc)
+        farmer.sms_enabled = True
+        db.commit()
+
+    changed = client.patch(
+        "/api/auth/me",
+        json={"phone": "+91 98765 43211"},
+        headers=csrf_headers(client),
+    )
+    assert changed.status_code == 200
+    with main.Session(main.engine) as db:
+        farmer = db.scalar(select(Farmer))
+        assert farmer.phone_verified_at is None
+        assert farmer.sms_enabled is False
+
+
+def test_account_settings_and_sidebar_navigation_are_consistent():
+    root = Path(__file__).resolve().parents[1]
+    pages = {
+        "dashboard": (root / "templates" / "index.html").read_text(encoding="utf-8"),
+        "sections": (root / "static" / "sections.html").read_text(encoding="utf-8"),
+        "todo": (root / "templates" / "todo-list.html").read_text(encoding="utf-8"),
+    }
+    expected = [
+        "dashboard",
+        "fields",
+        "crops",
+        "field-monitoring",
+        "schedule",
+        "reports",
+        "alerts",
+        "weather",
+        "predictions",
+        "ai-model-predictions",
+    ]
+
+    for page_name, markup in pages.items():
+        nav_match = re.search(r"<nav\b[^>]*>(.*?)</nav>", markup, flags=re.DOTALL)
+        assert nav_match is not None
+        nav = nav_match.group(1)
+        if page_name == "sections":
+            links = re.findall(r'data-view-link="([^"]+)"', nav)
+        else:
+            hrefs = re.findall(r'href="([^"]+)"', nav)
+            links = [
+                "dashboard" if href == "/dashboard" else
+                re.search(r"[?&]view=([^&]+)", href).group(1)
+                for href in hrefs
+            ]
+        assert links == expected
+        assert "experimental-model" not in nav
+        assert "Model Lab" not in nav
+        assert 'data-common-topbar' in markup
+
+    topbar = (root / "static" / "topbar.html").read_text(encoding="utf-8")
+    sections_script = (root / "static" / "sections.js").read_text(encoding="utf-8")
+    assert 'href="/static/sections.html?view=account-settings"' in topbar
+    assert '"account-settings": {' in sections_script
+    assert "/api/notification-preferences" in sections_script
+    assert "data-settings-sms-help" in sections_script
+    assert "phone_verified" in sections_script or "phone number is verified" in sections_script
 
 
 def test_origin_and_extra_owner_fields_are_rejected(client_pair):
@@ -1199,7 +1449,7 @@ def test_chart_assistant_uses_owned_schedule_weather_and_language(
         )
         return "α░╡α░╛α░ñα░╛α░╡α░░α░ú α░╕α▒éα░Üα░¿ α░àα░éα░ªα▒üα░¼α░╛α░ƒα▒üα░▓α▒ï α░ëα░éα░ªα░┐."
 
-    monkeypatch.setattr(main, "answer_chart_question_openai", mocked_chart_answer)
+    monkeypatch.setattr(main, "answer_chart_question", mocked_chart_answer)
     response = client.post(
         "/api/assistant/chat",
         json={
@@ -1232,6 +1482,8 @@ def test_chart_assistant_uses_owned_schedule_weather_and_language(
     assert weather_locations == ["12.500000,77.600000"]
     assert captured["language_code"] == "te-IN"
     assert captured["history"][-1]["role"] == "assistant"
+    assert "farmer_profile" not in captured["field_data"]
+    assert response.json()["charts"] == response.json()["context"]["charts"]
     foreign_response = other.post(
         "/api/assistant/chat",
         json={
@@ -1242,6 +1494,236 @@ def test_chart_assistant_uses_owned_schedule_weather_and_language(
         headers=csrf_headers(other),
     )
     assert foreign_response.status_code == 404
+
+
+def test_chart_assistant_builds_comparisons_from_fresh_owned_sensor_readings(client_pair, monkeypatch):
+    client, _ = client_pair
+    assert register(client).status_code == 201
+    field_ids = [create_prediction_field(client) for _ in range(3)]
+    with main.Session(main.engine) as db:
+        for field_id, name in zip(field_ids, ["North plot", "East plot", "South plot"]):
+            db.get(FarmerField, field_id).name = name
+        db.commit()
+
+    farmer_id = client.get("/api/auth/me").json()["id"]
+    now = datetime.now(timezone.utc)
+    with main.Session(main.engine) as db:
+        db.add_all([
+            FarmerSensorReading(
+                farmer_id=farmer_id,
+                field_id=field_ids[0],
+                recorded_at=now,
+                soil_moisture_percent=34,
+                soil_temperature_c=22,
+                humidity_percent=58,
+                ph=6.4,
+                electrical_conductivity_us_cm=120,
+                source="sensor",
+            ),
+            FarmerSensorReading(
+                farmer_id=farmer_id,
+                field_id=field_ids[1],
+                recorded_at=now - main.timedelta(hours=25),
+                soil_moisture_percent=60,
+                soil_temperature_c=24,
+                humidity_percent=62,
+                ph=6.8,
+                electrical_conductivity_us_cm=180,
+                source="sensor",
+            ),
+            FarmerSensorReading(
+                farmer_id=farmer_id,
+                field_id=field_ids[1],
+                recorded_at=now,
+                soil_moisture_percent=99,
+                source="test_fixture",
+            ),
+            FarmerSensorReading(
+                farmer_id=farmer_id,
+                field_id=field_ids[2],
+                recorded_at=now,
+                soil_moisture_percent=42,
+                soil_temperature_c=25,
+                humidity_percent=64,
+                ph=7.1,
+                electrical_conductivity_us_cm=210,
+                source="farmer_entered",
+            ),
+        ])
+        db.commit()
+
+    captured = {}
+
+    async def mocked_gemini(question, field_data, history, language_code):
+        captured["field_data"] = field_data
+        return "Here is the verified comparison."
+
+    monkeypatch.setattr(main, "answer_chart_question", mocked_gemini)
+    response = client.post(
+        "/api/assistant/chat",
+        json={
+            "assistant_mode": "chart",
+            "question": "Compare soil moisture across my fields.",
+            "chart_mode": "auto",
+        },
+        headers=csrf_headers(client),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["chart_availability"]["status"] == "available"
+    assert body["charts"][0]["title_key"] == "chartAssistant.soilMoisture"
+    assert body["charts"][0]["labels"] == ["North plot", "South plot"]
+    assert body["charts"][0]["datasets"][0]["data"] == [34.0, 42.0]
+    assert body["charts"][0]["caption_values"]["staleCount"] == 1
+    assert body["context"]["latest_sensor_readings"]["outdated_field_count"] == 1
+    assert body["context"]["soil_ph_history"]["status"] == "available"
+    assert body["context"]["electrical_conductivity_history"]["status"] == "available"
+    assert all(
+        item["values"].get("soil_moisture_percent") != 99
+        for item in body["context"]["latest_sensor_readings"]["fields"]
+    )
+    assert "farmer_profile" not in captured["field_data"]
+    assert "field_id" not in repr(captured["field_data"])
+
+
+def test_chart_payloads_preserve_crop_and_irrigation_provenance():
+    context = {
+        "range": {"period": "30d", "start_date": "2026-01-01", "end_date": "2026-01-30"},
+        "fields": [
+            {"name": "North plot", "saved_crop_records": [{"name": "Rice"}]},
+            {"name": "East plot", "saved_crop_records": [{"name": "Maize"}]},
+        ],
+        "planned_irrigation": {
+            "status": "available",
+            "source": "farmer_irrigation_schedules",
+            "data": [{
+                "field_name": "North plot",
+                "scheduled_date": "2026-01-15",
+                "water_liters": 200,
+            }],
+        },
+        "actual_water_usage": {
+            "status": "unavailable",
+            "reason": "No measured usage records exist.",
+        },
+        "unassigned_saved_crop_records": [{"name": "Wheat"}],
+        "recent_rainfall_history": {
+            "status": "available",
+            "source": "selected_field_recent_weather_history_api",
+            "data": [
+                {"time": "2026-01-29T10:00:00Z", "rain_accumulation_mm": 1.0},
+                {"time": "2026-01-29T11:00:00Z", "rain_accumulation_mm": 2.0},
+            ],
+        },
+    }
+
+    crops = main._assistant_chart_payloads(context, "Show crop distribution.", [], "auto")
+    assert crops["chart_availability"]["status"] == "available"
+    assert crops["charts"][0]["type"] == "pie"
+    assert crops["charts"][0]["labels"] == ["Rice", "Maize", "Wheat"]
+
+    usage = main._assistant_chart_payloads(context, "Chart actual water usage.", [], "auto")
+    assert usage["charts"] == []
+    assert usage["chart_availability"]["status"] == "unavailable"
+    assert usage["chart_availability"]["missing_metrics"][0]["metric_key"] == (
+        "chartAssistant.actualUsageUnavailable"
+    )
+
+    rainfall = main._assistant_chart_payloads(
+        context,
+        "Plot rainfall for the last 30 days.",
+        [],
+        "auto",
+    )
+    assert rainfall["charts"] == []
+    assert "at most 24 hours" in rainfall["chart_availability"]["missing_metrics"][0]["reason"]
+
+    forecast_context = {
+        "range": {"period": "7d", "start_date": "2026-01-24", "end_date": "2026-01-30"},
+        "weather_forecast": {
+            "status": "available",
+            "source": "selected_field_weather_forecast_api",
+            "range": {"start_date": "2026-01-31", "end_date": "2026-02-01"},
+            "data": [
+                {"time": "2026-01-31T10:00:00Z", "temperature_c": 24, "rainfall_mm_per_hr": 0.1},
+                {"time": "2026-02-01T10:00:00Z", "temperature_c": 25, "rainfall_mm_per_hr": 0.3},
+            ],
+        },
+    }
+    forecast = main._assistant_chart_payloads(
+        forecast_context,
+        "Show a weather forecast chart.",
+        [],
+        "auto",
+    )
+    assert forecast["chart_availability"]["status"] == "available"
+    assert {chart["title_key"] for chart in forecast["charts"]} == {
+        "chartAssistant.temperature",
+        "chartAssistant.rainfall",
+    }
+
+
+def test_auto_chart_mode_compares_a_metric_requested_for_each_field():
+    context = {
+        "range": {"period": "7d", "start_date": "2026-01-24", "end_date": "2026-01-30"},
+        "latest_sensor_readings": {
+            "status": "available",
+            "source": "farmer_sensor_readings",
+            "fields": [
+                {
+                    "field_name": "North plot",
+                    "status": "available",
+                    "freshness": "current",
+                    "values": {"soil_moisture_percent": 31},
+                },
+                {
+                    "field_name": "East plot",
+                    "status": "available",
+                    "freshness": "current",
+                    "values": {"soil_moisture_percent": 46},
+                },
+            ],
+        },
+    }
+
+    charts = main._assistant_chart_payloads(
+        context,
+        "Show soil moisture for my fields.",
+        [],
+        "auto",
+    )
+
+    assert charts["chart_availability"]["status"] == "available"
+    assert charts["charts"][0]["type"] == "bar"
+    assert charts["charts"][0]["labels"] == ["North plot", "East plot"]
+    assert charts["charts"][0]["datasets"][0]["data"] == [31.0, 46.0]
+
+
+def test_gemini_context_is_bounded_and_discloses_truncation():
+    history = [
+        {
+            "field_id": index % 20,
+            "field_name": f"Field {index % 20}",
+            "recorded_at": f"2026-01-{index % 30 + 1:02d}T12:00:00+00:00",
+            "soil_moisture_percent": float(index % 100),
+            "source": "sensor",
+        }
+        for index in range(300)
+    ]
+    context = main._assistant_gemini_context({
+        "soil_moisture_history": {
+            "status": "available",
+            "source": "farmer_sensor_readings",
+            "data": history,
+        },
+    })
+
+    assert len(main.json.dumps(context, ensure_ascii=False)) <= (
+        main._ASSISTANT_GEMINI_CONTEXT_MAX_CHARACTERS + 200
+    )
+    assert "soil_moisture_history" in context["context_truncated_sections"]
+    assert "field_id" not in repr(context)
 
 
 def test_chart_assistant_validates_custom_ranges(client_pair):
@@ -1487,7 +1969,8 @@ def test_image_chat_uses_owned_measurements_and_detector_result_for_followups(cl
     conversation_id = body["conversation_id"]
     assert detector_calls == [(b"private-image-bytes", "image/png")]
     assert body["context"]["crop_disease"]["prediction"] == verified_prediction
-    assert body["context"]["soil_moisture_history"]["data"][0]["soil_moisture_percent"] == 31.5
+    assert body["context"]["soil_moisture_history"]["status"] == "unavailable"
+    assert body["context"]["soil_moisture_history"]["data"] == []
     assert all(
         reading["soil_moisture_percent"] != 88.9
         for reading in body["context"]["soil_moisture_history"]["data"]
@@ -1837,3 +2320,289 @@ def test_sensor_device_revocation_and_replacement(client_pair):
         headers={"Authorization": f"Bearer {second_token}"},
     )
     assert new_token_response.status_code == 201
+
+
+def test_alert_notifications_are_paginated_filtered_and_farmer_owned(client_pair):
+    farmer, other = client_pair
+    assert register(farmer).status_code == 201
+    assert register(other, email="notification-other@example.com").status_code == 201
+    field_id = create_prediction_field(farmer)
+    other_field_id = create_prediction_field(other)
+    farmer_id = farmer.get("/api/auth/me").json()["id"]
+    other_farmer_id = other.get("/api/auth/me").json()["id"]
+    now = datetime.now(timezone.utc)
+    with main.Session(main.engine) as db:
+        db.add_all([
+            Alert(
+                farmer_id=farmer_id,
+                field_id=field_id,
+                alert_type="heavy_rain",
+                severity="high",
+                message="Heavy rain is forecast.",
+                reason="Rain probability exceeds the configured threshold.",
+                created_at=now,
+            ),
+            Alert(
+                farmer_id=farmer_id,
+                field_id=field_id,
+                alert_type="sensor_failure",
+                severity="medium",
+                message="A sensor is not sending readings.",
+                reason="No readings have arrived recently.",
+                is_read=True,
+                created_at=now - timedelta(minutes=5),
+            ),
+            Alert(
+                farmer_id=other_farmer_id,
+                field_id=other_field_id,
+                alert_type="heatwave",
+                severity="high",
+                message="A foreign farmer's alert.",
+                reason="Private record.",
+            ),
+        ])
+        db.commit()
+        farmer_alert_id = db.scalar(
+            select(Alert.id).where(
+                Alert.farmer_id == farmer_id,
+                Alert.alert_type == "heavy_rain",
+            )
+        )
+
+    latest = farmer.get("/api/alerts?limit=1")
+    assert latest.status_code == 200
+    assert len(latest.json()) == 1
+    assert latest.json()[0]["category"] == "weather"
+    assert latest.json()[0]["field_name"] == "North plot"
+    assert "farmer_id" not in latest.json()[0]
+    assert farmer.get("/api/alerts?category=sensors&read_status=read").json()[0]["category"] == "sensors"
+    assert farmer.get("/api/alerts?category=weather").json()[0]["alert_type"] == "heavy_rain"
+    assert farmer.get("/api/alerts?category=invalid").status_code == 422
+
+    counts = farmer.get("/api/alerts/counts").json()
+    assert counts == {"total": 2, "unread": 1, "read": 1, "matching": 2}
+    filtered_counts = farmer.get("/api/alerts/counts?category=weather&read_status=unread").json()
+    assert filtered_counts["matching"] == 1
+    assert filtered_counts["total"] == 2
+    assert other.get("/api/alerts/counts").json()["total"] == 1
+
+    read_response = farmer.patch(
+        f"/api/alerts/{farmer_alert_id}/read",
+        headers=csrf_headers(farmer),
+    )
+    assert read_response.status_code == 200
+    assert farmer.get("/api/alerts/counts").json()["unread"] == 0
+    unread_response = farmer.patch(
+        f"/api/alerts/{farmer_alert_id}/unread",
+        headers=csrf_headers(farmer),
+    )
+    assert unread_response.status_code == 200
+    assert farmer.get("/api/alerts/counts").json()["unread"] == 1
+    assert other.patch(
+        f"/api/alerts/{farmer_alert_id}/read",
+        headers=csrf_headers(other),
+    ).status_code == 404
+
+    marked_all = farmer.patch("/api/alerts/read-all", headers=csrf_headers(farmer))
+    assert marked_all.status_code == 200
+    assert marked_all.json()["updated_count"] == 1
+    assert farmer.get("/api/alerts/counts").json()["unread"] == 0
+    assert farmer.get("/api/alerts?read_status=read").json()
+    assert farmer.get("/api/alerts").status_code == 200
+
+
+def test_weather_alert_refresh_uses_real_forecast_rules_and_deduplicates(client_pair, monkeypatch):
+    farmer, _ = client_pair
+    assert register(farmer).status_code == 201
+    field_id = create_prediction_field(farmer)
+    monkeypatch.setattr(main, "weather_alert_attempts", main.OrderedDict())
+    forecast_calls = []
+
+    def forecast(location, hours, timestep):
+        forecast_calls.append((location, hours, timestep))
+        return [
+            {
+                "time": datetime.now(timezone.utc).isoformat(),
+                "temperature_c": 41,
+                "rainfall_mm_per_hr": 6,
+                "rain_probability_percent": 90,
+                "wind_speed_mps": 18,
+                "weather_code": 8000,
+                "is_stale": False,
+            },
+        ]
+
+    monkeypatch.setattr(main, "get_forecast", forecast)
+    refreshed = farmer.post("/api/alerts/refresh", headers=csrf_headers(farmer))
+    assert refreshed.status_code == 200
+    assert refreshed.json()["created"] == 4
+    assert forecast_calls == [("12.500000,77.600000", 24, "1h")]
+
+    saved = farmer.get("/api/alerts?category=weather&limit=10")
+    assert saved.status_code == 200
+    assert {item["alert_type"] for item in saved.json()} == {
+        "heavy_rain",
+        "heatwave",
+        "strong_wind",
+        "storm",
+    }
+    assert all(item["field_id"] == field_id for item in saved.json())
+    with main.Session(main.engine) as db:
+        assert db.scalar(select(func.count()).select_from(NotificationDelivery)) == 16
+    second_refresh = farmer.post("/api/alerts/refresh", headers=csrf_headers(farmer))
+    assert second_refresh.status_code == 200
+    assert second_refresh.json()["created"] == 0
+    assert len(forecast_calls) == 1
+    main.weather_alert_attempts.clear()
+    duplicate_refresh = farmer.post("/api/alerts/refresh", headers=csrf_headers(farmer))
+    assert duplicate_refresh.status_code == 200
+    assert duplicate_refresh.json()["created"] == 0
+    assert len(forecast_calls) == 2
+    with main.Session(main.engine) as db:
+        assert db.scalar(select(func.count()).select_from(NotificationDelivery)) == 16
+
+
+def test_weather_alert_refresh_skips_stale_or_unavailable_forecasts(client_pair, monkeypatch):
+    farmer, _ = client_pair
+    assert register(farmer).status_code == 201
+    create_prediction_field(farmer)
+    monkeypatch.setattr(main, "weather_alert_attempts", main.OrderedDict())
+    monkeypatch.setattr(
+        main,
+        "get_forecast",
+        lambda *_args, **_kwargs: [
+            {
+                "temperature_c": 45,
+                "rainfall_mm_per_hr": 20,
+                "rain_probability_percent": 100,
+                "wind_speed_mps": 25,
+                "weather_code": 8000,
+                "is_stale": True,
+            },
+        ],
+    )
+
+    refreshed = farmer.post("/api/alerts/refresh", headers=csrf_headers(farmer))
+    assert refreshed.status_code == 200
+    assert refreshed.json()["created"] == 0
+    assert farmer.get("/api/alerts").json() == []
+
+
+def test_weather_alert_refresh_flags_high_temperature_and_dry_low_moisture(client_pair, monkeypatch):
+    farmer, _ = client_pair
+    assert register(farmer).status_code == 201
+    field_id = create_prediction_field(farmer)
+    farmer_id = farmer.get("/api/auth/me").json()["id"]
+    with main.Session(main.engine) as db:
+        db.add(FarmerSensorReading(
+            farmer_id=farmer_id,
+            field_id=field_id,
+            recorded_at=datetime.now(timezone.utc),
+            soil_moisture_percent=15,
+            source="sensor",
+        ))
+        db.commit()
+    monkeypatch.setattr(main, "weather_alert_attempts", main.OrderedDict())
+    monkeypatch.setattr(
+        main,
+        "get_forecast",
+        lambda *_args, **_kwargs: [
+            {
+                "temperature_c": 37,
+                "rainfall_mm_per_hr": 0,
+                "rain_probability_percent": 0,
+                "wind_speed_mps": 2,
+                "weather_code": 1000,
+                "is_stale": False,
+            },
+        ],
+    )
+
+    refreshed = farmer.post("/api/alerts/refresh", headers=csrf_headers(farmer))
+    assert refreshed.status_code == 200
+    assert refreshed.json()["created"] == 2
+    assert {item["alert_type"] for item in farmer.get("/api/alerts?category=weather").json()} == {
+        "high_temperature",
+        "drought_risk",
+    }
+
+
+def test_alert_refresh_notifies_for_confirmed_and_completed_irrigation_events(client_pair, monkeypatch):
+    farmer, _ = client_pair
+    assert register(farmer).status_code == 201
+    field_id = create_prediction_field(farmer)
+    farmer_id = farmer.get("/api/auth/me").json()["id"]
+    monkeypatch.setattr(main, "weather_alert_attempts", main.OrderedDict())
+    monkeypatch.setattr(main, "get_forecast", lambda *_args, **_kwargs: [])
+    with main.Session(main.engine) as db:
+        reservoir = IrrigationReservoir(
+            farmer_id=farmer_id,
+            field_id=field_id,
+            name="North reservoir",
+            capacity_liters=1000,
+            available_liters=1000,
+            reserved_liters=100,
+        )
+        db.add(reservoir)
+        db.flush()
+        schedule = IrrigationSchedule(
+            farmer_id=farmer_id,
+            field_id=field_id,
+            reservoir_id=reservoir.id,
+            field_name="North plot",
+            crop_name="Rice",
+            scheduled_date=datetime.now(timezone.utc).date(),
+            start_time="07:00",
+            end_time="08:00",
+            water_liters=100,
+            duration_minutes=60,
+            irrigation_method="drip",
+            status="confirmed",
+            plan_snapshot={},
+        )
+        db.add(schedule)
+        db.commit()
+        schedule_id = schedule.id
+
+    confirmed = farmer.post("/api/alerts/refresh", headers=csrf_headers(farmer))
+    assert confirmed.status_code == 200
+    assert confirmed.json()["created"] == 1
+    with main.Session(main.engine) as db:
+        db.get(IrrigationSchedule, schedule_id).status = "completed"
+        db.commit()
+
+    completed = farmer.post("/api/alerts/refresh", headers=csrf_headers(farmer))
+    assert completed.status_code == 200
+    assert completed.json()["created"] == 1
+    irrigation_alerts = farmer.get("/api/alerts?category=irrigation").json()
+    assert {item["alert_type"] for item in irrigation_alerts} == {
+        f"irrigation_scheduled_{schedule_id}",
+        f"irrigation_completed_{schedule_id}",
+    }
+
+
+def test_alert_refresh_generates_a_deduplicated_stale_sensor_warning(client_pair, monkeypatch):
+    farmer, _ = client_pair
+    assert register(farmer).status_code == 201
+    field_id = create_prediction_field(farmer)
+    registered = farmer.post(
+        f"/api/fields/{field_id}/sensor-devices",
+        json={"name": "North Field Sensor"},
+        headers=csrf_headers(farmer),
+    )
+    assert registered.status_code == 201
+    device_id = registered.json()["id"]
+    with main.Session(main.engine) as db:
+        db.get(FarmerSensorDevice, device_id).last_seen_at = datetime.now(timezone.utc) - timedelta(hours=3)
+        db.commit()
+    monkeypatch.setattr(main, "weather_alert_attempts", main.OrderedDict())
+    monkeypatch.setattr(main, "get_forecast", lambda *_args, **_kwargs: [])
+
+    refreshed = farmer.post("/api/alerts/refresh", headers=csrf_headers(farmer))
+    assert refreshed.status_code == 200
+    assert refreshed.json()["created"] == 1
+    sensors = farmer.get("/api/alerts?category=sensors").json()
+    assert len(sensors) == 1
+    assert sensors[0]["alert_type"] == "sensor_failure"
+    assert sensors[0]["category"] == "sensors"
+    assert "not sending readings" in sensors[0]["message"]

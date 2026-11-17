@@ -1,12 +1,21 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
 
 
 class NotificationPreferencesUpdate(BaseModel):
-    web_push_enabled: bool | None = None
-    sms_enabled: bool | None = None
-    email_enabled: bool | None = None
+    model_config = ConfigDict(extra="forbid")
+
+    in_app_notifications_enabled: StrictBool | None = None
+    web_push_enabled: StrictBool | None = None
+    sms_enabled: StrictBool | None = None
+    email_enabled: StrictBool | None = None
+
+    @model_validator(mode="after")
+    def reject_null_preferences(self) -> "NotificationPreferencesUpdate":
+        if any(getattr(self, field) is None for field in self.model_fields_set):
+            raise ValueError("Notification preferences cannot be null.")
+        return self
 
 
 class PushSubscriptionRequest(BaseModel):

@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "jalsaathi-main-";
-const CACHE_NAME = `${CACHE_PREFIX}shell-v1`;
+const CACHE_NAME = `${CACHE_PREFIX}shell-v2`;
 const APP_SHELL = [
   "/",
   "/offline.html",
@@ -31,6 +31,37 @@ self.addEventListener("activate", (event) => {
       .map((key) => caches.delete(key)));
     await self.clients.claim();
   })());
+});
+
+self.addEventListener("push", (event) => {
+  let data = {
+    title: "Smart Irrigation Alert",
+    body: "You have a new irrigation alert.",
+  };
+
+  if (event.data) {
+    try {
+      data = { ...data, ...event.data.json() };
+    } catch (error) {
+      data.body = event.data.text();
+    }
+  }
+
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: "/static/images/sidebar-leaves.svg",
+      badge: "/static/images/sidebar-leaves.svg",
+      data: { url: data.url || "/dashboard" },
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(
+    clients.openWindow(event.notification.data.url || "/dashboard"),
+  );
 });
 
 self.addEventListener("fetch", (event) => {

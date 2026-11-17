@@ -62,6 +62,11 @@ def check_weather_alerts(
             "message": "Heavy rainfall is expected. Reconsider planned irrigation.",
         },
         {
+            "type": "high_temperature",
+            "severity": "medium",
+            "message": "High temperatures are expected. Check crop water requirements.",
+        },
+        {
             "type": "heatwave",
             "severity": "high",
             "message": "High temperature is expected. Check crop water requirements.",
@@ -75,6 +80,11 @@ def check_weather_alerts(
             "type": "frost",
             "severity": "high",
             "message": "Very low temperatures are expected. Protect sensitive crops.",
+        },
+        {
+            "type": "storm",
+            "severity": "high",
+            "message": "Thunderstorms are forecast. Review field and irrigation plans.",
         },
     ]
 
@@ -110,6 +120,17 @@ def check_weather_alerts(
                     matched_period = period
                     reason = f"Forecast temperature: {temperature}°C."
 
+            elif alert_type == "high_temperature":
+                temperature = period.get("temperature_c")
+
+                if (
+                    temperature is not None
+                    and threshold.get("temperature_c", float("inf")) <= temperature
+                    < weather_thresholds.get("heatwave", {}).get("temperature_c", float("inf"))
+                ):
+                    matched_period = period
+                    reason = f"Forecast temperature: {temperature}°C."
+
             elif alert_type == "strong_wind":
                 wind_speed = period.get("wind_speed_mps")
 
@@ -123,6 +144,11 @@ def check_weather_alerts(
                 if temperature is not None and temperature <= threshold.get("temperature_c", float("-inf")):
                     matched_period = period
                     reason = f"Forecast temperature: {temperature}°C."
+
+            elif alert_type == "storm":
+                if period.get("weather_code") == 8000:
+                    matched_period = period
+                    reason = "The weather forecast indicates thunderstorms."
 
             if matched_period:
                 break

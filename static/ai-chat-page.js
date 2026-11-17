@@ -35,13 +35,15 @@
   let fields = [];
   let crops = [];
   let loading = false;
-  let reportFormat = "text";
+  let reportFormat = "auto";
   let renameTargetId = null;
   let eventController = null;
   let selectedImage = null;
   let imagePreviewUrl = null;
   let speechRecognition = null;
   let cameraStream = null;
+  let requestAbortController = null;
+  let canAbortRequest = false;
 
   function getElements() {
     if (!(activeRoot instanceof HTMLElement)) return null;
@@ -60,6 +62,7 @@
       form: activeRoot.querySelector("[data-ai-form]"),
       question: activeRoot.querySelector("[data-ai-question]"),
       send: activeRoot.querySelector("[data-ai-send]"),
+      stop: activeRoot.querySelector("[data-ai-stop]"),
       imageInput: activeRoot.querySelector("[data-ai-image-input]"),
       imagePreview: activeRoot.querySelector("[data-ai-image-preview]"),
       attach: activeRoot.querySelector("[data-ai-attach]"),
@@ -279,17 +282,30 @@
   }
 
   function updateControls() {
-    const { clear, send, attach, voice, imageInput } = getElements() || {};
+    const { clear, send, stop, attach, voice, imageInput, question } = getElements() || {};
+    const hasComposerContent = Boolean(question?.value.trim() || selectedImage);
     if (clear instanceof HTMLButtonElement) clear.disabled = !activeConversationId || loading;
-    if (send instanceof HTMLButtonElement) send.disabled = loading;
+    if (send instanceof HTMLButtonElement) {
+      send.disabled = loading || !hasComposerContent;
+      send.hidden = loading;
+    }
+    if (stop instanceof HTMLButtonElement) {
+      stop.hidden = !canAbortRequest;
+      stop.disabled = !canAbortRequest;
+    }
     if (attach instanceof HTMLButtonElement) attach.disabled = loading;
-    if (voice instanceof HTMLButtonElement) voice.disabled = loading;
+    if (voice instanceof HTMLButtonElement) {
+      voice.disabled = loading;
+      voice.hidden = false;
+    }
     if (imageInput instanceof HTMLInputElement) imageInput.disabled = loading;
+    if (question instanceof HTMLTextAreaElement) question.readOnly = loading;
   }
 
-  function renderMessages() {
+  function renderMessages(forceScroll = false) {
     const { thread } = getElements() || {};
     if (!(thread instanceof HTMLElement)) return;
+    const priorScrollBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight;
     thread.replaceChildren();
     if (!messages.length) {
       const welcome = createElement("div", "ai-chat-welcome");
@@ -313,7 +329,13 @@
         if (typeof renderer === "function") renderer(content, message.content);
         else content.textContent = message.content;
         bubble.append(content);
-        if (reportFormat === "chart" && message.context) {
+        const hasServerCharts = Array.isArray(message.context?.charts) &&
+          (message.context.charts.length > 0 ||
+            ["unavailable", "partial"].includes(message.context.chart_availability?.status));
+        if (
+          message.context &&
+          (reportFormat === "chart" || (reportFormat === "auto" && hasServerCharts))
+        ) {
           window.JalSaathiChartAssistant?.renderVisualizations(bubble, message.context);
         }
       } else {
@@ -361,7 +383,10 @@
       waiting.dataset.i18nKey = "aiChat.thinking";
       thread.append(waiting);
     }
-    thread.scrollTop = thread.scrollHeight;
+    const shouldAutoScroll = forceScroll || priorScrollBottom <= 80 || loading;
+    if (shouldAutoScroll) {
+      thread.scrollTop = thread.scrollHeight;
+    }
     updateControls();
   }
 
@@ -395,11 +420,11 @@
   }
 
   function startNewConversation() {
-    speechRecognition?.abort();
-    speechRecognition = null;
+    if (loading) return;
+    cancelVoiceInput(false);
     activeConversationId = null;
     messages = [];
-    reportFormat = "text";
+    reportFormat = "auto";
     const { format, field, crop, root, renamePanel, scrim } = getElements() || {};
     if (format instanceof HTMLSelectElement) format.value = reportFormat;
     if (field instanceof HTMLSelectElement) field.value = "all";
@@ -462,10 +487,6 @@
     }
   }
 
-  function chartRequested(prompt) {
-    return /\b(chart|graph|plot|visuali[sz]e)\b|చార్ట్|గ్రాఫ్|चार्ट|ग्राफ|ಚಾರ್ಟ್|ಗ್ರಾಫ್|விளக்கப்படம்|வரைபடம்|ചാർട്ട്|ഗ്രാഫ்/i.test(prompt);
-  }
-
   function clearSelectedImage() {
     const { imageInput, imagePreview } = getElements() || {};
     selectedImage = null;
@@ -476,6 +497,7 @@
       imagePreview.replaceChildren();
       imagePreview.hidden = true;
     }
+    updateControls();
   }
 
   function showSelectedImage(file, source = "upload") {
@@ -508,6 +530,7 @@
     }
     imagePreview.replaceChildren(preview, fileName, ...controls);
     imagePreview.hidden = false;
+    updateControls();
     setFeedback("");
   }
 
@@ -588,22 +611,55 @@
     }, "image/jpeg", 0.92);
   }
 
+  function setVoiceListening(listening) {
+    const { voice } = getElements() || {};
+    if (!(voice instanceof HTMLButtonElement)) return;
+    const key = listening ? "aiChat.stopVoice" : "aiChat.voiceInput";
+    const label = voice.querySelector("[data-ai-voice-label]");
+    if (label instanceof HTMLElement) {
+      label.dataset.i18nKey = key;
+      label.textContent = translate(key);
+    }
+    voice.setAttribute("aria-pressed", String(listening));
+    voice.classList.toggle("is-listening", listening);
+    updateControls();
+  }
+
+  function cancelVoiceInput(showFeedback = true) {
+    const recognition = speechRecognition;
+    if (!recognition) return;
+    speechRecognition = null;
+    recognition.abort();
+    setVoiceListening(false);
+    if (showFeedback) setFeedback("aiChat.voiceCancelled");
+  }
+
   function startVoiceInput() {
+    if (speechRecognition) {
+      cancelVoiceInput();
+      return;
+    }
     const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     const { question } = getElements() || {};
     if (typeof Recognition !== "function") {
       setFeedback("aiChat.voiceUnsupported");
       return;
     }
-    speechRecognition?.abort();
     const recognition = new Recognition();
     speechRecognition = recognition;
     recognition.lang = localeCode();
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
-    recognition.onstart = () => setFeedback("aiChat.voiceListening");
+    recognition.onstart = () => {
+      if (speechRecognition !== recognition) return;
+      setVoiceListening(true);
+      setFeedback("aiChat.voiceListening");
+    };
     recognition.onresult = (event) => {
-      const transcript = Array.from(event.results || [])
+      const results = Array.from(event.results || []);
+      const firstChangedResult = Number.isInteger(event.resultIndex) ? event.resultIndex : 0;
+      const transcript = results.slice(firstChangedResult)
+        .filter((result) => result?.isFinal !== false)
         .map((result) => result?.[0]?.transcript || "")
         .join(" ")
         .trim();
@@ -614,6 +670,7 @@
       if (question instanceof HTMLTextAreaElement) {
         question.value = `${question.value.trim()}${question.value.trim() ? " " : ""}${transcript}`;
       }
+      updateControls();
       setFeedback("aiChat.voiceCaptured");
     };
     recognition.onerror = (event) => {
@@ -625,13 +682,17 @@
       setFeedback(key);
     };
     recognition.onend = () => {
-      if (speechRecognition === recognition) speechRecognition = null;
+      if (speechRecognition === recognition) {
+        speechRecognition = null;
+        setVoiceListening(false);
+      }
     };
     try {
       recognition.start();
     } catch (error) {
       console.error("JalSaathi voice input could not start.", error);
       speechRecognition = null;
+      setVoiceListening(false);
       setFeedback("aiChat.voiceError");
     }
   }
@@ -656,15 +717,14 @@
         ...(image ? { image_attached: true } : {}),
       });
     }
-    if (chartRequested(question)) {
-      reportFormat = "chart";
-      elements.format.value = "chart";
-    }
     loading = true;
+    const controller = new AbortController();
+    requestAbortController = controller;
+    canAbortRequest = true;
     if (!regenerate) elements.question.value = "";
     if (image) clearSelectedImage();
     setFeedback("");
-    renderMessages();
+    renderMessages(true);
     const payload = {
       assistant_mode: "chart",
       question,
@@ -672,6 +732,7 @@
       field_id: elements.field.value === "all" ? null : Number(elements.field.value),
       crop_id: elements.crop.value === "all" ? null : Number(elements.crop.value),
       chart_period: elements.period.value,
+      chart_mode: elements.format.value,
       persist_conversation: true,
       regenerate,
       ...(activeConversationId ? { conversation_id: activeConversationId } : {}),
@@ -684,20 +745,25 @@
         formData.append("question", question);
         formData.append("language_code", payload.language_code);
         formData.append("chart_period", payload.chart_period);
+        formData.append("chart_mode", payload.chart_mode);
         if (payload.field_id !== null) formData.append("field_id", String(payload.field_id));
         if (payload.crop_id !== null) formData.append("crop_id", String(payload.crop_id));
         if (payload.conversation_id) formData.append("conversation_id", String(payload.conversation_id));
         result = await apiRequest()("/api/assistant/image", {
           method: "POST",
           body: formData,
+          signal: controller.signal,
         });
       } else {
         result = await apiRequest()("/api/assistant/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
+          signal: controller.signal,
         });
       }
+      canAbortRequest = false;
+      updateControls();
       if (typeof result?.answer !== "string" || !result.answer.trim() ||
           !result.context || typeof result.context !== "object" ||
           !Number.isInteger(result.conversation_id)) {
@@ -717,13 +783,23 @@
         setFeedback("aiChat.errorHistory");
       }
     } catch (error) {
-      messages = previousMessages;
-      if (image && !selectedImage) showSelectedImage(image);
-      console.error("JalSaathi AI request failed.", error);
-      setFeedback(errorKey(error, Boolean(image)));
+      if (requestAbortController === controller) {
+        messages = previousMessages;
+        if (image && !selectedImage) showSelectedImage(image);
+        if (error?.name === "AbortError") {
+          setFeedback("aiChat.requestCancelled");
+        } else {
+          console.error("JalSaathi AI request failed.", error);
+          setFeedback(errorKey(error, Boolean(image)));
+        }
+      }
     } finally {
-      loading = false;
-      renderMessages();
+      if (requestAbortController === controller) {
+        requestAbortController = null;
+        canAbortRequest = false;
+        loading = false;
+        renderMessages(true);
+      }
     }
   }
 
@@ -734,6 +810,15 @@
     elements.form.addEventListener("submit", (event) => {
       event.preventDefault();
       void submitMessage(elements.question.value);
+    }, options);
+    elements.question.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" || event.shiftKey || event.isComposing || loading) return;
+      event.preventDefault();
+      elements.form.requestSubmit();
+    }, options);
+    elements.question.addEventListener("input", updateControls, options);
+    elements.stop.addEventListener("click", () => {
+      if (canAbortRequest) requestAbortController?.abort();
     }, options);
     elements.attach.addEventListener("click", () => {
       if (!(elements.attachmentMenu instanceof HTMLElement)) return;
@@ -766,13 +851,18 @@
       if (event.key === "Escape") {
         closeAttachmentMenu();
         if (cameraStream) stopCamera();
+        if (speechRecognition) cancelVoiceInput();
       }
     }, options);
     window.addEventListener("jalsaathi:page-changed", () => {
       if (!activeRoot?.isConnected) {
+        const request = requestAbortController;
+        requestAbortController = null;
+        canAbortRequest = false;
+        loading = false;
+        request?.abort();
         stopCamera();
-        speechRecognition?.abort();
-        speechRecognition = null;
+        cancelVoiceInput(false);
       }
     }, options);
     elements.voice.addEventListener("click", startVoiceInput, options);
@@ -780,7 +870,9 @@
       if (activeConversationId) void deleteConversation(activeConversationId);
     }, options);
     elements.format.addEventListener("change", () => {
-      reportFormat = elements.format.value === "chart" ? "chart" : "text";
+      reportFormat = ["auto", "text", "chart"].includes(elements.format.value)
+        ? elements.format.value
+        : "auto";
       renderMessages();
     }, options);
     elements.field.addEventListener("change", () => {
@@ -817,10 +909,14 @@
       renderMessages();
     }, options);
     window.addEventListener("jalsaathi:auth-changed", () => {
+      const request = requestAbortController;
+      requestAbortController = null;
+      canAbortRequest = false;
+      loading = false;
+      request?.abort();
       stopCamera();
       closeAttachmentMenu();
-      speechRecognition?.abort();
-      speechRecognition = null;
+      cancelVoiceInput(false);
       clearSelectedImage();
       activeConversationId = null;
       messages = [];
@@ -842,9 +938,12 @@
     const root = container?.querySelector?.(rootSelector);
     if (!(root instanceof HTMLElement)) return;
     if (activeRoot === root) return;
+    const request = requestAbortController;
+    requestAbortController = null;
+    canAbortRequest = false;
+    request?.abort();
     stopCamera();
-    speechRecognition?.abort();
-    speechRecognition = null;
+    cancelVoiceInput(false);
     clearSelectedImage();
     activeRoot = root;
     activeConversationId = null;
@@ -853,7 +952,7 @@
     fields = [];
     crops = [];
     loading = false;
-    reportFormat = "text";
+    reportFormat = "auto";
     renameTargetId = null;
     eventController?.abort();
     eventController = new AbortController();

@@ -299,10 +299,14 @@
     appendLocalized(card, "h3", "", titleKey);
     const width = 360;
     const height = 132;
+    const min = Math.min(...values.map((point) => point.value), 0);
     const max = Math.max(...values.map((point) => point.value), 0);
-    const safeMax = max || 1;
+    const span = max - min || 1;
     const chartTop = 12;
     const baseline = 96;
+    const zeroY = max === 0 && min === 0
+      ? baseline
+      : chartTop + (max / span) * (baseline - chartTop);
     const usableWidth = 326;
     const gap = Math.min(8, usableWidth / values.length * 0.18);
     const barWidth = Math.max(2, (usableWidth - gap * values.length) / values.length);
@@ -311,15 +315,15 @@
       role: "img",
       "aria-label": translate(titleKey),
     });
-    svg.append(svgElement("line", { x1: 27, y1: baseline, x2: width - 7, y2: baseline, stroke: "#dce6da" }));
+    svg.append(svgElement("line", { x1: 27, y1: zeroY, x2: width - 7, y2: zeroY, stroke: "#dce6da" }));
     values.slice(0, 24).forEach((point, index) => {
       const x = 28 + index * (barWidth + gap);
-      const barHeight = Math.max(1, (point.value / safeMax) * (baseline - chartTop));
+      const valueY = chartTop + ((max - point.value) / span) * (baseline - chartTop);
       const rect = svgElement("rect", {
         x,
-        y: baseline - barHeight,
+        y: Math.min(zeroY, valueY),
         width: barWidth,
-        height: barHeight,
+        height: Math.max(1, Math.abs(zeroY - valueY)),
         rx: 3,
         class: "chart-bar",
       });
@@ -333,6 +337,8 @@
     });
     svg.append(svgElement("text", { x: 2, y: chartTop + 4, class: "chart-label" }));
     svg.lastChild.textContent = `${formatNumber(max)} ${unit}`;
+    svg.append(svgElement("text", { x: 2, y: baseline, class: "chart-label" }));
+    svg.lastChild.textContent = formatNumber(min);
     card.append(svg);
     if (labelKey) {
       const legend = element("div", "common-chart-summary");
@@ -404,6 +410,151 @@
     return true;
   }
 
+  function addStructuredPieChart(container, chart) {
+    const labels = chart.labels;
+    const values = chart.datasets[0].data;
+    if (labels.length < 2 || values.length !== labels.length || values.some((value) => value < 0)) {
+      return false;
+    }
+    const total = values.reduce((sum, value) => sum + value, 0);
+    if (!(total > 0)) return false;
+
+    const card = element("section", "common-chart-card");
+    card.setAttribute("aria-label", translate("chartAssistant.chartLabel"));
+    appendLocalized(card, "h3", "", chart.title_key);
+    const svg = svgElement("svg", {
+      viewBox: "0 0 100 100",
+      role: "img",
+      "aria-label": translate(chart.title_key),
+    });
+    const circumference = 2 * Math.PI * 35;
+    const colors = ["#218157", "#73a860", "#d0a44c", "#4c8ca0", "#a87180", "#7772a5"];
+    let offset = 0;
+    labels.forEach((label, index) => {
+      const fraction = values[index] / total;
+      const segment = svgElement("circle", {
+        cx: 50,
+        cy: 50,
+        r: 35,
+        fill: "none",
+        stroke: colors[index % colors.length],
+        "stroke-width": 20,
+        "stroke-dasharray": `${fraction * circumference} ${circumference}`,
+        "stroke-dashoffset": -offset,
+        transform: "rotate(-90 50 50)",
+      });
+      const titleNode = svgElement("title");
+      titleNode.textContent = `${label}: ${formatNumber(values[index])} ${chart.unit}`;
+      titleNode.setAttribute("data-user-content", "");
+      segment.append(titleNode);
+      svg.append(segment);
+      offset += fraction * circumference;
+    });
+    card.append(svg);
+    const legend = element("div", "common-chart-summary");
+    labels.forEach((label, index) => {
+      const item = element("span", "", `${label}: ${formatNumber(values[index])} ${chart.unit}`);
+      item.setAttribute("data-user-content", "");
+      legend.append(item);
+    });
+    card.append(legend);
+    container.append(card);
+    return true;
+  }
+
+  function renderStructuredCharts(container, context) {
+    const charts = element("div", "common-chart-visuals");
+    const allowedTitles = new Set([
+      "chartAssistant.temperature",
+      "chartAssistant.humidity",
+      "chartAssistant.rainfall",
+      "chartAssistant.plannedIrrigation",
+      "chartAssistant.soilMoisture",
+      "chartAssistant.soilTemperature",
+      "chartAssistant.soilPH",
+      "chartAssistant.electricalConductivity",
+      "chartAssistant.cropDistribution",
+      "chartAssistant.fieldAreaDistribution",
+    ]);
+    const allowedCaptions = new Set([
+      "aiChat.chartLatestSensorCaption",
+      "aiChat.chartHistoryCaption",
+      "aiChat.chartForecastCaption",
+      "aiChat.chartObservedRainCaption",
+      "aiChat.chartPlannedIrrigationCaption",
+      "aiChat.chartCropDistributionCaption",
+      "aiChat.chartFieldAreaCaption",
+    ]);
+    let rendered = 0;
+    context.charts.forEach((chart) => {
+      if (
+        !chart ||
+        !["line", "bar", "pie"].includes(chart.type) ||
+        !allowedTitles.has(chart.title_key) ||
+        !Array.isArray(chart.labels) ||
+        !chart.labels.length ||
+        !Array.isArray(chart.datasets) ||
+        !chart.datasets[0] ||
+        !Array.isArray(chart.datasets[0].data) ||
+        chart.datasets[0].data.length !== chart.labels.length ||
+        !chart.labels.every((label) => typeof label === "string" && label.length <= 200) ||
+        !chart.datasets[0].data.every((value) => typeof value === "number" && Number.isFinite(value)) ||
+        typeof chart.unit !== "string" ||
+        chart.unit.length > 30
+      ) return;
+
+      const values = chart.datasets[0].data;
+      let success = false;
+      if (chart.type === "pie") {
+        success = addStructuredPieChart(charts, chart);
+      } else {
+        const points = chart.labels.map((label, index) => ({
+          ...(chart.axis_type === "time" ? { time: label } : { label }),
+          value: values[index],
+        }));
+        const before = charts.childElementCount;
+        if (chart.type === "line" && chart.axis_type === "time") {
+          success = addLineChart(charts, chart.title_key, chart.unit, points, chart.range);
+        } else if (chart.type === "bar" && chart.axis_type === "time") {
+          success = addBarChart(charts, chart.title_key, chart.unit, points, chart.range);
+        } else if (chart.type === "bar" && chart.axis_type === "category" && points.length <= 24) {
+          success = addBarChart(charts, chart.title_key, chart.unit, points, chart.range, "category");
+        }
+        if (success && charts.childElementCount > before) {
+          const card = charts.lastElementChild;
+          if (typeof chart.field_name === "string" && chart.field_name.trim()) {
+            const fieldName = element("p", "common-chart-summary", chart.field_name);
+            fieldName.setAttribute("data-user-content", "");
+            card.insertBefore(fieldName, card.children[1] || null);
+          }
+        }
+      }
+
+      if (!success) return;
+      rendered += 1;
+      const card = charts.lastElementChild;
+      if (allowedCaptions.has(chart.caption_key)) {
+        const valuesForCaption = chart.caption_key === "aiChat.chartLatestSensorCaption"
+          ? { staleCount: Number.isInteger(chart.caption_values?.staleCount)
+            ? chart.caption_values.staleCount
+            : 0 }
+          : undefined;
+        card.append(element(
+          "p",
+          "common-chart-notes",
+          translate(chart.caption_key, valuesForCaption),
+        ));
+      }
+    });
+
+    if (charts.childElementCount) container.append(charts);
+    if (context.chart_availability?.status === "partial" && rendered) {
+      appendLocalized(container, "p", "common-chart-empty", "aiChat.chartPartial");
+    } else if (context.chart_availability?.status === "unavailable" || !rendered) {
+      appendLocalized(container, "p", "common-chart-empty", "chartAssistant.noChartData");
+    }
+  }
+
   function addCurrentWeather(container, weather) {
     if (!weather || weather.status !== "available" || !weather.values) return false;
     const values = weather.values;
@@ -427,6 +578,10 @@
   }
 
   function renderVisualizations(container, context) {
+    if (Array.isArray(context?.charts)) {
+      renderStructuredCharts(container, context);
+      return;
+    }
     const charts = element("div", "common-chart-visuals");
     let hasChart = false;
     const forecast = context?.weather_forecast;
@@ -727,9 +882,11 @@
     openButton.addEventListener("click", () => {
       showPanel(true);
     });
-    closeButton.addEventListener("click", closeAssistant);
-    panel.addEventListener("mousedown", (event) => {
-      if (event.target === panel) showPanel(false);
+    panel.addEventListener("click", (event) => {
+      const closeControl = event.target instanceof Element
+        ? event.target.closest("[data-chart-close]")
+        : null;
+      if (event.target === panel || closeControl) closeAssistant();
     });
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && !panel.hidden) closeAssistant();

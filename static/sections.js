@@ -861,37 +861,47 @@
       `,
     },
     alerts: {
-  title: "Alerts",
-  subtitle: "Field conditions, sensor updates and irrigation reminders.",
-  render: `
-    <div class="portal-page-heading">
-      <div>
-        <h1>Alerts & Advisories</h1>
-        <p>Stay informed about your fields, sensors and irrigation.</p>
-      </div>
-      <button class="portal-button" type="button" data-alert-refresh>↻ Refresh</button>
-    </div>
+      title: "Notifications",
+      subtitle: "Weather, irrigation, sensor and field messages.",
+      render: `
+        <div class="portal-page-heading">
+          <div>
+            <h1>Notifications</h1>
+            <p>Review alerts and updates from your fields and farm services.</p>
+          </div>
+          <div class="portal-notification-page-actions">
+            <button class="portal-text-button" type="button" data-alert-read-all>Mark all as read</button>
+            <button class="portal-button" type="button" data-alert-refresh>↻ Refresh</button>
+          </div>
+        </div>
 
-    <div class="portal-alert-summary">
-      <div class="portal-alert-stat"><span>Active alerts</span><strong data-alert-total>0</strong></div>
-      <div class="portal-alert-stat"><span>Urgent</span><strong data-alert-urgent>0</strong></div>
-      <div class="portal-alert-stat"><span>Advisories</span><strong data-alert-advisory>0</strong></div>
-    </div>
+        <div class="portal-alert-summary">
+          <div class="portal-alert-stat"><span>Total notifications</span><strong data-alert-total>0</strong></div>
+          <div class="portal-alert-stat"><span>Unread</span><strong data-alert-unread>0</strong></div>
+          <div class="portal-alert-stat"><span>Read</span><strong data-alert-read>0</strong></div>
+        </div>
 
-    <section class="portal-card portal-card--padded portal-section-gap">
-      <div class="portal-alert-filters">
-        <button type="button" class="is-active" data-alert-filter="all">All</button>
-        <button type="button" data-alert-filter="emergency">Emergency</button>
-        <button type="button" data-alert-filter="soil">Soil & Water</button>
-        <button type="button" data-alert-filter="sensor">Sensors</button>
-        <button type="button" data-alert-filter="irrigation">Irrigation</button>
-        <button type="button" data-alert-filter="weather">Weather</button>
-      </div>
-      <p class="portal-empty-note" data-alert-status role="status">Loading field alerts...</p>
-      <div class="portal-alert-list" data-alert-list></div>
-    </section>
-  `,
-},
+        <section class="portal-card portal-card--padded portal-section-gap">
+          <div class="portal-alert-filters">
+            <button type="button" class="is-active" data-alert-filter="all">All</button>
+            <button type="button" data-alert-filter="unread">Unread</button>
+            <button type="button" data-alert-filter="read">Read</button>
+            <button type="button" data-alert-filter="weather">Weather</button>
+            <button type="button" data-alert-filter="irrigation">Irrigation</button>
+            <button type="button" data-alert-filter="sensors">Sensors</button>
+            <button type="button" data-alert-filter="crops">Crops</button>
+            <button type="button" data-alert-filter="system">System</button>
+          </div>
+          <p class="portal-empty-note" data-alert-status role="status">Loading notifications...</p>
+          <div class="portal-alert-list" data-alert-list></div>
+          <div class="portal-alert-pagination" data-alert-pagination hidden>
+            <button type="button" class="portal-button" data-alert-previous disabled>Previous</button>
+            <span data-alert-page></span>
+            <button type="button" class="portal-button" data-alert-next disabled>Next</button>
+          </div>
+        </section>
+      `,
+    },
     weather: {
       title: "Weather",
       subtitle: "Current conditions and hourly forecasts from Tomorrow.io, when configured.",
@@ -981,6 +991,79 @@
           <div><h2>Account access</h2><p class="portal-muted">Your account is protected by a server-side session.</p></div>
           <a class="portal-action" href="/static/auth.html?view=login">Open Sign In</a>
         </section>
+      `,
+    },
+    "account-settings": {
+      title: "Account Settings",
+      subtitle: "Manage your account details and notification delivery preferences.",
+      render: `
+        <div class="portal-page-heading">
+          <div><h1>Account Settings</h1><p>Review your account information and choose how JalSaathi sends alerts.</p></div>
+          <span class="portal-demo-tag">Account preferences</span>
+        </div>
+        <section class="portal-card portal-card--padded portal-account-details" aria-labelledby="account-details-heading">
+          <div class="portal-card-heading"><h2 id="account-details-heading">Account information</h2><span class="portal-muted">Read only</span></div>
+          <div class="portal-account-detail-grid">
+            <div class="portal-profile-detail"><span>Name</span><strong data-settings-name>Loading...</strong></div>
+            <div class="portal-profile-detail"><span>Email</span><strong data-settings-email>Loading...</strong></div>
+            <div class="portal-profile-detail"><span>Phone</span><strong data-settings-phone>Loading...</strong></div>
+          </div>
+          <p class="portal-form-help">To change profile information, use the Profile page. Phone verification is not currently available.</p>
+        </section>
+        <form class="portal-card portal-card--padded portal-account-settings-form" data-account-settings-form>
+          <div class="portal-card-heading"><h2>Notification preferences</h2><span class="portal-muted">Saved to your account</span></div>
+          <div class="portal-preference-list">
+            <div class="portal-preference-row">
+              <div class="portal-preference-copy">
+                <h3>In-app notifications</h3>
+                <p>Show alerts in your JalSaathi notification centre and history.</p>
+              </div>
+              <label class="portal-toggle" aria-label="In-app notifications">
+                <input type="checkbox" role="switch" name="in_app_notifications_enabled" data-settings-in-app-toggle>
+                <span class="portal-toggle-track" aria-hidden="true"></span>
+                <span class="portal-toggle-state" data-settings-in-app-state>On</span>
+              </label>
+            </div>
+            <div class="portal-preference-row">
+              <div class="portal-preference-copy">
+                <h3>Browser Push</h3>
+                <p data-settings-push-help>Receive browser notifications on a subscribed device.</p>
+              </div>
+              <label class="portal-toggle" aria-label="Browser push notifications">
+                <input type="checkbox" role="switch" name="web_push_enabled" data-settings-push-toggle>
+                <span class="portal-toggle-track" aria-hidden="true"></span>
+                <span class="portal-toggle-state" data-settings-push-state>Off</span>
+              </label>
+            </div>
+            <div class="portal-preference-row">
+              <div class="portal-preference-copy">
+                <h3>Email notifications</h3>
+                <p>Receive alerts at the email address on your account.</p>
+              </div>
+              <label class="portal-toggle" aria-label="Email notifications">
+                <input type="checkbox" role="switch" name="email_enabled" data-settings-email-toggle>
+                <span class="portal-toggle-track" aria-hidden="true"></span>
+                <span class="portal-toggle-state" data-settings-email-state>Off</span>
+              </label>
+            </div>
+            <div class="portal-preference-row">
+              <div class="portal-preference-copy">
+                <h3>Phone notifications (SMS)</h3>
+                <p data-settings-sms-help>SMS is unavailable until a phone number is verified.</p>
+              </div>
+              <label class="portal-toggle" aria-label="SMS notifications">
+                <input type="checkbox" role="switch" name="sms_enabled" data-settings-sms-toggle>
+                <span class="portal-toggle-track" aria-hidden="true"></span>
+                <span class="portal-toggle-state" data-settings-sms-state>Off</span>
+              </label>
+            </div>
+          </div>
+          <p class="portal-form-help">Choose which of the available channels should deliver your alerts.</p>
+          <div class="portal-account-settings-actions">
+            <p class="portal-profile-message" data-settings-message role="status" aria-live="polite"></p>
+            <button class="portal-action" type="submit" data-settings-save disabled>Save preferences</button>
+          </div>
+        </form>
       `,
     },
 
@@ -1303,6 +1386,7 @@
                 </label>
                 <label><span data-i18n-key="chartAssistant.reportFormat">Report format</span>
                   <select data-ai-format>
+                    <option value="auto" selected data-i18n-key="aiChat.chartAuto">Automatic</option>
                     <option value="text" data-i18n-key="chartAssistant.textFormat">Text</option>
                     <option value="chart" data-i18n-key="chartAssistant.chartFormat">Chart</option>
                   </select>
@@ -1320,15 +1404,7 @@
               <form class="ai-chat-form" data-ai-form>
                 <label class="common-sr-only" for="ai-chat-question" data-i18n-key="aiChat.questionLabel">Ask JalSaathi AI about your farm</label>
                 <div class="ai-chat-image-preview" data-ai-image-preview hidden></div>
-                <div class="ai-chat-compose-tools">
-                  <input class="common-sr-only" type="file" data-ai-image-input accept="image/jpeg,image/png,image/webp">
-                  <button class="ai-chat-tool-button" type="button" data-ai-attach aria-haspopup="menu" aria-expanded="false" data-i18n-key="aiChat.attachPhoto">Add leaf photo</button>
-                  <div class="ai-chat-attachment-menu" data-ai-attachment-menu role="menu" hidden>
-                    <button class="ai-chat-tool-button" type="button" data-ai-upload role="menuitem" data-i18n-key="aiChat.uploadPhoto">Upload photo</button>
-                    <button class="ai-chat-tool-button" type="button" data-ai-camera role="menuitem" data-i18n-key="aiChat.takePhoto">Take photo</button>
-                  </div>
-                  <button class="ai-chat-tool-button" type="button" data-ai-voice data-i18n-key="aiChat.voiceInput">Voice input</button>
-                </div>
+                <input class="common-sr-only" type="file" data-ai-image-input accept="image/jpeg,image/png,image/webp">
                 <div class="ai-chat-camera-panel" data-ai-camera-panel hidden>
                   <video data-ai-camera-video autoplay playsinline muted></video>
                   <div class="ai-chat-camera-actions">
@@ -1336,8 +1412,31 @@
                     <button class="ai-chat-tool-button" type="button" data-ai-camera-close data-i18n-key="aiChat.closeCamera">Close camera</button>
                   </div>
                 </div>
-                <textarea id="ai-chat-question" data-ai-question rows="2" maxlength="1500" placeholder="Ask about your fields, crops, weather, or irrigation…" data-i18n-key="aiChat.questionPlaceholder"></textarea>
-                <button class="ai-chat-send-button" type="submit" data-ai-send aria-label="Send message" data-i18n-key="aiChat.send">Send</button>
+                <div class="ai-chat-composer-row">
+                  <div class="ai-chat-attachment-wrap">
+                    <button class="ai-chat-composer-icon" type="button" data-ai-attach aria-haspopup="menu" aria-expanded="false">
+                      <span aria-hidden="true">+</span>
+                      <span class="common-sr-only" data-i18n-key="aiChat.attachPhoto">Add image</span>
+                    </button>
+                  <div class="ai-chat-attachment-menu" data-ai-attachment-menu role="menu" hidden>
+                    <button class="ai-chat-tool-button" type="button" data-ai-upload role="menuitem" data-i18n-key="aiChat.uploadPhoto">Upload photo</button>
+                    <button class="ai-chat-tool-button" type="button" data-ai-camera role="menuitem" data-i18n-key="aiChat.takePhoto">Camera</button>
+                  </div>
+                  </div>
+                  <textarea id="ai-chat-question" data-ai-question rows="2" maxlength="1500" placeholder="Ask about your fields, crops, weather, or irrigation…" data-i18n-key="aiChat.questionPlaceholder"></textarea>
+                  <button class="ai-chat-composer-icon" type="button" data-ai-voice aria-pressed="false">
+                    <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.93V21h2v-3.07A7 7 0 0 0 19 11h-2Z"/></svg>
+                    <span class="common-sr-only" data-ai-voice-label data-i18n-key="aiChat.voiceInput">Voice input</span>
+                  </button>
+                  <button class="ai-chat-composer-icon ai-chat-send-button" type="submit" data-ai-send disabled>
+                    <span aria-hidden="true">↑</span>
+                    <span class="common-sr-only" data-i18n-key="aiChat.send">Send</span>
+                  </button>
+                  <button class="ai-chat-composer-icon ai-chat-stop-button" type="button" data-ai-stop hidden>
+                    <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+                    <span class="common-sr-only" data-i18n-key="aiChat.stop">Stop generating</span>
+                  </button>
+                </div>
                 <p class="ai-chat-disclaimer" data-i18n-key="aiChat.dataNotice">Answers use only data available in your farmer account.</p>
               </form>
             </section>
@@ -1350,7 +1449,11 @@
 
   const params = new URLSearchParams(window.location.search);
   const requestedView = params.get("view");
-  const view = requestedView && Object.prototype.hasOwnProperty.call(views, requestedView) ? requestedView : "fields";
+  const view = requestedView === "notifications"
+    ? "alerts"
+    : requestedView && Object.prototype.hasOwnProperty.call(views, requestedView)
+      ? requestedView
+      : "fields";
   const page = views[view];
   const content = document.getElementById("portal-content");
 
@@ -1393,6 +1496,7 @@
   if (view === "reports") initializeReportsView(content);
   if (view === "weather") initializeWeatherView(content);
   if (view === "profile") initializeProfileView(content);
+  if (view === "account-settings") void initializeAccountSettingsView(content);
   if (view === "alerts") void initializeAlertsView(content);
   if (view === "predictions") void window.JalSaathiModelPredictions?.initialize(content);
   if (view === "ai-model-predictions") void window.JalSaathiAIDashboard?.initialize(content);
@@ -4679,6 +4783,219 @@ irrigationNext.addEventListener("click", () => {
     window.addEventListener("jalsaathi:language-changed", syncProfile);
   }
 
+  async function initializeAccountSettingsView(root) {
+    const form = root.querySelector("[data-account-settings-form]");
+    const nameNode = root.querySelector("[data-settings-name]");
+    const emailNode = root.querySelector("[data-settings-email]");
+    const phoneNode = root.querySelector("[data-settings-phone]");
+    const emailToggle = root.querySelector("[data-settings-email-toggle]");
+    const inAppToggle = root.querySelector("[data-settings-in-app-toggle]");
+    const smsToggle = root.querySelector("[data-settings-sms-toggle]");
+    const pushToggle = root.querySelector("[data-settings-push-toggle]");
+    const smsHelp = root.querySelector("[data-settings-sms-help]");
+    const pushHelp = root.querySelector("[data-settings-push-help]");
+    const message = root.querySelector("[data-settings-message]");
+    const saveButton = root.querySelector("[data-settings-save]");
+    if (!(form instanceof HTMLFormElement) ||
+        !(nameNode instanceof HTMLElement) ||
+        !(emailNode instanceof HTMLElement) ||
+        !(phoneNode instanceof HTMLElement) ||
+        !(emailToggle instanceof HTMLInputElement) ||
+        !(inAppToggle instanceof HTMLInputElement) ||
+        !(smsToggle instanceof HTMLInputElement) ||
+        !(pushToggle instanceof HTMLInputElement) ||
+        !(smsHelp instanceof HTMLElement) ||
+        !(pushHelp instanceof HTMLElement) ||
+        !(message instanceof HTMLElement) ||
+        !(saveButton instanceof HTMLButtonElement)) return;
+
+    const profile = window.JalSaathiProfile.getProfile();
+    if (!profile) {
+      message.textContent = "Sign in to manage account settings.";
+      return;
+    }
+    nameNode.textContent = profile.name || "Not provided";
+    emailNode.textContent = profile.email || "Not provided";
+    phoneNode.textContent = profile.phone || "Not provided";
+
+    const stateNodes = {
+      in_app: root.querySelector("[data-settings-in-app-state]"),
+      email: root.querySelector("[data-settings-email-state]"),
+      sms: root.querySelector("[data-settings-sms-state]"),
+      push: root.querySelector("[data-settings-push-state]"),
+    };
+    const updateToggleStates = () => {
+      for (const [channel, input] of Object.entries({
+        in_app: inAppToggle,
+        email: emailToggle,
+        sms: smsToggle,
+        push: pushToggle,
+      })) {
+        const state = stateNodes[channel];
+        if (state instanceof HTMLElement) {
+          state.textContent = channel === "sms" && !smsAvailable ||
+            channel === "push" && !pushConfigured
+            ? "Unavailable"
+            : channel === "push" && !pushSubscriptionAvailable
+              ? "Not set up"
+              : input.checked ? "On" : "Off";
+        }
+      }
+    };
+
+    let smsAvailable = false;
+    let smsInitiallyEnabled = false;
+    let pushConfigured = false;
+    let pushUnavailableReason = "Browser Push is unavailable on this device.";
+    let pushSubscriptionAvailable = false;
+    let loaded = false;
+
+    try {
+      const preferences = await window.JalSaathiProfile.apiRequest("/api/notification-preferences");
+      for (const key of [
+        "in_app_notifications_enabled",
+        "email_enabled",
+        "sms_enabled",
+        "web_push_enabled",
+        "sms_available",
+        "push_subscription_available",
+      ]) {
+        if (typeof preferences?.[key] !== "boolean") {
+          throw new Error("The notification preferences response is invalid.");
+        }
+      }
+      try {
+        const browserSupportsPush = "Notification" in window &&
+          "serviceWorker" in navigator &&
+          "PushManager" in window;
+        if (browserSupportsPush) {
+          const keyResponse = await window.JalSaathiProfile.apiRequest("/api/push/public-key");
+          pushConfigured = typeof keyResponse?.public_key === "string" && Boolean(keyResponse.public_key);
+          if (!pushConfigured) {
+            pushUnavailableReason = "Browser push is not configured.";
+          }
+        } else {
+          pushUnavailableReason = "Browser Push is not supported on this device.";
+        }
+      } catch (error) {
+        pushConfigured = false;
+        pushUnavailableReason = error instanceof Error
+          ? error.message
+          : "Browser Push availability could not be checked.";
+      }
+      inAppToggle.checked = preferences.in_app_notifications_enabled;
+      emailToggle.checked = preferences.email_enabled;
+      smsToggle.checked = preferences.sms_enabled;
+      pushSubscriptionAvailable = preferences.push_subscription_available;
+      pushToggle.checked =
+        preferences.web_push_enabled && pushSubscriptionAvailable && pushConfigured;
+      pushToggle.disabled = !pushConfigured;
+      smsAvailable = preferences.sms_available;
+      smsInitiallyEnabled = preferences.sms_enabled;
+      smsToggle.disabled = !smsAvailable && !smsInitiallyEnabled;
+      smsHelp.textContent = preferences.sms_available
+        ? "Receive text messages at your verified phone number."
+        : preferences.sms_unavailable_reason || "SMS is unavailable until a phone number is verified.";
+      pushHelp.textContent = !pushConfigured
+        ? pushUnavailableReason
+        : pushSubscriptionAvailable
+          ? "This account has an active browser push subscription."
+          : "Turn on this switch to subscribe this browser to notifications.";
+      loaded = true;
+      saveButton.disabled = false;
+      message.textContent = "";
+      updateToggleStates();
+    } catch (error) {
+      message.textContent = error instanceof Error
+        ? error.message
+        : "Notification preferences could not be loaded.";
+    }
+
+    smsToggle.addEventListener("change", () => {
+      if (!smsAvailable && smsToggle.checked) smsToggle.checked = false;
+      updateToggleStates();
+    });
+    emailToggle.addEventListener("change", updateToggleStates);
+    inAppToggle.addEventListener("change", updateToggleStates);
+    pushToggle.addEventListener("change", async () => {
+      if (pushToggle.checked && !pushSubscriptionAvailable) {
+        pushToggle.disabled = true;
+        try {
+          const enabled = await window.JalSaathiNotifications?.enableBrowserPush();
+          if (enabled !== true) {
+            throw new Error("Browser notifications could not be enabled.");
+          }
+          pushSubscriptionAvailable = true;
+          pushHelp.textContent = "This browser is subscribed to notifications.";
+        } catch (error) {
+          pushToggle.checked = false;
+          message.textContent = error instanceof Error
+            ? error.message
+            : "Browser notifications could not be enabled.";
+        } finally {
+          pushToggle.disabled = !pushConfigured;
+        }
+      }
+      updateToggleStates();
+    });
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!loaded || saveButton.disabled) return;
+      const preferences = {
+        in_app_notifications_enabled: inAppToggle.checked,
+        email_enabled: emailToggle.checked,
+      };
+      if (pushConfigured) preferences.web_push_enabled = pushToggle.checked;
+      if (smsAvailable || (smsInitiallyEnabled && !smsToggle.checked)) {
+        preferences.sms_enabled = smsToggle.checked;
+      }
+      saveButton.disabled = true;
+      message.textContent = "Saving preferences...";
+      try {
+        const saved = await window.JalSaathiProfile.apiRequest("/api/notification-preferences", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(preferences),
+        });
+        if (typeof saved?.email_enabled !== "boolean" ||
+            typeof saved?.in_app_notifications_enabled !== "boolean" ||
+            typeof saved?.sms_enabled !== "boolean" ||
+            typeof saved?.web_push_enabled !== "boolean" ||
+            typeof saved?.sms_available !== "boolean" ||
+            typeof saved?.push_subscription_available !== "boolean") {
+          throw new Error("The saved preferences response is invalid.");
+        }
+        inAppToggle.checked = saved.in_app_notifications_enabled;
+        emailToggle.checked = saved.email_enabled;
+        smsToggle.checked = saved.sms_enabled;
+        pushSubscriptionAvailable = saved.push_subscription_available;
+        pushToggle.checked =
+          saved.web_push_enabled && pushSubscriptionAvailable && pushConfigured;
+        smsAvailable = saved.sms_available;
+        smsInitiallyEnabled = saved.sms_enabled;
+        smsToggle.disabled = !smsAvailable && !smsInitiallyEnabled;
+        smsHelp.textContent = saved.sms_available
+          ? "Receive text messages at your verified phone number."
+          : saved.sms_unavailable_reason || "SMS is unavailable until a phone number is verified.";
+        pushToggle.disabled = !pushConfigured;
+        pushHelp.textContent = !pushConfigured
+          ? pushUnavailableReason
+          : pushSubscriptionAvailable
+            ? "This account has an active browser push subscription."
+            : "Turn on this switch to subscribe this browser to notifications.";
+        message.textContent = "Notification preferences saved.";
+        updateToggleStates();
+      } catch (error) {
+        message.textContent = error instanceof Error
+          ? error.message
+          : "Notification preferences could not be saved.";
+      } finally {
+        saveButton.disabled = false;
+      }
+    });
+  }
+
   async function initializeAlertsView(root) {
     const list = root.querySelector("[data-alert-list]");
     const status = root.querySelector("[data-alert-status]");
@@ -4687,46 +5004,51 @@ irrigationNext.addEventListener("click", () => {
 
     let alerts = [];
     let activeFilter = "all";
+    let offset = 0;
+    let matchingCount = 0;
+    let loadActive = false;
+    const pageSize = 50;
+    const categoryFilters = new Set(["weather", "irrigation", "sensors", "crops", "system", "fields"]);
+    const iconForCategory = (category) => ({
+      weather: "☁",
+      irrigation: "💧",
+      sensors: "⌁",
+      crops: "🌱",
+      system: "⚙",
+      fields: "▣",
+    }[category] || "•");
+
     const updateSummary = () => {
-      const active = alerts.filter((alert) => alert.status === "unresolved");
-      root.querySelector("[data-alert-total]").textContent = String(active.length);
-      root.querySelector("[data-alert-urgent]").textContent = String(
-        active.filter((alert) => alert.severity === "high").length,
-      );
-      root.querySelector("[data-alert-advisory]").textContent = String(
-        active.filter((alert) => alert.severity !== "high").length,
-      );
+      const total = root.querySelector("[data-alert-total]");
+      const unread = root.querySelector("[data-alert-unread]");
+      const read = root.querySelector("[data-alert-read]");
+      if (total instanceof HTMLElement) total.textContent = String(alertCounts.total);
+      if (unread instanceof HTMLElement) unread.textContent = String(alertCounts.unread);
+      if (read instanceof HTMLElement) read.textContent = String(alertCounts.read);
     };
 
-    const matchesFilter = (alert) => {
-      const type = String(alert.alert_type || "").toLowerCase();
-      if (activeFilter === "emergency") return alert.severity === "high";
-      if (activeFilter === "soil") return /soil|water|moisture/.test(type);
-      if (activeFilter === "sensor") return type.includes("sensor");
-      if (activeFilter === "irrigation") return type.includes("irrigation");
-      if (activeFilter === "weather") return /weather|rain|heat|wind|frost/.test(type);
-      return true;
-    };
+    let alertCounts = { total: 0, unread: 0, read: 0, matching: 0 };
 
     const render = () => {
       updateSummary();
       list.replaceChildren();
-      const visibleAlerts = alerts.filter(matchesFilter);
-      status.hidden = visibleAlerts.length > 0;
-      if (!visibleAlerts.length) {
-        status.textContent = alerts.length
-          ? "No alerts match this filter."
-          : "No alerts are available.";
+      status.hidden = alerts.length > 0;
+      if (!alerts.length) {
+        status.textContent = matchingCount
+          ? "No notifications are available on this page."
+          : activeFilter === "all"
+            ? "No notifications are available."
+            : "No notifications match this filter.";
         return;
       }
 
-      visibleAlerts.forEach((alert) => {
+      alerts.forEach((alert) => {
         const card = document.createElement("article");
-        card.className = `portal-alert-card${alert.severity === "high" ? " portal-alert-card--critical" : ""}`;
+        card.className = `portal-alert-card${alert.severity === "high" ? " portal-alert-card--critical" : ""}${alert.is_read ? " is-read" : " is-unread"}`;
         const icon = document.createElement("span");
-        icon.className = `portal-alert-icon${alert.severity === "high" ? " portal-alert-icon--red" : ""}`;
+        icon.className = `portal-alert-icon portal-alert-icon--${alert.category}${alert.severity === "high" ? " portal-alert-icon--red" : ""}`;
         icon.setAttribute("aria-hidden", "true");
-        icon.textContent = "!";
+        icon.textContent = iconForCategory(alert.category);
 
         const content = document.createElement("div");
         content.className = "portal-alert-content";
@@ -4736,11 +5058,29 @@ irrigationNext.addEventListener("click", () => {
         severity.className = "portal-alert-severity";
         severity.textContent = alert.severity;
         const title = document.createElement("h3");
-        title.textContent = String(alert.alert_type || "Field alert").replaceAll("_", " ");
-        heading.append(severity, title);
+        title.textContent = alert.title || String(alert.alert_type || "Notification").replaceAll("_", " ");
+        const category = document.createElement("span");
+        category.className = "portal-alert-category";
+        category.textContent = String(alert.category || "fields").replaceAll("_", " ");
+        const readStatus = document.createElement("span");
+        readStatus.className = `portal-alert-read-status${alert.is_read ? "" : " is-unread"}`;
+        readStatus.textContent = alert.is_read ? "Read" : "Unread";
+        heading.append(severity, title, category, readStatus);
         const message = document.createElement("p");
         message.textContent = alert.message;
         content.append(heading, message);
+        if (alert.field_name) {
+          const field = document.createElement("small");
+          field.className = "portal-alert-field";
+          field.textContent = `Field: ${alert.field_name}`;
+          content.append(field);
+        }
+        if (alert.source) {
+          const source = document.createElement("small");
+          source.className = "portal-alert-source";
+          source.textContent = `Source: ${alert.source}`;
+          content.append(source);
+        }
         if (alert.reason) {
           const reason = document.createElement("small");
           reason.textContent = alert.reason;
@@ -4759,42 +5099,92 @@ irrigationNext.addEventListener("click", () => {
         const addAction = (label, path) => {
           const button = document.createElement("button");
           button.type = "button";
-          button.className = "portal-button";
+          button.className = "portal-text-button";
           button.textContent = label;
           button.addEventListener("click", async () => {
             button.disabled = true;
             try {
               await window.JalSaathiProfile.apiRequest(path, { method: "PATCH" });
-              await loadAlerts();
+              window.dispatchEvent(new CustomEvent("jalsaathi:notifications-changed"));
+              await loadAlerts({ refreshSources: false });
             } catch (error) {
               status.hidden = false;
-              status.textContent = error instanceof Error ? error.message : "The alert could not be updated.";
+              status.textContent = error instanceof Error ? error.message : "The notification could not be updated.";
               button.disabled = false;
             }
           });
           actions.append(button);
         };
-        if (!alert.is_read) addAction("Mark as read", `/api/alerts/${alert.id}/read`);
+        addAction(
+          alert.is_read ? "Mark as unread" : "Mark as read",
+          `/api/alerts/${alert.id}/${alert.is_read ? "unread" : "read"}`,
+        );
         if (alert.status !== "resolved") addAction("Resolve", `/api/alerts/${alert.id}/resolve`);
         content.append(actions);
         card.append(icon, content, time);
         list.append(card);
       });
+      const pagination = root.querySelector("[data-alert-pagination]");
+      const previous = root.querySelector("[data-alert-previous]");
+      const next = root.querySelector("[data-alert-next]");
+      const pageLabel = root.querySelector("[data-alert-page]");
+      if (pagination instanceof HTMLElement) pagination.hidden = matchingCount <= pageSize;
+      if (previous instanceof HTMLButtonElement) previous.disabled = offset === 0;
+      if (next instanceof HTMLButtonElement) next.disabled = offset + alerts.length >= matchingCount;
+      if (pageLabel instanceof HTMLElement) {
+        const first = matchingCount === 0 ? 0 : offset + 1;
+        const last = Math.min(offset + alerts.length, matchingCount);
+        pageLabel.textContent = `${first}-${last} of ${matchingCount}`;
+      }
     };
 
-    const loadAlerts = async () => {
-      status.hidden = false;
-      status.textContent = "Loading field alerts...";
+    const loadAlerts = async ({ refreshSources = false, showLoading = true } = {}) => {
+      if (loadActive) return;
+      loadActive = true;
+      if (showLoading) {
+        status.hidden = false;
+        status.textContent = "Loading notifications...";
+      }
       if (refresh instanceof HTMLButtonElement) refresh.disabled = true;
       try {
-        alerts = await window.JalSaathiProfile.apiRequest("/api/alerts");
-        if (!Array.isArray(alerts)) throw new Error("The alerts response is invalid.");
+        if (refreshSources) {
+          try {
+            await window.JalSaathiProfile.apiRequest("/api/alerts/refresh", { method: "POST" });
+          } catch (error) {
+            console.warn("Automated farmer alerts could not be refreshed:", error);
+          }
+        }
+        const params = new URLSearchParams({ limit: String(pageSize), offset: String(offset) });
+        if (categoryFilters.has(activeFilter)) params.set("category", activeFilter);
+        else if (activeFilter === "read" || activeFilter === "unread") {
+          params.set("read_status", activeFilter);
+        }
+        const countsParams = new URLSearchParams();
+        if (categoryFilters.has(activeFilter)) countsParams.set("category", activeFilter);
+        else if (activeFilter === "read" || activeFilter === "unread") {
+          countsParams.set("read_status", activeFilter);
+        }
+        const query = `?${params.toString()}`;
+        const countsQuery = countsParams.size ? `?${countsParams.toString()}` : "";
+        const [result, counts] = await Promise.all([
+          window.JalSaathiProfile.apiRequest(`/api/alerts${query}`),
+          window.JalSaathiProfile.apiRequest(`/api/alerts/counts${countsQuery}`),
+        ]);
+        if (!Array.isArray(result) || !counts ||
+            !["total", "unread", "read", "matching"].every((key) => Number.isInteger(counts[key]))) {
+          throw new Error("The notifications response is invalid.");
+        }
+        alerts = result;
+        alertCounts = counts;
+        matchingCount = counts.matching;
         render();
       } catch (error) {
+        alerts = [];
         list.replaceChildren();
         status.hidden = false;
-        status.textContent = error instanceof Error ? error.message : "Alerts could not be loaded.";
+        status.textContent = error instanceof Error ? error.message : "Notifications could not be loaded.";
       } finally {
+        loadActive = false;
         if (refresh instanceof HTMLButtonElement) refresh.disabled = false;
       }
     };
@@ -4802,13 +5192,50 @@ irrigationNext.addEventListener("click", () => {
     root.querySelectorAll("[data-alert-filter]").forEach((button) => {
       button.addEventListener("click", () => {
         activeFilter = button.dataset.alertFilter || "all";
+        offset = 0;
         root.querySelectorAll("[data-alert-filter]").forEach((item) => {
           item.classList.toggle("is-active", item === button);
         });
-        render();
+        void loadAlerts();
       });
     });
-    refresh?.addEventListener("click", loadAlerts);
-    await loadAlerts();
+    refresh?.addEventListener("click", () => void loadAlerts({ refreshSources: true }));
+    root.querySelector("[data-alert-read-all]")?.addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      if (!(button instanceof HTMLButtonElement)) return;
+      button.disabled = true;
+      try {
+        await window.JalSaathiProfile.apiRequest("/api/alerts/read-all", { method: "PATCH" });
+        window.dispatchEvent(new CustomEvent("jalsaathi:notifications-changed"));
+        await loadAlerts({ refreshSources: false });
+      } catch (error) {
+        status.hidden = false;
+        status.textContent = error instanceof Error ? error.message : "Notifications could not be updated.";
+      } finally {
+        button.disabled = false;
+      }
+    });
+    root.querySelector("[data-alert-previous]")?.addEventListener("click", () => {
+      offset = Math.max(0, offset - pageSize);
+      void loadAlerts();
+    });
+    root.querySelector("[data-alert-next]")?.addEventListener("click", () => {
+      if (offset + pageSize < matchingCount) {
+        offset += pageSize;
+        void loadAlerts();
+      }
+    });
+    const refreshTimer = window.setInterval(() => {
+      if (!document.hidden && !loadActive) void loadAlerts({ refreshSources: true, showLoading: false });
+    }, 60_000);
+    const notificationEvents = new AbortController();
+    window.addEventListener("jalsaathi:page-changed", () => {
+      window.clearInterval(refreshTimer);
+      notificationEvents.abort();
+    }, { once: true });
+    window.addEventListener("jalsaathi:notifications-changed", () => {
+      if (!loadActive) void loadAlerts({ refreshSources: false, showLoading: false });
+    }, { signal: notificationEvents.signal });
+    await loadAlerts({ refreshSources: true });
   }
 })();

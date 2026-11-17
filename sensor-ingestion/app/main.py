@@ -1,7 +1,6 @@
 import hashlib
 import hmac
 import logging
-import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,14 +18,12 @@ load_dotenv(ROOT_DIR / ".env")
 
 from alerts.config import FIELD_THRESHOLDS
 from alerts.database import create_alert
+from alerts.delivery import dispatch_alert_notifications
 from alerts.service import process_soil_moisture
-from email_notifications import send_email
-from models import Farmer, FarmerField, FarmerSensorDevice, FarmerSensorReading
-from push_notifications import send_web_push_notification
+from models import Alert, Farmer, FarmerField, FarmerSensorDevice, FarmerSensorReading
 from app.database import SessionLocal
 from app.schemas import SensorData
 from app.validation import clean_sensor_data
-from sms_notifications import send_sms
 
 logger = logging.getLogger(__name__)
 app = FastAPI(title="JalSaathi Sensor Ingestion API", version="1.0.0")
@@ -57,47 +54,9 @@ def readiness(db: Session = Depends(get_db)) -> dict[str, str]:
 
 def _send_notifications(
     db: Session,
-    farmer: Farmer,
-    field: FarmerField,
-    alert: object,
+    alert: Alert,
 ) -> dict[str, dict[str, str | int]]:
-    outcomes: dict[str, dict[str, str | int]] = {}
-    if farmer.web_push_enabled:
-        try:
-            outcomes["push"] = send_web_push_notification(
-                db, farmer.id, "Smart Irrigation Alert", alert.message
-            )
-        except Exception as error:
-            logger.error("Push notification processing failed (%s).", type(error).__name__)
-            outcomes["push"] = {"status": "failed", "reason": "provider_error"}
-    else:
-        outcomes["push"] = {"status": "skipped", "reason": "preference_disabled"}
-
-    supervisor_email = os.getenv("SUPERVISOR_EMAIL", "").strip()
-    if supervisor_email:
-        try:
-            outcomes["email"] = send_email(
-                supervisor_email,
-                "Smart Irrigation Alert",
-                f"An irrigation alert was generated for field {field.id}.\n"
-                f"Type: {alert.alert_type}\nSeverity: {alert.severity}\n"
-                f"Message: {alert.message}",
-            )
-        except Exception as error:
-            logger.error("Email notification processing failed (%s).", type(error).__name__)
-            outcomes["email"] = {"status": "failed", "reason": "provider_error"}
-    else:
-        outcomes["email"] = {"status": "skipped", "reason": "recipient_not_configured"}
-
-    if farmer.sms_enabled and farmer.phone:
-        try:
-            outcomes["sms"] = send_sms(farmer.phone, alert.message)
-        except Exception as error:
-            logger.error("SMS notification processing failed (%s).", type(error).__name__)
-            outcomes["sms"] = {"status": "failed", "reason": "provider_error"}
-    else:
-        outcomes["sms"] = {"status": "skipped", "reason": "preference_disabled"}
-    return outcomes
+    return dispatch_alert_notifications(db, alert.id)
 
 
 @app.post("/sensor-data")
@@ -173,7 +132,7 @@ def receive_sensor_data(
         raise HTTPException(status_code=500, detail="Sensor reading could not be saved.") from error
 
     notification_results = (
-        _send_notifications(db, farmer, field, alert)
+        _send_notifications(db, alert)
         if alert is not None and alert_created
         else {
             "push": {"status": "skipped", "reason": "no_new_alert"},
